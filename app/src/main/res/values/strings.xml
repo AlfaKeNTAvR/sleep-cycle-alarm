@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sleep Cycle</string>
+
+    <!-- Common -->
+    <string name="action_cancel">Cancel</string>
+    <string name="action_done">Done</string>
+    <string name="glyph_setup">⚙</string>
+    <string name="glyph_logs">≡</string>
+    <string name="glyph_back">←</string>
+    <string name="glyph_share">↑</string>
+    <string name="content_description_open_setup">Open setup</string>
+    <string name="content_description_open_logs">Open night logs</string>
+    <string name="content_description_back">Back</string>
+
+    <!-- Setup screen -->
+    <string name="setup_title">Setup</string>
+    <string name="setup_subtitle">Complete every item before your first night.</string>
+    <string name="setup_item_gadgetbridge_installed_label">Gadgetbridge installed</string>
+    <string name="setup_item_gadgetbridge_installed_detail">Gadgetbridge must be installed on this phone.</string>
+    <string name="setup_item_band_address_label">Band address set</string>
+    <string name="setup_item_band_address_detail">The band\'s Bluetooth MAC address.</string>
+    <string name="setup_item_export_file_label">Export file picked</string>
+    <string name="setup_item_export_file_detail">The file Gadgetbridge auto-exports its database to.</string>
+    <string name="setup_item_notifications_label">Notifications allowed</string>
+    <string name="setup_item_notifications_detail">Needed for the tracking notice and the alarm.</string>
+    <string name="setup_item_full_screen_intent_label">Full-screen alarms allowed</string>
+    <string name="setup_item_full_screen_intent_detail">So the alarm screen can wake the phone over the lock screen.</string>
+    <string name="setup_item_battery_optimization_label">Battery optimisation off for this app</string>
+    <string name="setup_item_battery_optimization_detail">So Android does not delay overnight syncs.</string>
+    <string name="setup_item_exact_alarms_label">Exact alarms allowed</string>
+    <string name="setup_item_exact_alarms_detail">So the wake-up alarm fires on time.</string>
+    <string name="setup_device_mac_label">Band Bluetooth address</string>
+    <string name="setup_pick_export_file">Pick export file</string>
+    <string name="setup_gadgetbridge_settings_title">Gadgetbridge settings to switch on</string>
+    <string-array name="setup_gadgetbridge_settings">
+        <item>Developer options › Intent API: \"Allow activity sync trigger\"</item>
+        <item>Developer options › Intent API: \"Broadcast on activity sync finish\"</item>
+        <item>Developer options › Intent API: \"Allow database export trigger\"</item>
+        <item>Developer options › Intent API: \"Broadcast on export\"</item>
+        <item>Auto export: turn on, and set a save location</item>
+        <item>Band gear › Developer options: \"Allow 3rd party apps to set alarms\"</item>
+    </string-array>
+    <string name="start_blocked_gadgetbridge">Install Gadgetbridge to continue.</string>
+    <string name="start_blocked_band_address">Enter the band\'s address in Setup.</string>
+    <string name="start_blocked_export_file">Pick the Gadgetbridge export file in Setup.</string>
+    <string name="start_blocked_notifications">Allow notifications in Setup.</string>
+    <string name="start_blocked_full_screen_intent">Allow full-screen alarms in Setup.</string>
+    <string name="start_blocked_battery_optimization">Turn off battery optimisation in Setup.</string>
+    <string name="start_blocked_exact_alarms">Allow exact alarms in Setup.</string>
+    <string name="setup_test_connection">Test connection</string>
+    <string name="setup_test_connection_running">Testing…</string>
+    <string name="setup_grant">Allow</string>
+    <string name="setup_check_passed_headline">Setup check passed</string>
+    <string name="setup_check_failed_headline">Setup check failed</string>
+    <string name="start_blocked_setup_check_stale">Run \"Test connection\" in Setup again; the last pass is over 24 h old.</string>
+
+    <!-- Before bed screen -->
+    <string name="before_bed_title">Tonight</string>
+    <string name="before_bed_band_connected">Band connected</string>
+    <string name="before_bed_band_not_ready">Band setup incomplete</string>
+    <string name="before_bed_wake_me_by">Wake me by</string>
+    <string name="before_bed_wake_me_by_description">Band wakes you at the end of a sleep cycle before this. Phone rings at this time as a safety.</string>
+    <string name="content_description_deadline_switch">Use a deadline</string>
+    <string name="before_bed_sleep_up_to">Sleep up to</string>
+    <string name="content_description_sleep_length_option">Sleep %1$s</string>
+    <string name="content_description_sleep_length_option_unavailable">Sleep %1$s, does not fit before the deadline</string>
+    <string name="before_bed_phone_backup_title">Phone backup</string>
+    <string name="before_bed_phone_backup_description">15 min after the band alarm. Only without a deadline.</string>
+    <string name="content_description_phone_backup_switch">Phone backup alarm</string>
+    <string name="before_bed_start_night">Start night</string>
+
+    <!-- Night screen: common -->
+    <string name="night_status_never_synced">Not synced yet</string>
+    <string name="night_status_synced_ok">Synced at %1$s</string>
+    <string name="night_status_sync_failed">Sync failed at %1$s: %2$s</string>
+    <string name="night_status_data_stale">Data may be stale as of %1$s</string>
+    <string name="night_band_alarm_status_requested">Band alarm %1$s sent, not confirmed yet</string>
+    <string name="night_band_alarm_status_confirmed">Band alarm %1$s confirmed on the band</string>
+    <string name="night_loading">Getting the first reading…</string>
+    <string name="night_stop_night">Stop night</string>
+    <string name="night_im_up_end_night">I\'m up, end night</string>
+    <string name="night_end_night">End night</string>
+    <string name="night_confirm_stop_title">Stop night?</string>
+    <string name="night_confirm_stop_message">This ends tracking and shows tonight\'s report.</string>
+    <string name="night_confirm_im_up_title">End night?</string>
+    <string name="night_confirm_im_up_message">This stops the alarm and shows tonight\'s report.</string>
+
+    <!-- Night screen: state A -->
+    <string name="night_a_caption_if_asleep_by">If you fall asleep by %1$s</string>
+    <string name="night_a_caption_asleep_since">Asleep since %1$s</string>
+    <string name="night_a_sleep_length">%1$s of sleep</string>
+    <string name="night_timeline_title">Possible wake-ups</string>
+    <string name="night_timeline_deadline_by">by %1$s</string>
+    <string name="night_phone_safety_alarm">Phone safety alarm</string>
+
+    <!-- Night screen: states B and C -->
+    <string name="night_woke_caption">You slept</string>
+    <string name="night_b_timeline_header">Fall back asleep by %1$s</string>
+    <string name="night_c_timeline_header">No full cycle fits before %1$s</string>
+    <string name="night_c_nap_title">Nap: %1$s</string>
+    <string name="night_c_nap_description">Band wakes you 20 min after you fall asleep, before deep sleep.</string>
+    <string name="night_band_alarm">Band alarm</string>
+    <string name="night_band_alarm_estimate">~%1$s</string>
+    <string name="night_tonight_so_far">Tonight so far</string>
+
+    <!-- Night screen: overdue -->
+    <string name="night_overdue_title">Time to get up</string>
+
+    <!-- Night screen: finished -->
+    <string name="night_finished_title">Night finished</string>
+
+    <!-- Night screen: morning report (state D) -->
+    <string name="night_morning_ended_at">Night ended · %1$s</string>
+    <string name="night_morning_greeting">Good morning. You slept</string>
+    <string name="night_morning_woke_at">Woke %1$s</string>
+    <string name="night_morning_log_saved">Night log saved for export.</string>
+
+    <!-- Logs screen -->
+    <string name="logs_title">Night logs</string>
+    <string name="logs_empty">No night logs yet.</string>
+    <string name="content_description_share_log">Share this night log</string>
+
+    <!-- Alarm notification -->
+    <string name="alarm_notification_title">Wake up</string>
+    <string name="alarm_notification_text">Sleep cycle alarm</string>
+    <string name="alarm_notification_stop_action">Stop</string>
+
+    <!-- Before bed: no-deadline note -->
+    <string name="before_bed_no_deadline_note">Without a deadline the wake time keeps moving until the band reports sleep, so nothing caps the night.</string>
+
+    <!-- Night screen: state A, DEADLINE_ONLY -->
+    <string name="night_a_deadline_only_note">Band vibrates at the deadline</string>
+
+    <!-- Night screen: NAP while asleep -->
+    <string name="night_nap_asleep_caption">Napping, asleep since %1$s</string>
+
+    <!-- Error banner -->
+    <string name="error_banner_dismiss_hint">(tap to dismiss)</string>
+
+    <!-- Debug entry point (Setup screen, debug build only) -->
+    <string name="setup_debug_row_label">Debug</string>
+    <string name="content_description_open_debug">Open debug and simulation screen</string>
+
+    <!-- Debug screen -->
+    <string name="debug_title">Debug</string>
+    <string name="debug_subtitle">Simulate a whole night at your desk. Only available in a debug build.</string>
+    <string name="debug_simulated_band_data_title">Simulated band data</string>
+    <string name="debug_simulated_band_data_description">Sleep segments come from the buttons below instead of a real Gadgetbridge sync.</string>
+    <string name="debug_fast_night_title">Fast night</string>
+    <string name="debug_fast_night_description">Runs the engine on a shortened schedule: 3 min cycles, so a whole night finishes in minutes.</string>
+    <string name="debug_dry_run_title">Dry run band commands</string>
+    <string name="debug_dry_run_description">Logs band alarm commands instead of sending them; confirms them after one tick so the flow continues.</string>
+    <string name="debug_simulator_controls_title">Simulator</string>
+    <string name="debug_fell_asleep_button">I fell asleep now</string>
+    <string name="debug_woke_up_button">I woke up now</string>
+    <string name="debug_fell_back_asleep_button">Fell back asleep now</string>
+    <string name="debug_clear_simulated_sleep_button">Clear simulated sleep</string>
+    <string name="debug_timeline_title">Simulated timeline</string>
+    <string name="debug_timeline_empty">No simulated events yet.</string>
+    <string name="debug_timeline_entry">%1$s  %2$s → %3$s</string>
+    <string name="debug_test_alarm_title">Alarm screen test</string>
+    <string name="debug_ring_test_alarm_button">Ring phone alarm in 1 min</string>
+    <string name="debug_ring_test_alarm_description">Uses its own alarm, separate from a real night\'s, so you can check the alarm screen, sound and Stop button in daylight. Logged to setup.jsonl, not a night log.</string>
+    <string name="debug_ring_test_alarm_disabled_reason">Disabled while a night is active.</string>
+
+    <!-- Debug warning banner (Before bed and Night screens): names every switch that is currently live -->
+    <string name="debug_switch_simulated_sleep_data">SIMULATED SLEEP DATA</string>
+    <string name="debug_switch_band_commands_not_sent">BAND COMMANDS NOT SENT</string>
+    <string name="debug_switch_fast_night">FAST NIGHT</string>
+
+    <!-- Simulated-night start confirmation -->
+    <string name="debug_confirm_start_title">This is a simulated night</string>
+    <string name="debug_confirm_start_message">At least one Debug switch is on, so this night will not behave like a real one. Start anyway?</string>
+    <string name="debug_confirm_start_confirm">Start simulated night</string>
+
+    <!-- Logs screen: simulated tag -->
+    <string name="logs_simulated_tag">simulated</string>
+</resources>

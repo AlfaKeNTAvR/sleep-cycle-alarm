@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crescent moon: an outer circle with an offset inner circle subtracted from it
+     (evenOdd fill rule), leaving the crescent sliver. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFC9D6EA"
+        android:fillType="evenOdd"
+        android:pathData="
+            M 50,30 A 24,24 0 1 1 50,78 A 24,24 0 1 1 50,30 Z
+            M 62,26 A 22,22 0 1 1 62,70 A 22,22 0 1 1 62,26 Z" />
+
+</vector>

@@ -1,0 +1,142 @@
+package com.nikita.sleepcycle.night
+
+// File purpose: everything runNightTick logs about the data it read and the band alarm commands it sent -
+// split out of NightOrchestrator.kt to keep that file focused on the tick's own control flow. Answers the
+// three field questions from the reviews: does the band publish sleep marks mid-night (data/segments),
+// did a band alarm command really land (band_alarm_command/band_alarm_table/band_alarm_confirmed), and what
+// did the plan actually decide and why (plan).
+
+import android.content.Context
+import com.nikita.sleepcycle.bridge.BandAlarmSlot
+import com.nikita.sleepcycle.engine.AlarmPlan
+import com.nikita.sleepcycle.engine.SleepSegment
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.Duration
+import java.time.Instant
+
+/** The "data" event only lists segments when the list changed since last tick (C2); each newly-seen segment carries firstSeenAt. `source` says whether the segments came from the simulator or the band (debug mode). The "plan" event carries every field a field question needs, per the reason sentence (C3). */
+fun logDataAndPlan(context: Context, state: NightState, outcome: SyncOutcome, plan: AlarmPlan, now: Instant) {
+    val debugNight = state.debugOptions.isAnyEnabled
+    val sleepState = buildNightEngineView(state.copy(lastSegments = outcome.segments), now).sleepState
+    val segmentsChanged = outcome.segments != state.lastSegments
+    val dataFields = mutableMapOf(
+        "segmentCount" to outcome.segments.size.toString(),
+        "sleepState" to sleepState.name,
+        "newestSampleAt" to (outcome.newestSampleAt?.toString() ?: ""),
+        "exportFileModifiedAt" to (outcome.exportFileModifiedAt?.toString() ?: ""),
+        "segmentsChanged" to segmentsChanged.toString(),
+        "source" to outcome.source.name.lowercase()
+    )
+    if (segmentsChanged) {
+        dataFields["segments"] = encodeSegmentsForLog(outcome.segments, state.lastSegments, now)
+    }
+    appendNightLog(context, state.startedAt, NightLogEvent(now, "data", dataFields), debugNight)
+
+    appendNightLog(
+        context, state.startedAt,
+        NightLogEvent(
+            now, "plan",
+            mapOf(
+                "mode" to plan.mode.name,
+                "bandAlarm" to (plan.bandAlarm?.toString() ?: ""),
+                "phoneAlarm" to (plan.phoneAlarm?.toString() ?: ""),
+                "cycles" to plan.cycles.toString(),
+                "referenceOnset" to (plan.referenceOnset?.toString() ?: ""),
+                "onsetIsProjected" to plan.onsetIsProjected.toString(),
+                "wakeBoundary" to (plan.wakeBoundary?.toString() ?: ""),
+                "overdueSince" to (plan.overdueSince?.toString() ?: ""),
+                "reason" to plan.reason
+            )
+        ),
+        debugNight
+    )
+}
+
+private fun encodeSegmentsForLog(segments: List<SleepSegment>, previousSegments: List<SleepSegment>, now: Instant): String {
+    val previousSet = previousSegments.toSet()
+    val array = JSONArray()
+    segments.forEach { segment ->
+        array.put(
+            JSONObject().apply {
+                put("start", segment.start.toString())
+                put("end", segment.end.toString())
+                put("kind", segment.kind.name)
+                if (segment !in previousSet) put("firstSeenAt", now.toString())
+            }
+        )
+    }
+    return array.toString()
+}
+
+/**
+ * Sends every command through [sendBandAlarmCommand] (a no-op in dry run) and logs each one (type, title,
+ * time, whether it was sent blind, and `dryRun` - see DebugBandCommandSending.kt), then the table read this
+ * tick if any, and a confirmation's latency since the request (C4).
+ */
+fun applyBandAlarmDecision(
+    context: Context,
+    state: NightState,
+    deviceMac: String,
+    decision: BandAlarmDecision,
+    slots: List<BandAlarmSlot>?,
+    now: Instant
+) {
+    val debugNight = state.debugOptions.isAnyEnabled
+    val dryRun = state.debugOptions.bandCommandMode == BandCommandMode.DRY_RUN
+    val blind = decision.outcome == BandAlarmOutcome.BLIND
+    decision.commands.forEach { command ->
+        sendBandAlarmCommand(context, state.debugOptions, deviceMac, command)
+        val fields = when (command) {
+            is BandAlarmCommand.Set -> mapOf("type" to "SET", "title" to command.title, "time" to "%02d:%02d".format(command.hour, command.minute), "blind" to blind.toString())
+            is BandAlarmCommand.Dismiss -> mapOf("type" to "DISMISS", "title" to command.title, "time" to "", "blind" to (slots == null).toString())
+        }
+        appendNightLog(context, state.startedAt, NightLogEvent(now, "band_alarm_command", fields + ("dryRun" to dryRun.toString())), debugNight)
+    }
+    if (slots != null) {
+        appendNightLog(context, state.startedAt, NightLogEvent(now, "band_alarm_table", mapOf("rows" to encodeBandAlarmSlotsForLog(slots))), debugNight)
+    }
+    outcomeLogEvent(decision, now)?.let { appendNightLog(context, state.startedAt, it, debugNight) }
+}
+
+/**
+ * `internal`, not `private`, so it is JVM-testable directly without a Context. C5: [BandAlarmOutcome.DISMISS_PENDING]
+ * - the expected one-tick lag while alternating titles, waiting for the OTHER title's dismissal to be
+ * confirmed gone - is logged as info (`band_alarm_waiting`), never `error`: it is a known, self-explaining
+ * wait, not something that needs the owner's attention.
+ */
+internal fun outcomeLogEvent(decision: BandAlarmDecision, now: Instant): NightLogEvent? = when (decision.outcome) {
+    BandAlarmOutcome.CONFIRMED -> {
+        val confirmed = decision.confirmedBandAlarm
+        NightLogEvent(
+            now, "band_alarm_confirmed",
+            mapOf(
+                "title" to (confirmed?.title ?: ""),
+                "time" to (confirmed?.let { "%02d:%02d".format(it.hour, it.minute) } ?: ""),
+                "secondsSinceRequest" to (confirmed?.let { Duration.between(it.at, now).seconds.toString() } ?: "")
+            )
+        )
+    }
+    BandAlarmOutcome.CONFIRMED_LOST -> NightLogEvent(now, "band_alarm_missing", mapOf("cause" to "a previously confirmed band alarm is no longer present in the table"))
+    BandAlarmOutcome.BOTH_SLOTS_OCCUPIED -> NightLogEvent(now, "error", mapOf("step" to "band_alarm", "cause" to "both band alarm titles are occupied in the table; withholding a new SET"))
+    BandAlarmOutcome.DISMISSED -> NightLogEvent(now, "band_alarm_dismissed", mapOf("remainingPending" to decision.pendingDismissTitles.size.toString()))
+    BandAlarmOutcome.DISMISS_PENDING -> NightLogEvent(now, "band_alarm_waiting", mapOf("pending" to decision.pendingDismissTitles.joinToString(",")))
+    // C1: TOO_SOON is logged separately in NightOrchestrator.resolveBandAlarmState, at info with both times -
+    // that call site is the only one with the target AND the refreshed clock both on hand.
+    BandAlarmOutcome.REQUESTED, BandAlarmOutcome.RESENT, BandAlarmOutcome.BLIND, BandAlarmOutcome.UNCHANGED, BandAlarmOutcome.TOO_SOON -> null
+}
+
+private fun encodeBandAlarmSlotsForLog(slots: List<BandAlarmSlot>): String {
+    val array = JSONArray()
+    slots.forEach { slot ->
+        array.put(
+            JSONObject().apply {
+                put("position", slot.position)
+                put("enabled", slot.enabled)
+                put("time", "%02d:%02d".format(slot.hour, slot.minute))
+                put("title", slot.title ?: "")
+            }
+        )
+    }
+    return array.toString()
+}
