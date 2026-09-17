@@ -24,6 +24,14 @@ class WholeNightSequenceTest {
         assertEquals("08:07", formatTime(firstOverdue.bandAlarm!!, testZone))
         assertEquals("08:15", formatTime(firstOverdue.phoneAlarm!!, testZone))
 
+        // C1: a sync landing mid-minute rounds a FRESH overdue alarm UP to the next whole minute (the band only
+        // takes hour:minute; truncating down, as the app used to do on its own, could land the target less than
+        // minAlarmLead away, which is exactly the bug this rounding fixes). Branches off `established`, not
+        // chained into the rest of this sequence.
+        val midMinuteOverdue = plan(night, setting, "2026-09-17T08:05:30", established)
+        assertEquals(AlarmMode.OVERDUE, midMinuteOverdue.mode)
+        assertEquals("08:08", formatTime(midMinuteOverdue.bandAlarm!!, testZone))
+
         val staysPut = plan(night, setting, "2026-09-17T08:06", firstOverdue)
         assertEquals(AlarmMode.OVERDUE, staysPut.mode)
         assertEquals("08:07", formatTime(staysPut.bandAlarm!!, testZone))

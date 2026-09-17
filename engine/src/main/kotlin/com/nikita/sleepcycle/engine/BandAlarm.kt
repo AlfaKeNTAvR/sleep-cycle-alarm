@@ -1,6 +1,8 @@
 package com.nikita.sleepcycle.engine
 
+import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 /**
  * The band alarm for this round: a concrete [Scheduled] time and mode, or [Finished] (no more alarm tonight).
@@ -84,7 +86,10 @@ private fun applyOverdueRule(
         ?.takeIf { it.mode == AlarmMode.OVERDUE }
         ?.bandAlarm
         ?.takeIf { it.isAfter(now) }
-    val overdueAlarm = keptAlarm ?: lead
+    // C1: a FRESH overdue alarm (no kept one) is now + minAlarmLead rounded UP to the next whole minute - the
+    // band only takes hour:minute, so a raw value with seconds left the app truncating it DOWN, which could
+    // drop up to 59 s and put the target less than minAlarmLead away by the time it actually sent the command.
+    val overdueAlarm = keptAlarm ?: ceilToWholeMinute(lead)
     val capReached = !now.isBefore(overdueSince.plus(config.maxOverdueDuration))
     val pastDeadline = deadline != null && overdueAlarm.isAfter(deadline)
     return if (capReached || pastDeadline) {
@@ -92,6 +97,12 @@ private fun applyOverdueRule(
     } else {
         BandAlarmResult.Scheduled(AlarmMode.OVERDUE, overdueAlarm, overdueSince)
     }
+}
+
+/** C1: rounds [instant] up to the next whole minute; an instant already exactly on a minute boundary is returned unchanged. */
+private fun ceilToWholeMinute(instant: Instant): Instant {
+    val truncated = instant.truncatedTo(ChronoUnit.MINUTES)
+    return if (truncated == instant) instant else truncated.plus(Duration.ofMinutes(1))
 }
 
 /**

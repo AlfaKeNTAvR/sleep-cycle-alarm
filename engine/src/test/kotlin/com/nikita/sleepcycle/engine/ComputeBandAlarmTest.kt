@@ -73,6 +73,28 @@ class ComputeBandAlarmTest {
         assertEquals(instant("2026-09-17T08:07"), result.alarm)
     }
 
+    @Test fun `C1 a fresh OVERDUE alarm from a mid-minute now rounds up to the next whole minute`() {
+        val result = scheduled(
+            computeBandAlarm(
+                PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, null, 5,
+                instant("2026-09-17T08:05:30"), null, config
+            )
+        )
+        assertEquals(AlarmMode.OVERDUE, result.mode)
+        assertEquals(instant("2026-09-17T08:08"), result.alarm)
+    }
+
+    @Test fun `C1 a fresh OVERDUE alarm exactly on a whole minute is left unchanged`() {
+        val result = scheduled(
+            computeBandAlarm(
+                PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, null, 5,
+                instant("2026-09-17T08:05:00"), null, config
+            )
+        )
+        assertEquals(AlarmMode.OVERDUE, result.mode)
+        assertEquals(instant("2026-09-17T08:07"), result.alarm)
+    }
+
     @Test fun `OVERDUE keeps the previous overdue alarm while it is still far enough ahead`() {
         val previous = AlarmPlan(
             AlarmMode.OVERDUE, instant("2026-09-17T08:07"), null, 5, instant("2026-09-17T00:30"), false, null, "r"
