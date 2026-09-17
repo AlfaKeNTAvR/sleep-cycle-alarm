@@ -1,0 +1,5 @@
+# Keep LF everywhere so gradlew and shell scripts still run on Linux; Windows batch files need CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.png binary
