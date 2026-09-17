@@ -1,0 +1,16 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Personal health data: Gadgetbridge exports and night logs stay out of git
+*.db
+*.sqlite
+data/
