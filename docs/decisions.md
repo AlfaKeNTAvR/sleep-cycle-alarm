@@ -16,6 +16,8 @@ Why: the band's smart alarm (8:30 with a 60 min window) vibrated exactly at 8:30
 **Build on the Windows PC with command-line tools only**: Java 21, Android SDK command-line tools in the user folder, Google platform-tools (adb).
 Why: the phone is already connected and tested there; no IDE needed. Install not done yet, needs a go-ahead.
 
+**No Nix.** Considered a Nix dev shell for reproducible tooling, but Nix only runs in WSL on Windows, which adds WSL setup and Wi-Fi adb pairing. Development will happen mainly on this Windows PC, so reproducibility comes from the Gradle wrapper, a pinned JDK toolchain and pinned SDK versions in the build files instead.
+
 ## Alarm rules
 
 1. **Always wake at the end of a cycle.** Never mid-cycle. Cycle length is 90 min for now, to be calibrated from exported data.
