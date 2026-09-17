@@ -9,11 +9,18 @@ package com.nikita.sleepcycle.night
 // gone (rule 2), so a lost DISMISS_ALARM is retried instead of silently leaving a stale slot occupied. A
 // replacement never dismisses the alarm it is replacing until the new one is confirmed (rule 3): the band is
 // never left with zero alarms because a target moved. With no table at all, the very first alarm of the
-// night is still sent blind so one never fails to exist (rule 4); while the export stays broken, a target
-// that moves is chased by dismissing the stale title and setting the new one under the other title (still
-// blind), alternating, and an unchanged blind request is re-sent every BLIND_RESEND_INTERVAL_TICKS ticks in
-// case the original send silently never landed (C2) - bounded to our two titles, never unbounded growth.
-// Title matching is always exact equality (rule 5): Gadgetbridge itself dismisses by substring, which is why
+// night is still sent blind so one never fails to exist (rule 4). While the export stays broken, a target
+// that moves is NEVER chased: the same export that would carry a moved target is the only source of fresh
+// sleep data too, so a moving target while blind reflects nothing new, only the projected onset sliding with
+// the clock. Chasing it by dismissing the pending title and setting another one blind risked the SET failing
+// silently (Gadgetbridge never reports that failure), which could leave the band at zero alarms - the one
+// outcome this app exists to prevent - so an existing commitment (requested or confirmed) is instead held
+// exactly as it is (band_alarm_frozen), never dismissed, never retargeted, while blind. A brand-new commitment
+// (nothing requested or confirmed yet) is still sent once, blind. A requested-but-unconfirmed commitment gets
+// exactly one bounded retry per blind episode, after BLIND_RESEND_INTERVAL_TICKS consecutive blind ticks, in
+// case the original send silently never landed (C2) - never more than that one extra SET, so a broken-export
+// night can duplicate a title's slot at most once, never grow without bound. Title matching is always exact
+// equality (rule 5): Gadgetbridge itself dismisses by substring, which is why
 // the setup checklist (see BandAlarmMapping.kt) separately flags a foreign alarm whose title merely contains
 // ours. C1: the send margin (MIN_SEND_MARGIN, 45 s) is checked against the caller's own freshly re-read
 // clock, truncated to the minute the band actually stores - a physical "do we still have time to send this"
@@ -32,12 +39,19 @@ import java.time.temporal.ChronoUnit
 /** C1: below this margin before the target's local minute starts, sending is physically too late to matter. */
 val MIN_SEND_MARGIN: Duration = Duration.ofSeconds(45)
 
-/** C2: how many ticks a blind, unchanged pending SET is left unresent before being sent again, in case the original send silently never landed. */
-private const val BLIND_RESEND_INTERVAL_TICKS = 4
+/** C2: sentinel [BandAlarmCommitment.blindResendCount] value meaning this blind episode's one bounded re-send already happened - frozen for good until a real table read resets the count to 0. See BandAlarmBlindMode.kt. */
+internal const val BLIND_RESEND_EXHAUSTED = -1
 
-private val ALL_BAND_ALARM_TITLES: List<String> = listOf(BAND_ALARM_TITLE_A, BAND_ALARM_TITLE_B)
+/** Shared with BandAlarmBlindMode.kt, which cannot see a `private` top-level value declared in this file. */
+internal val ALL_BAND_ALARM_TITLES: List<String> = listOf(BAND_ALARM_TITLE_A, BAND_ALARM_TITLE_B)
 
-/** What we asked the band to carry under [title]: [hour]:[minute], (re)requested at [at]. [blindResendCount] (C2) counts ticks since this was last (re)sent while no table was available to verify it; only meaningful while the export stays broken. */
+/**
+ * What we asked the band to carry under [title]: [hour]:[minute], (re)requested at [at]. [blindResendCount]
+ * (C2) counts consecutive blind ticks since this was last (re)sent while no table was available to verify it,
+ * or holds the sentinel [BLIND_RESEND_EXHAUSTED] once this blind episode's one allowed re-send already
+ * happened; either way it is only meaningful while the export stays broken, and a real table read always
+ * resets it back to 0.
+ */
 data class BandAlarmCommitment(val title: String, val hour: Int, val minute: Int, val at: Instant, val blindResendCount: Int = 0)
 
 sealed interface BandAlarmCommand {
@@ -67,6 +81,14 @@ enum class BandAlarmOutcome {
 
     /** A SET was sent with no table available to verify it against (rule 4). */
     BLIND,
+
+    /**
+     * Blind, with a requested or confirmed commitment already on file: nothing was sent, the commitment is
+     * unchanged, even if the desired minute moved. Logged by the caller as `band_alarm_frozen` (mirroring how
+     * [TOO_SOON] is logged outside this file, in NightOrchestrator.kt, since only the caller has the desired
+     * target on hand) with the held time, the desired time, and the reason "no band alarm table available".
+     */
+    BLIND_FROZEN,
 
     /** The target's minute is not at least the configured lead ahead of the refreshed clock; nothing was sent. */
     TOO_SOON,
@@ -170,40 +192,7 @@ fun decideBandAlarmCommands(
     }
 
     if (slots == null) {
-        when {
-            currentRequested == null && currentConfirmed == null -> {
-                val title = ALL_BAND_ALARM_TITLES.firstOrNull { it !in currentPendingDismiss } ?: BAND_ALARM_TITLE_A
-                commands.add(BandAlarmCommand.Set(title, desiredTime.hour, desiredTime.minute))
-                currentRequested = BandAlarmCommitment(title, desiredTime.hour, desiredTime.minute, now)
-                outcome = outcome.orIfIdle(BandAlarmOutcome.BLIND)
-            }
-            currentRequested != null -> {
-                val pending = currentRequested
-                if (pending.hour != desiredTime.hour || pending.minute != desiredTime.minute) {
-                    // C2: the target moved with no table to reconcile against - dismiss the stale pending
-                    // title and SET the new target under the OTHER title (still blind), alternating, so a
-                    // broken-export night is not stuck carrying an alarm for a time that no longer applies.
-                    commands.add(BandAlarmCommand.Dismiss(pending.title))
-                    val newTitle = nextBandAlarmTitle(pending.title)
-                    commands.add(BandAlarmCommand.Set(newTitle, desiredTime.hour, desiredTime.minute))
-                    // The abandoned title is tracked so a returning table can verify it is really gone; the
-                    // newly (re)requested title is never left marked pending-dismiss at the same time.
-                    currentPendingDismiss = (currentPendingDismiss + pending.title) - newTitle
-                    currentRequested = BandAlarmCommitment(newTitle, desiredTime.hour, desiredTime.minute, now)
-                    outcome = outcome.orIfIdle(BandAlarmOutcome.BLIND)
-                } else if (pending.blindResendCount + 1 >= BLIND_RESEND_INTERVAL_TICKS) {
-                    // C2: bounded periodic re-send in case the original blind SET silently never landed.
-                    commands.add(BandAlarmCommand.Set(pending.title, desiredTime.hour, desiredTime.minute))
-                    currentRequested = pending.copy(blindResendCount = 0)
-                    outcome = outcome.orIfIdle(BandAlarmOutcome.BLIND)
-                } else {
-                    currentRequested = pending.copy(blindResendCount = pending.blindResendCount + 1)
-                }
-            }
-            // Otherwise something is already confirmed with nothing newly requested: without a table to
-            // verify against, leave it alone rather than guessing (rule 4).
-        }
-        return BandAlarmDecision(commands, currentRequested, currentConfirmed, currentPendingDismiss, outcome)
+        return decideBlindBandAlarmCommands(currentRequested, currentConfirmed, currentPendingDismiss, desiredTime, now)
     }
 
     val confirmedNow = currentConfirmed
@@ -225,7 +214,9 @@ fun decideBandAlarmCommands(
         }
         requestedNow != null -> {
             commands.add(BandAlarmCommand.Set(requestedNow.title, desiredTime.hour, desiredTime.minute))
-            currentRequested = requestedNow.copy(hour = desiredTime.hour, minute = desiredTime.minute, at = now)
+            // A table is available again, so this send is a real, verifiable one, not blind - a fresh blind
+            // episode later starts with its own bounded re-send budget rather than inheriting an exhausted one.
+            currentRequested = requestedNow.copy(hour = desiredTime.hour, minute = desiredTime.minute, at = now, blindResendCount = 0)
             outcome = outcome.orIfIdle(if (hadRequestedBefore) BandAlarmOutcome.RESENT else BandAlarmOutcome.REQUESTED)
         }
         else -> {

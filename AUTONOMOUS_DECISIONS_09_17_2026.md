@@ -53,9 +53,11 @@ Run mode: Autonomous. Dispatcher: Fable. Workers: Sonnet, GPT-5.6 Terra. Reviewe
 33. **Debug switches cannot leak into a real night**: a banner names every live switch on Before bed, the Night screen and the night notification; switches turn themselves off when a night ends and 2 h after they were last changed. Why: with "dry run" left on, nothing reaches the band, and with a deadline there is no phone backup either, so nothing would wake you.
 34. **The test alarm button is separate from the real phone alarm** and disabled during a night. As first written it replaced the night's real alarm and then marked it as already rung.
 35. **The snooze after a missed band alarm now really reaches the band.** The band takes whole minutes only; the snooze target was "now + 2 min" with seconds, got cut down to the minute, and was then rejected as too soon, every time. The alarm math now rounds the snooze up to the next whole minute.
-36. **Broken export all night**: the blind band alarm is re-sent when the target changes and every 4 syncs, not assumed to have landed.
+36. **Broken export all night** (superseded by decision 40): the blind band alarm was re-sent when the target changed and every 4 syncs. That was my instruction and it was unsafe: "remove, then set" can leave the band with no alarm when the set fails silently, and every re-send that lands eats another band slot.
 37. **App killed mid-command**: what the app is about to ask the band is saved before it is sent, and an alarm of ours found on the band that the app does not remember is adopted or removed. Before, it stayed and buzzed early.
 38. **After the night is over the app keeps syncing a few more times** (at most 6) until the band confirms our alarms are gone, so a stale alarm cannot buzz the next day.
+39. **Known limit, not changed here:** during an OVERDUE snooze, the read-back protocol means a fresh buzz lands roughly every second sync (about every 5 to 10 min), not every sync.
+40. **Blind mode now freezes instead of chasing:** when the app cannot see the band's alarm list it keeps the alarm it already asked for and changes nothing, because a command that fails silently could leave the band with no alarm; the phone alarm still follows the plan.
 
 ## Open questions for you
 

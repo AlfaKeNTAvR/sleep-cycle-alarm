@@ -122,8 +122,9 @@ internal fun outcomeLogEvent(decision: BandAlarmDecision, now: Instant): NightLo
     BandAlarmOutcome.DISMISSED -> NightLogEvent(now, "band_alarm_dismissed", mapOf("remainingPending" to decision.pendingDismissTitles.size.toString()))
     BandAlarmOutcome.DISMISS_PENDING -> NightLogEvent(now, "band_alarm_waiting", mapOf("pending" to decision.pendingDismissTitles.joinToString(",")))
     // C1: TOO_SOON is logged separately in NightOrchestrator.resolveBandAlarmState, at info with both times -
-    // that call site is the only one with the target AND the refreshed clock both on hand.
-    BandAlarmOutcome.REQUESTED, BandAlarmOutcome.RESENT, BandAlarmOutcome.BLIND, BandAlarmOutcome.UNCHANGED, BandAlarmOutcome.TOO_SOON -> null
+    // that call site is the only one with the target AND the refreshed clock both on hand. BLIND_FROZEN is
+    // logged there too (band_alarm_frozen, with the held time and the desired target), for the same reason.
+    BandAlarmOutcome.REQUESTED, BandAlarmOutcome.RESENT, BandAlarmOutcome.BLIND, BandAlarmOutcome.UNCHANGED, BandAlarmOutcome.TOO_SOON, BandAlarmOutcome.BLIND_FROZEN -> null
 }
 
 private fun encodeBandAlarmSlotsForLog(slots: List<BandAlarmSlot>): String {

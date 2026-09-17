@@ -220,6 +220,23 @@ private fun resolveBandAlarmState(
             state.debugOptions.isAnyEnabled
         )
     }
+    // The band alarm table could not be read, so the alarm already asked for is kept as it is. Logged with the
+    // held and the desired time so the owner can see from the night log how far the band drifted from the plan.
+    if (decision.outcome == BandAlarmOutcome.BLIND_FROZEN) {
+        val heldBandAlarm = decision.confirmedBandAlarm ?: decision.requestedBandAlarm
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                now, "band_alarm_frozen",
+                mapOf(
+                    "held" to (heldBandAlarm?.let { "%02d:%02d".format(it.hour, it.minute) } ?: ""),
+                    "desired" to (plan.bandAlarm?.toString() ?: ""),
+                    "cause" to "no band alarm table available"
+                )
+            ),
+            state.debugOptions.isAnyEnabled
+        )
+    }
     // C3: write-ahead - persist what we are ABOUT to ask the band for before sending any command, so a kill
     // between sending and this tick's normal end-of-tick save still leaves night_state.json knowing what was
     // asked. A no-op (no extra disk write) when this tick has nothing to send.

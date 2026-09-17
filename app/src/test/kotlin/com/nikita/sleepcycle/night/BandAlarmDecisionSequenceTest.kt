@@ -177,12 +177,12 @@ class BandAlarmDecisionSequenceTest {
     }
 
     @Test
-    fun `no table with an existing confirmed alarm leaves it alone rather than re-sending blind`() {
+    fun `no table with an existing confirmed alarm freezes it rather than re-sending blind`() {
         val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(900))
 
         val decision = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
 
-        assertEquals(BandAlarmOutcome.UNCHANGED, decision.outcome)
+        assertEquals(BandAlarmOutcome.BLIND_FROZEN, decision.outcome)
         assertTrue(decision.commands.isEmpty())
         assertEquals(confirmed, decision.confirmedBandAlarm)
     }
@@ -193,8 +193,45 @@ class BandAlarmDecisionSequenceTest {
 
         val decision = decideBandAlarmCommands(instantAt(8, 30), requested = requested, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
 
+        assertEquals(BandAlarmOutcome.BLIND_FROZEN, decision.outcome)
         assertTrue(decision.commands.isEmpty())
         assertEquals(requested.copy(blindResendCount = 1), decision.requestedBandAlarm, "the target did not change, so nothing is (re)sent yet - only the blind-resend tick count advances")
+    }
+
+    @Test
+    fun `a requested but unconfirmed alarm with the target moving while blind is frozen at its original time, never dismissed`() {
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(60))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 30), requested, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
+
+        assertEquals(BandAlarmOutcome.BLIND_FROZEN, decision.outcome)
+        assertTrue(decision.commands.isEmpty(), "no DISMISS, no SET - the target moved but a blind tick carries no new information to act on")
+        assertEquals(BAND_ALARM_TITLE_A, decision.requestedBandAlarm?.title)
+        assertEquals(8, decision.requestedBandAlarm?.hour)
+        assertEquals(0, decision.requestedBandAlarm?.minute, "held at the ORIGINAL committed minute, never retargeted while blind")
+    }
+
+    @Test
+    fun `pending dismissals are held untouched while blind and retried once the table is back`() {
+        // B is already confirmed and matches the desired target exactly, so the blind tick has nothing else to
+        // do (no fresh SET, no freeze-worthy requested commitment) - isolating what this test is actually
+        // about: A's pending dismissal must sit untouched through the blind tick, not be re-sent or dropped.
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_B, 8, 30, NOW.minusSeconds(900))
+        val pendingDismiss = setOf(BAND_ALARM_TITLE_A)
+
+        val blindTick = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = confirmed, pendingDismissTitles = pendingDismiss, slots = null, now = NOW, zone = ZONE_UTC)
+        assertTrue(blindTick.commands.isEmpty(), "never dismissed, never re-sent, while blind")
+        assertEquals(pendingDismiss, blindTick.pendingDismissTitles, "kept pending untouched, not dropped")
+
+        val tableStillShowingA = listOf(
+            slot(0, enabled = true, hour = 7, minute = 0, title = BAND_ALARM_TITLE_A),
+            slot(1, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_B),
+        )
+        val tableReturns = decideBandAlarmCommands(
+            instantAt(8, 30), blindTick.requestedBandAlarm, blindTick.confirmedBandAlarm, blindTick.pendingDismissTitles,
+            slots = tableStillShowingA, now = NOW.plusSeconds(300), zone = ZONE_UTC
+        )
+        assertEquals(listOf(BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A)), tableReturns.commands, "retried now that a real table can verify it")
     }
 
     @Test
@@ -238,89 +275,141 @@ class BandAlarmDecisionSequenceTest {
         assertTrue(tick3.pendingDismissTitles.isEmpty())
     }
 
-    // ---- C2: export broken all night - blind alternation and bounded periodic re-send ----------------------
-
     @Test
-    fun `no table - an unchanged pending target is re-sent only every 4th tick, bounded`() {
-        var requested: BandAlarmCommitment? = null
-        val target = instantAt(8, 30)
+    fun `FINISHED while blind still sends the teardown dismissals`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(900))
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_B, 8, 15, NOW.minusSeconds(60))
 
-        val first = decideBandAlarmCommands(target, requested, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
-        assertEquals(BandAlarmOutcome.BLIND, first.outcome)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)), first.commands)
-        requested = first.requestedBandAlarm
+        val decision = decideBandAlarmCommands(null, requested, confirmed, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
 
-        // Ticks 2-4: still the same target, no table - nothing re-sent yet (count 1, 2, 3).
-        repeat(3) { tickIndex ->
-            val tick = decideBandAlarmCommands(target, requested, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW.plusSeconds((tickIndex + 1) * 300L), zone = ZONE_UTC)
-            assertTrue(tick.commands.isEmpty(), "tick ${tickIndex + 2} should not resend yet")
-            requested = tick.requestedBandAlarm
-        }
-
-        // Tick 5: the 4th tick since the last send - re-sent, bounded, and the count resets.
-        val resend = decideBandAlarmCommands(target, requested, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW.plusSeconds(1200), zone = ZONE_UTC)
-        assertEquals(BandAlarmOutcome.BLIND, resend.outcome)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)), resend.commands)
+        assertEquals(setOf(BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A), BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_B)), decision.commands.toSet())
+        assertNull(decision.requestedBandAlarm)
+        assertNull(decision.confirmedBandAlarm)
+        assertEquals(setOf(BAND_ALARM_TITLE_A, BAND_ALARM_TITLE_B), decision.pendingDismissTitles)
     }
 
-    @Test
-    fun `no table - a moved target dismisses the stale title and sets the new one blind under the other title`() {
-        val first = decideBandAlarmCommands(instantAt(8, 0), requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 0)), first.commands)
-
-        // The plan moved to 08:15 with the export still broken.
-        val moved = decideBandAlarmCommands(
-            instantAt(8, 15), first.requestedBandAlarm, confirmed = null, pendingDismissTitles = first.pendingDismissTitles,
-            slots = null, now = NOW.plusSeconds(300), zone = ZONE_UTC
-        )
-
-        assertEquals(BandAlarmOutcome.BLIND, moved.outcome)
-        assertEquals(
-            listOf(BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A), BandAlarmCommand.Set(BAND_ALARM_TITLE_B, 8, 15)),
-            moved.commands
-        )
-        assertEquals(BAND_ALARM_TITLE_B, moved.requestedBandAlarm?.title)
-        assertEquals(setOf(BAND_ALARM_TITLE_A), moved.pendingDismissTitles, "the stale title is tracked so a returning table can verify it is really gone")
-    }
+    // ---- C2: export broken all night - freeze, never chase a moving target, exactly one bounded re-send ----
 
     @Test
-    fun `no table - alternation over several moves never lets the currently requested title sit in pendingDismissTitles`() {
+    fun `blind from the first tick all night with the target moving every tick - exactly one SET, one re-send after 4 blind ticks, never a DISMISS, never a third SET`() {
         var requested: BandAlarmCommitment? = null
         var pendingDismiss: Set<String> = emptySet()
-        val targets = listOf(8 to 0, 8 to 15, 8 to 30, 8 to 45)
+        val targets = (0 until 12).map { 8 to (it * 5) }
+        var totalSetCommands = 0
+        var sawResend = false
 
         targets.forEachIndexed { index, (hour, minute) ->
             val tick = decideBandAlarmCommands(
                 instantAt(hour, minute), requested, confirmed = null, pendingDismissTitles = pendingDismiss,
                 slots = null, now = NOW.plusSeconds(index * 300L), zone = ZONE_UTC
             )
+            assertTrue(tick.commands.none { it is BandAlarmCommand.Dismiss }, "tick $index: blind mode must never send a DISMISS")
+            assertTrue(tick.commands.size <= 1, "tick $index: at most one command per tick")
+            totalSetCommands += tick.commands.size
+            if (index > 0 && tick.commands.isNotEmpty()) sawResend = true
             requested = tick.requestedBandAlarm
             pendingDismiss = tick.pendingDismissTitles
-            assertTrue(requested?.title !in pendingDismiss, "the title we are actively requesting must never also be marked pending-dismiss")
+        }
+
+        assertEquals(2, totalSetCommands, "the initial blind SET plus exactly one bounded re-send over the whole night - never a third SET")
+        assertTrue(sawResend, "the bounded re-send did happen once, after 4 blind ticks")
+        assertEquals(BAND_ALARM_TITLE_A, requested?.title, "the frozen commitment always keeps its original title")
+        assertEquals(8, requested?.hour)
+        assertEquals(0, requested?.minute, "frozen at the very first tick's target, never retargeted while blind")
+        assertEquals(BLIND_RESEND_EXHAUSTED, requested?.blindResendCount, "the one re-send is spent for good, this blind episode")
+    }
+
+    @Test
+    fun `a confirmed alarm frozen for hours while the desired target keeps moving sends nothing and never changes`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(3600))
+        val hourlyTargets = (0 until 6).map { 8 to (it * 10) }
+
+        hourlyTargets.forEachIndexed { index, (hour, minute) ->
+            val tick = decideBandAlarmCommands(
+                instantAt(hour, minute), requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(),
+                slots = null, now = NOW.plusSeconds(index * 3600L), zone = ZONE_UTC
+            )
+            assertTrue(tick.commands.isEmpty(), "tick $index: frozen, nothing sent")
+            assertEquals(BandAlarmOutcome.BLIND_FROZEN, tick.outcome)
+            assertEquals(confirmed, tick.confirmedBandAlarm, "the confirmed commitment never changes while frozen")
+            assertNull(tick.requestedBandAlarm)
         }
     }
 
     @Test
-    fun `when the table comes back, normal reconciliation verifies the blind-dismissed title for real`() {
-        val first = decideBandAlarmCommands(instantAt(8, 0), requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
-        val moved = decideBandAlarmCommands(
-            instantAt(8, 15), first.requestedBandAlarm, confirmed = null, pendingDismissTitles = first.pendingDismissTitles,
-            slots = null, now = NOW.plusSeconds(300), zone = ZONE_UTC
+    fun `app killed and restarted mid blind episode - the persisted re-send counter is honored, no extra re-send`() {
+        // Simulates a reload: this commitment already spent its one bounded re-send for this blind episode
+        // before the app was killed. blindResendCount is the exact field NightState.kt already persists, so
+        // this sentinel survives a restart without any change to how commitments are saved.
+        var requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(3600), blindResendCount = BLIND_RESEND_EXHAUSTED)
+        val target = instantAt(8, 0)
+
+        repeat(8) { tickIndex ->
+            val tick = decideBandAlarmCommands(target, requested, confirmed = null, pendingDismissTitles = emptySet(), slots = null, now = NOW.plusSeconds((tickIndex + 1) * 300L), zone = ZONE_UTC)
+            assertTrue(tick.commands.isEmpty(), "tick $tickIndex: the re-send was already spent before the restart, it never repeats")
+            assertEquals(BLIND_RESEND_EXHAUSTED, tick.requestedBandAlarm?.blindResendCount, "stays exhausted, never re-arms itself")
+            requested = tick.requestedBandAlarm!!
+        }
+    }
+
+    // ---- Table returns after a blind episode: reconciliation converges, never at zero alarms ----------------
+
+    @Test
+    fun `table returns showing the blind SET present - confirmed immediately`() {
+        val blindRequest = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(600))
+        val tableShowingIt = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 0), blindRequest, confirmed = null, pendingDismissTitles = emptySet(), slots = tableShowingIt, now = NOW, zone = ZONE_UTC)
+
+        assertEquals(BandAlarmOutcome.CONFIRMED, decision.outcome)
+        assertEquals(BAND_ALARM_TITLE_A, decision.confirmedBandAlarm?.title)
+        assertNull(decision.requestedBandAlarm)
+        assertTrue(decision.commands.isEmpty())
+    }
+
+    @Test
+    fun `table returns showing the blind SET absent - resent now that it can be verified for real`() {
+        val blindRequest = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(600))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 0), blindRequest, confirmed = null, pendingDismissTitles = emptySet(), slots = emptyList(), now = NOW, zone = ZONE_UTC)
+
+        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 0)), decision.commands)
+        assertEquals(BandAlarmOutcome.RESENT, decision.outcome)
+        assertNull(decision.confirmedBandAlarm)
+    }
+
+    @Test
+    fun `table returns with two enabled slots under the re-sent title sharing the desired minute - still one confirmed alarm`() {
+        val blindRequest = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(600))
+        // Both the original blind SET and the bounded blind re-send landed, in two different physical slots,
+        // both under title A, both at the same committed time (a blind re-send never retargets) - the exact
+        // scenario the bounded-to-one re-send limit accepts as a one-time cost.
+        val duplicateSlots = listOf(
+            slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A),
+            slot(2, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A),
         )
-        // moved.pendingDismissTitles = {A}; the table returns and still shows A present (the blind dismiss did not take).
-        val tableStillShowingA = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A))
-        val tableReturns = decideBandAlarmCommands(
-            instantAt(8, 15), moved.requestedBandAlarm, confirmed = null, pendingDismissTitles = moved.pendingDismissTitles,
-            slots = tableStillShowingA, now = NOW.plusSeconds(600), zone = ZONE_UTC
-        )
-        // A's dismissal is re-sent now that it can be verified (not blind this time); B (still not found in the
-        // table under `findActiveSlot`) is re-sent too, same as any other unconfirmed pending request.
-        assertEquals(
-            setOf(BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A), BandAlarmCommand.Set(BAND_ALARM_TITLE_B, 8, 15)),
-            tableReturns.commands.toSet()
-        )
-        assertEquals(setOf(BAND_ALARM_TITLE_A), tableReturns.pendingDismissTitles)
-        assertEquals(BAND_ALARM_TITLE_B, tableReturns.requestedBandAlarm?.title)
+
+        val decision = decideBandAlarmCommands(instantAt(8, 0), blindRequest, confirmed = null, pendingDismissTitles = emptySet(), slots = duplicateSlots, now = NOW, zone = ZONE_UTC)
+
+        assertEquals(BandAlarmOutcome.CONFIRMED, decision.outcome)
+        assertEquals(BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, blindRequest.at), decision.confirmedBandAlarm)
+        assertTrue(decision.commands.isEmpty(), "already matches the desired time; nothing more to send")
+        // A later DISMISS(A) clears both physical slots at once (Gadgetbridge dismisses by title, every
+        // matching slot) - this function only ever tracks the logical alarm under a title, never slot counts.
+    }
+
+    @Test
+    fun `table returns with both our titles present at different times - the band is never left without a confirmed alarm`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(3600))
+        val blindRequest = BandAlarmCommitment(BAND_ALARM_TITLE_B, 7, 45, NOW.minusSeconds(600))
+        // A (our real confirmed alarm) is present and correct; B (the blind episode's unconfirmed SET) never
+        // landed at all.
+        val tableShowingOnlyA = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 0), blindRequest, confirmed, pendingDismissTitles = emptySet(), slots = tableShowingOnlyA, now = NOW, zone = ZONE_UTC)
+
+        assertEquals(BAND_ALARM_TITLE_A, decision.confirmedBandAlarm?.title, "the band is never left without a confirmed alarm while B is retargeted")
+        assertTrue(decision.commands.none { it is BandAlarmCommand.Dismiss }, "A is not touched just because B is being cleaned up")
     }
 
     // ---- C3: an orphaned slot under one of our titles, referenced by no commitment -------------------------
