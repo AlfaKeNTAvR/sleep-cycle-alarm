@@ -27,4 +27,6 @@ data class BeforeBedUiState(
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
     /** True while "Start night" is asking the owner to confirm a simulated night (any debug option on) before it actually starts. */
     val confirmingDebugNightStart: Boolean = false,
+    /** Item 4: true when the deadline switch and the phone-backup switch are both off, so nothing on the phone will ring tonight - shown as an amber line above "Start night". Never blocks starting. */
+    val noPhoneAlarmWarning: Boolean = false,
 )

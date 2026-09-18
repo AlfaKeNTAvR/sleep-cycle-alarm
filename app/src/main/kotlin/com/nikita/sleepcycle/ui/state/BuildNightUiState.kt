@@ -10,6 +10,7 @@ import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.bandAlarmStatusFor
+import com.nikita.sleepcycle.night.noPhoneAlarmTonight
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import java.time.Instant
 import java.time.ZoneId
@@ -34,6 +35,7 @@ fun buildNightUiState(
     showingMorningReport: Boolean,
     morningReportEndedAt: Instant?,
     confirmingEndNight: Boolean,
+    endingNight: Boolean = false,
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
@@ -51,12 +53,14 @@ fun buildNightUiState(
     val state = nightState ?: return null
     val syncLabel = state.lastSyncAt?.let { formatClockTime(it, zone) }
     val bandAlarmStatus = bandAlarmStatusUiFor(state)
+    val noPhoneAlarmWarning = noPhoneAlarmTonight(deadlineEnabled = state.settings.deadline != null, phoneBackupEnabled = state.settings.phoneBackupEnabled)
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
             syncLabel, state.lastSyncOk, state.lastSyncFailureCause, bandAlarmStatus,
-            NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight,
-            activeDebugSwitches = activeDebugSwitches(state.debugOptions)
+            NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight, endingNight,
+            activeDebugSwitches = activeDebugSwitches(state.debugOptions),
+            noPhoneAlarmWarning = noPhoneAlarmWarning,
         )
     }
 
@@ -75,7 +79,8 @@ fun buildNightUiState(
         }
     }
     return NightUiState(
-        syncLabel, state.lastSyncOk, state.lastSyncFailureCause, bandAlarmStatus, content, endAction, confirmingEndNight,
-        activeDebugSwitches = activeDebugSwitches(state.debugOptions)
+        syncLabel, state.lastSyncOk, state.lastSyncFailureCause, bandAlarmStatus, content, endAction, confirmingEndNight, endingNight,
+        activeDebugSwitches = activeDebugSwitches(state.debugOptions),
+        noPhoneAlarmWarning = noPhoneAlarmWarning,
     )
 }

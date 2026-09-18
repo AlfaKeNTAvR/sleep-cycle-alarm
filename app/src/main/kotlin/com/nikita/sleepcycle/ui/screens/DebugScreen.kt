@@ -4,29 +4,20 @@ package com.nikita.sleepcycle.ui.screens
 // only in a debug build (see DebugOptions.kt). Three independent switches, the simulator's event buttons and
 // timeline, and the phone-alarm daylight test button.
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.components.ToggleRow
 import com.nikita.sleepcycle.ui.state.DebugUiState
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
-import com.nikita.sleepcycle.ui.theme.ScreenContentGap
-import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
-import com.nikita.sleepcycle.ui.theme.ScreenTopPadding
 
 /** The Debug/simulation screen. */
 @Composable
@@ -42,14 +33,7 @@ fun DebugScreen(
     onRingTestAlarm: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = ScreenHorizontalPadding)
-            .padding(top = ScreenTopPadding, bottom = ScreenContentGap),
-        verticalArrangement = Arrangement.spacedBy(ScreenContentGap),
-    ) {
+    ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconGlyphButton(
                 glyph = stringResource(R.string.glyph_back),

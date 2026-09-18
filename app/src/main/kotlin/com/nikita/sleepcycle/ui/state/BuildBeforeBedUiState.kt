@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.ui.state
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.activeDebugSwitches
+import com.nikita.sleepcycle.night.noPhoneAlarmTonight
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
 import com.nikita.sleepcycle.night.sleepLengthFor
 import com.nikita.sleepcycle.night.sleepLengthIsAvailable
@@ -78,5 +79,6 @@ fun buildBeforeBedUiState(
         startNightBlockedBySetupCheck = gate.blockedBySetupCheck,
         activeDebugSwitches = activeDebugSwitches(debugOptions),
         confirmingDebugNightStart = confirmingDebugNightStart,
+        noPhoneAlarmWarning = noPhoneAlarmTonight(appSettings.deadlineEnabled, appSettings.phoneBackupEnabled),
     )
 }

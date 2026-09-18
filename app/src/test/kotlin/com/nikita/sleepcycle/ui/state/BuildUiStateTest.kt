@@ -23,6 +23,8 @@ private fun state(
     showingMorningReport: Boolean = false,
     morningReportEndedAt: String? = null,
     debugOptions: DebugOptions = DebugOptions(),
+    confirmingEndNight: Boolean = false,
+    endingNight: Boolean = false,
 ): UiState = buildUiState(
     appSettings = appSettings,
     nightState = nightState,
@@ -34,10 +36,11 @@ private fun state(
     screen = screen,
     connectionTest = ConnectionTestState.Idle,
     nightLogFiles = emptyList(),
-    confirmingEndNight = false,
+    confirmingEndNight = confirmingEndNight,
     showingMorningReport = showingMorningReport,
     morningReportEndedAt = morningReportEndedAt?.let(::instant),
     debugOptions = debugOptions,
+    endingNight = endingNight,
     errorMessage = null,
 )
 
@@ -254,5 +257,58 @@ class DebugTestAlarmGatingTest {
         val night = testNightState()
         val result = state(nightState = night)
         assertFalse(result.debug.canRingTestAlarm)
+    }
+}
+
+/** Item 4: a night can run with no phone alarm at all (deadline off AND phone backup off) - Before bed and the Night screen must both show the amber warning, and never show it whenever either switch is on. */
+class NoPhoneAlarmWarningWiringTest {
+    @Test fun `before bed warns when the deadline and phone backup are both off`() {
+        val result = state(appSettings = testAppSettings(deadlineEnabled = false, phoneBackupEnabled = false))
+        assertTrue(result.beforeBed.noPhoneAlarmWarning)
+    }
+
+    @Test fun `before bed does not warn once a deadline is on`() {
+        val result = state(appSettings = testAppSettings(deadlineEnabled = true, phoneBackupEnabled = false))
+        assertFalse(result.beforeBed.noPhoneAlarmWarning)
+    }
+
+    @Test fun `before bed does not warn once phone backup is on`() {
+        val result = state(appSettings = testAppSettings(deadlineEnabled = false, phoneBackupEnabled = true))
+        assertFalse(result.beforeBed.noPhoneAlarmWarning)
+    }
+
+    @Test fun `the night screen warns mid-night with no deadline and no phone backup`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val night = testNightState(lastPlan = plan, settings = NightSettings(deadline = null, pickedCycles = 5, phoneBackupEnabled = false))
+        val view = testEngineView(SleepState.ASLEEP)
+        val result = state(nightState = night, engineView = view, screen = Screen.Night)
+        assertTrue(result.night!!.noPhoneAlarmWarning)
+    }
+
+    @Test fun `the night screen does not warn mid-night once phone backup is on`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val night = testNightState(lastPlan = plan, settings = NightSettings(deadline = null, pickedCycles = 5, phoneBackupEnabled = true))
+        val view = testEngineView(SleepState.ASLEEP)
+        val result = state(nightState = night, engineView = view, screen = Screen.Night)
+        assertFalse(result.night!!.noPhoneAlarmWarning)
+    }
+}
+
+/** Item 1: the end-night button/dialog flow, wired end to end through buildUiState. */
+class EndNightFlowWiringTest {
+    @Test fun `endingNight flows through to the night screen state`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val night = testNightState(lastPlan = plan)
+        val view = testEngineView(SleepState.ASLEEP)
+        val result = state(nightState = night, engineView = view, screen = Screen.Night, confirmingEndNight = false, endingNight = true)
+        assertTrue(result.night!!.endingNight)
+    }
+
+    @Test fun `endingNight defaults to false`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val night = testNightState(lastPlan = plan)
+        val view = testEngineView(SleepState.ASLEEP)
+        val result = state(nightState = night, engineView = view, screen = Screen.Night)
+        assertFalse(result.night!!.endingNight)
     }
 }

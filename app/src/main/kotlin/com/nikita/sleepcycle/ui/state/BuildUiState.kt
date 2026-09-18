@@ -35,6 +35,7 @@ fun buildUiState(
     debugOptions: DebugOptions = DebugOptions(),
     simulatedSleepEvents: List<SimulatedSleepEvent> = emptyList(),
     confirmingDebugNightStart: Boolean = false,
+    endingNight: Boolean = false,
     errorMessage: String?,
 ): UiState {
     val nightActive = nightState != null
@@ -44,7 +45,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight),
         logs = buildLogsUiState(nightLogFiles, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
         errorMessage = errorMessage,

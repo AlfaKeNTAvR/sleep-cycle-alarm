@@ -6,8 +6,13 @@ package com.nikita.sleepcycle.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,7 +23,12 @@ import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.theme.ErrorRed
 import com.nikita.sleepcycle.ui.theme.NightOnBackground
 
-/** A dismissible one-line banner for a plain-English error message. Renders nothing when [message] is null. */
+/**
+ * A dismissible one-line banner for a plain-English error message. Renders nothing when [message] is null.
+ * Sits above every screen's own [ScreenContainer] in MainActivity, so it handles its own top and horizontal
+ * safe-drawing inset here (status bar, display cutout) - the colored background still spans full-bleed
+ * behind the status bar, only the text is pushed clear of it.
+ */
 @Composable
 fun ErrorBanner(message: String?, onDismiss: () -> Unit) {
     if (message == null) return
@@ -30,6 +40,7 @@ fun ErrorBanner(message: String?, onDismiss: () -> Unit) {
             .fillMaxWidth()
             .background(ErrorRed)
             .clickable(onClick = onDismiss)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .padding(12.dp),
     )
 }

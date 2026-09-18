@@ -8,6 +8,7 @@ package com.nikita.sleepcycle.night
 // window where the tick's own work could be erased by a dismissal issued out of order (Opus review 3.2).
 
 import android.content.Context
+import com.nikita.sleepcycle.alarm.ALARM_STOP_REASON_NIGHT_ENDED
 import com.nikita.sleepcycle.alarm.cancelPhoneAlarm
 import com.nikita.sleepcycle.alarm.readAlarmNotificationReadiness
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
@@ -17,13 +18,17 @@ import com.nikita.sleepcycle.bridge.syncAndReadBandData
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.computeAlarmPlan
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
@@ -107,6 +112,16 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
 /** The night state ending produced, built inside the same lock that committed it - what the caller should render, not whatever snapshot it took before calling [endNight] (D1). Null when there was no night in progress to end. */
 data class EndNightReport(val nightState: NightState, val endedAt: Instant)
 
+// F1: endNight takes ~3 s (the verification sync inside the lock, per app-spec) with nothing on screen to show
+// it is running, so the owner double-tapped "Stop night" on both real nights. The ViewModel now disables the
+// button and shows an in-progress state on the first tap (see NightViewModel.confirmEndNight and
+// ui/state/EndNightFlowState.kt) so a second tap should never reach here in the first place - but endNight
+// itself is still made idempotent, independent of the UI guard: a second concurrent call (any caller, not just
+// a double tap) reuses the SAME in-flight (or just-completed) result rather than repeating the work a second
+// time, which would otherwise dismiss/verify/log/clear a second time for one owner action.
+private var endNightInFlight: Deferred<EndNightReport?>? = null
+private val endNightInFlightGuard = Mutex()
+
 /**
  * Ends the night: stops the alarm if it is ringing, dismisses both band alarm titles, cancels the phone
  * alarm and future ticks, writes the summary, persists a morning-report snapshot of the state (so it
@@ -114,9 +129,25 @@ data class EndNightReport(val nightState: NightState, val endedAt: Instant)
  * Suspends until all of that has committed and returns the definitive [EndNightReport] to render - a tick
  * that finished a moment before this call could have produced a state newer than whatever the caller last
  * observed, so the caller must render this return value, not its own earlier snapshot.
+ *
+ * F1: idempotent - a call made while a previous one is still running (or has just finished) is given that
+ * same call's result instead of starting a second run. [now] is only meaningful for the run that actually
+ * starts the work; a call that joins an in-flight run gets that run's own `now`, not its own.
  */
-suspend fun endNight(context: Context, now: Instant): EndNightReport? = withNightTransactionLock {
-    stopAlarmRinging(context)
+suspend fun endNight(context: Context, now: Instant): EndNightReport? {
+    val deferred = endNightInFlightGuard.withLock {
+        val existing = endNightInFlight
+        if (existing != null && existing.isActive) {
+            existing
+        } else {
+            controllerScope.async { endNightLocked(context, now) }.also { endNightInFlight = it }
+        }
+    }
+    return deferred.await()
+}
+
+private suspend fun endNightLocked(context: Context, now: Instant): EndNightReport? = withNightTransactionLock {
+    stopAlarmRinging(context, ALARM_STOP_REASON_NIGHT_ENDED)
     val state = withContext(Dispatchers.IO) { loadNightState(context) }
     if (state != null) {
         dismissBothBandAlarmTitles(context, state.debugOptions)

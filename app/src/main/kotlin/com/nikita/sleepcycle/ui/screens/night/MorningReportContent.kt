@@ -21,27 +21,33 @@ import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 import com.nikita.sleepcycle.ui.theme.SmallNumeralStyle
 
+/** Item 6: a night with no recorded sleep stretch at all (e.g. ended seconds after it started) says so plainly instead of "you slept 0 minutes", and skips the now-empty per-stretch card. */
 @Composable
 fun MorningReportContent(content: NightScreenContent.MorningReport) {
+    val noSleepRecorded = content.stretches.isEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
-        val detail = content.wokeAtTimeLabel?.let { stringResource(R.string.night_morning_woke_at, it) }
-        HeroNumeral(
-            caption = stringResource(R.string.night_morning_greeting),
-            value = content.totalSleepDurationLabel,
-            detail = detail,
-        )
-        SettingsCard {
-            content.stretches.forEachIndexed { index, stretch ->
-                if (index > 0) CardDivider()
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = "${stretch.startTimeLabel} – ${stretch.endTimeLabel}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = NightOnSurfaceMuted,
-                    )
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(text = stretch.durationLabel, style = SmallNumeralStyle)
-                        Text(text = " (${stretch.cyclesLabel})", style = MaterialTheme.typography.bodyMedium, color = NightOnSurfaceMuted)
+        if (noSleepRecorded) {
+            Text(text = stringResource(R.string.night_morning_no_sleep), style = MaterialTheme.typography.headlineSmall)
+        } else {
+            val detail = content.wokeAtTimeLabel?.let { stringResource(R.string.night_morning_woke_at, it) }
+            HeroNumeral(
+                caption = stringResource(R.string.night_morning_greeting),
+                value = content.totalSleepDurationLabel,
+                detail = detail,
+            )
+            SettingsCard {
+                content.stretches.forEachIndexed { index, stretch ->
+                    if (index > 0) CardDivider()
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            text = "${stretch.startTimeLabel} – ${stretch.endTimeLabel}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = NightOnSurfaceMuted,
+                        )
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(text = stretch.durationLabel, style = SmallNumeralStyle)
+                            Text(text = " (${stretch.cyclesLabel})", style = MaterialTheme.typography.bodyMedium, color = NightOnSurfaceMuted)
+                        }
                     }
                 }
             }

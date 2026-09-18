@@ -5,7 +5,6 @@ import androidx.compose.ui.unit.dp
 // File purpose: named spacing/size constants for the UI layer, so no composable hardcodes a raw dp value.
 
 val ScreenHorizontalPadding = 20.dp
-val ScreenTopPadding = 40.dp
 val ScreenBottomPadding = 28.dp
 val ScreenContentGap = 16.dp
 

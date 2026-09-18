@@ -32,13 +32,16 @@
     <string name="setup_item_exact_alarms_detail">So the wake-up alarm fires on time.</string>
     <string name="setup_device_mac_label">Band Bluetooth address</string>
     <string name="setup_pick_export_file">Pick export file</string>
+    <string name="setup_pick_export_file_helper">Pick the same file you set as the export location below, in Gadgetbridge\'s Automations › Auto export database screen.</string>
     <string name="setup_gadgetbridge_settings_title">Gadgetbridge settings to switch on</string>
     <string-array name="setup_gadgetbridge_settings">
         <item>Developer options › Intent API: \"Allow activity sync trigger\"</item>
         <item>Developer options › Intent API: \"Broadcast on activity sync finish\"</item>
         <item>Developer options › Intent API: \"Allow database export trigger\"</item>
         <item>Developer options › Intent API: \"Broadcast on export\"</item>
-        <item>Auto export: turn on, and set a save location</item>
+        <item>Automations › Auto export database: turn on \"Auto export enabled\"</item>
+        <item>Same screen, \"Export location\": set it (e.g. to Documents) - required, or exports write nothing</item>
+        <item>Do NOT use Data management › Export Data - that folder belongs to Gadgetbridge and our app cannot read it</item>
         <item>Band gear › Developer options: \"Allow 3rd party apps to set alarms\"</item>
     </string-array>
     <string name="start_blocked_gadgetbridge">Install Gadgetbridge to continue.</string>
@@ -81,6 +84,7 @@
     <string name="night_stop_night">Stop night</string>
     <string name="night_im_up_end_night">I\'m up, end night</string>
     <string name="night_end_night">End night</string>
+    <string name="night_ending">Ending night…</string>
     <string name="night_confirm_stop_title">Stop night?</string>
     <string name="night_confirm_stop_message">This ends tracking and shows tonight\'s report.</string>
     <string name="night_confirm_im_up_title">End night?</string>
@@ -115,6 +119,7 @@
     <string name="night_morning_greeting">Good morning. You slept</string>
     <string name="night_morning_woke_at">Woke %1$s</string>
     <string name="night_morning_log_saved">Night log saved for export.</string>
+    <string name="night_morning_no_sleep">No sleep recorded tonight</string>
 
     <!-- Logs screen -->
     <string name="logs_title">Night logs</string>
@@ -128,6 +133,9 @@
 
     <!-- Before bed: no-deadline note -->
     <string name="before_bed_no_deadline_note">Without a deadline the wake time keeps moving until the band reports sleep, so nothing caps the night.</string>
+
+    <!-- Item 4: no phone alarm at all tonight (deadline off AND phone backup off) -->
+    <string name="warning_no_phone_alarm">Nothing on the phone will ring tonight, only the band.</string>
 
     <!-- Night screen: state A, DEADLINE_ONLY -->
     <string name="night_a_deadline_only_note">Band vibrates at the deadline</string>

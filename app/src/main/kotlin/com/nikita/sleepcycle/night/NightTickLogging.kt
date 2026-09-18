@@ -15,6 +15,14 @@ import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
 
+/**
+ * Formats a tick's `scheduledFor`/`receivedAt` log field. Both are null exactly for a tick not triggered by
+ * the exact tick alarm (the night's very first tick, or an immediate UI-requested one, e.g. opening the Night
+ * screen) - a genuine absence, not a bug, so it reads as "immediate" rather than an empty string that looks
+ * like missing data when scanning a night log. `internal`, not `private`, so it is JVM-testable directly.
+ */
+internal fun formatTickTimeField(instant: Instant?): String = instant?.toString() ?: "immediate"
+
 /** The "data" event only lists segments when the list changed since last tick (C2); each newly-seen segment carries firstSeenAt. `source` says whether the segments came from the simulator or the band (debug mode). The "plan" event carries every field a field question needs, per the reason sentence (C3). */
 fun logDataAndPlan(context: Context, state: NightState, outcome: SyncOutcome, plan: AlarmPlan, now: Instant) {
     val debugNight = state.debugOptions.isAnyEnabled

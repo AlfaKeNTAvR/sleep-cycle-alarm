@@ -81,7 +81,8 @@ class NightService : Service() {
             return
         }
         publishNightState(newState)
-        updateNotification(this, newState.lastPlan?.bandAlarm, newState.debugOptions)
+        val noPhoneAlarmWarning = noPhoneAlarmTonight(newState.settings.deadline != null, newState.settings.phoneBackupEnabled)
+        updateNotification(this, newState.lastPlan?.bandAlarm, newState.debugOptions, noPhoneAlarmWarning)
         if (newState.lastPlan?.mode == AlarmMode.FINISHED) {
             // Ticks have already stopped scheduling themselves (runNightTick cancels the tick alarm).
             // The state and the phone alarm stay in place; only the foreground tracking work is done.
@@ -147,15 +148,28 @@ private fun createNotificationChannel(context: Context) {
     manager.createNotificationChannel(NotificationChannel(NOTIFICATION_CHANNEL_ID, "Overnight tracking", NotificationManager.IMPORTANCE_LOW))
 }
 
-/** A1: prefixes the notification text with every active debug switch's name, so a simulated night is never mistaken for a real one from the notification shade alone. */
-private fun buildNotification(context: Context, plannedWake: Instant?, debugOptions: DebugOptions = DebugOptions()): Notification =
-    NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+/**
+ * A1: prefixes the notification text with every active debug switch's name, so a simulated night is never
+ * mistaken for a real one from the notification shade alone. Item 4: [noPhoneAlarmWarning] appends the same
+ * plain-English warning shown on Before bed and the Night screen, so the notification never disagrees with
+ * either about whether the phone itself will ring tonight.
+ */
+private fun buildNotification(
+    context: Context,
+    plannedWake: Instant?,
+    debugOptions: DebugOptions = DebugOptions(),
+    noPhoneAlarmWarning: Boolean = false,
+): Notification {
+    val wakeLine = plannedWake?.let { "Planned wake time: ${NOTIFICATION_TIME_FORMAT.format(it)}" } ?: "Waiting for first sync"
+    val warningSuffix = if (noPhoneAlarmWarning) " - ${context.getString(R.string.warning_no_phone_alarm)}" else ""
+    return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
         .setContentTitle("Tracking your sleep")
-        .setContentText(debugBannerPrefix(context, debugOptions) + (plannedWake?.let { "Planned wake time: ${NOTIFICATION_TIME_FORMAT.format(it)}" } ?: "Waiting for first sync"))
+        .setContentText(debugBannerPrefix(context, debugOptions) + wakeLine + warningSuffix)
         .setSmallIcon(R.mipmap.ic_launcher)
         .setOngoing(true)
         .setSilent(true)
         .build()
+}
 
 private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): String {
     val labels = activeDebugSwitches(debugOptions).map { switch ->
@@ -168,7 +182,12 @@ private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): Str
     return if (labels.isEmpty()) "" else "[${labels.joinToString(" · ")}] "
 }
 
-private fun updateNotification(context: Context, plannedWake: Instant?, debugOptions: DebugOptions = DebugOptions()) {
+private fun updateNotification(
+    context: Context,
+    plannedWake: Instant?,
+    debugOptions: DebugOptions = DebugOptions(),
+    noPhoneAlarmWarning: Boolean = false,
+) {
     val manager = context.getSystemService<NotificationManager>() ?: return
-    manager.notify(NOTIFICATION_ID, buildNotification(context, plannedWake, debugOptions))
+    manager.notify(NOTIFICATION_ID, buildNotification(context, plannedWake, debugOptions, noPhoneAlarmWarning))
 }

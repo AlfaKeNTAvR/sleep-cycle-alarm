@@ -5,11 +5,7 @@ package com.nikita.sleepcycle.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,14 +15,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.state.LogsUiState
 import com.nikita.sleepcycle.ui.state.NightLogSummary
 import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
-import com.nikita.sleepcycle.ui.theme.ScreenContentGap
-import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
-import com.nikita.sleepcycle.ui.theme.ScreenTopPadding
 
 /** The Logs screen: every saved night log, newest first, each shareable through the system share sheet. */
 @Composable
@@ -35,14 +29,7 @@ fun LogsScreen(
     onShareLog: (NightLogSummary) -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = ScreenHorizontalPadding)
-            .padding(top = ScreenTopPadding, bottom = ScreenContentGap),
-        verticalArrangement = Arrangement.spacedBy(ScreenContentGap),
-    ) {
+    ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconGlyphButton(
                 glyph = stringResource(R.string.glyph_back),

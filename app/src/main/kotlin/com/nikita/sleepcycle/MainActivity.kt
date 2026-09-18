@@ -1,7 +1,9 @@
 package com.nikita.sleepcycle
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -32,7 +34,13 @@ import com.nikita.sleepcycle.ui.theme.SleepCycleAlarmTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Force the "dark" bar style (light icons) unconditionally, rather than the default auto style that
+        // follows the SYSTEM light/dark setting: this app is always dark, so auto style would draw dark
+        // (hard to read) icons over our near-black background whenever the phone itself is in light mode.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         setContent {
             SleepCycleAlarmTheme {
                 SleepCycleApp()

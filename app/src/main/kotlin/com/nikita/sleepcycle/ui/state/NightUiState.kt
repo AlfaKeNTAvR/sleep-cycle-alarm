@@ -96,6 +96,10 @@ data class NightUiState(
     val content: NightScreenContent,
     val endAction: EndNightAction,
     val confirmingEndNight: Boolean,
+    /** True from the moment "confirm" is tapped in the end-night dialog until endNight's result is rendered - the button disables and shows an in-progress label, and the dialog cannot reopen, for the whole ~3 s endNight takes (item 1). */
+    val endingNight: Boolean = false,
     /** A1: every debug switch this night was started with that is still live - the screen shows the amber warning banner naming all of them when non-empty. Empty while showing the morning report - the banner's job is done once the night is over. */
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
+    /** Item 4: true when tonight has no deadline AND no phone backup, so nothing on the phone will ring if the band fails - shown as an amber status line. Always false while showing the morning report. */
+    val noPhoneAlarmWarning: Boolean = false,
 )

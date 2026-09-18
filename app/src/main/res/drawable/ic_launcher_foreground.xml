@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Crescent moon: an outer circle with an offset inner circle subtracted from it
-     (evenOdd fill rule), leaving the crescent sliver. -->
+<!-- One crescent moon, drawn as a single closed outline: the outer arc of the moon's disc, then back
+     along the arc of the circle that bites into it. Drawn this way rather than as two subtracted
+     circles, because subtracting also fills the sliver lying inside the biting circle but outside the
+     disc, which read as a second, smaller moon beside the first. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -9,9 +11,10 @@
 
     <path
         android:fillColor="#FFC9D6EA"
-        android:fillType="evenOdd"
         android:pathData="
-            M 50,30 A 24,24 0 1 1 50,78 A 24,24 0 1 1 50,30 Z
-            M 62,26 A 22,22 0 1 1 62,70 A 22,22 0 1 1 62,26 Z" />
+            M 46.25,27.10
+            A 28,28 0 1 0 79.07,66.48
+            A 26,26 0 0 1 46.25,27.10
+            Z" />
 
 </vector>

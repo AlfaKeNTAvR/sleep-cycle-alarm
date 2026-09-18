@@ -8,8 +8,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+// matchParentSize() is a member extension of BoxScope itself (see the Box{} call below), not a top-level
+// function, so it needs no import of its own.
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -67,7 +68,12 @@ fun SleepLengthChip(
         contentAlignment = Alignment.Center,
     ) {
         if (!available) {
-            HatchOverlay(color = NightOnSurfaceDisabled, modifier = Modifier.fillMaxSize())
+            // matchParentSize (not fillMaxSize): fillMaxSize expands to the loose max height the Row/Box chain
+            // passes down from the screen above, which made the whole chip - not just the hatch - grow to fill
+            // the card's remaining vertical space. matchParentSize sizes strictly to the Box's own size, which
+            // is otherwise driven only by the label Text and the ChipHeight minimum, so the hatch can never
+            // influence the chip's measured size - purely a decoration, as intended.
+            HatchOverlay(color = NightOnSurfaceDisabled, modifier = Modifier.matchParentSize())
         }
         Text(
             text = label,

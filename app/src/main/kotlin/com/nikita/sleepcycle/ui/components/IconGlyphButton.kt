@@ -6,7 +6,6 @@ package com.nikita.sleepcycle.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.foundation.clickable
@@ -17,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.nikita.sleepcycle.ui.theme.IconGlyphStyle
 import com.nikita.sleepcycle.ui.theme.MinTouchTarget
 import com.nikita.sleepcycle.ui.theme.NightOnBackground
 
@@ -35,6 +35,6 @@ fun IconGlyphButton(glyph: String, contentDescription: String, onClick: () -> Un
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = glyph, style = MaterialTheme.typography.titleLarge, color = NightOnBackground)
+        Text(text = glyph, style = IconGlyphStyle, color = NightOnBackground)
     }
 }

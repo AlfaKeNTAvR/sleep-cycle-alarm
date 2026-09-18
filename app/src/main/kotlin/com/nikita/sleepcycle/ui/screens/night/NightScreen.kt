@@ -6,9 +6,7 @@ package com.nikita.sleepcycle.ui.screens.night
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,9 +15,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
 import com.nikita.sleepcycle.ui.state.BandAlarmStatusUi
@@ -27,9 +27,6 @@ import com.nikita.sleepcycle.ui.state.EndNightAction
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
 import com.nikita.sleepcycle.ui.theme.ScreenBottomPadding
-import com.nikita.sleepcycle.ui.theme.ScreenContentGap
-import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
-import com.nikita.sleepcycle.ui.theme.ScreenTopPadding
 
 /** The night screen: always-visible sync status, the state-specific content, and the end-night action. */
 @Composable
@@ -41,13 +38,7 @@ fun NightScreen(
     onDone: () -> Unit,
     onOpenDebug: () -> Unit = {},
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = ScreenHorizontalPadding)
-            .padding(top = ScreenTopPadding, bottom = ScreenBottomPadding),
-        verticalArrangement = Arrangement.spacedBy(ScreenContentGap),
-    ) {
+    ScreenContainer(scrollable = false, bottomPadding = ScreenBottomPadding) {
         DebugBanner(state.activeDebugSwitches)
         // BuildConfig.DEBUG-gated, same as the Debug row on Setup (SetupScreen.kt): the simulator's buttons
         // need to be reachable while a simulated night is actually running, not just before it starts.
@@ -63,6 +54,9 @@ fun NightScreen(
         StatusLine(text = statusLineText(state), ok = state.lastSyncOk != false)
         state.bandAlarmStatus?.let { status ->
             StatusLine(text = bandAlarmStatusLineText(status), ok = status.confirmed)
+        }
+        if (state.noPhoneAlarmWarning) {
+            AmberWarningLine(text = stringResource(R.string.warning_no_phone_alarm))
         }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
@@ -81,11 +75,20 @@ fun NightScreen(
             is NightScreenContent.MorningReport ->
                 com.nikita.sleepcycle.ui.components.PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onDone)
             is NightScreenContent.Loading -> Unit
-            else -> SecondaryActionButton(text = endActionLabel(state.endAction), onClick = onRequestEndNight)
+            // Item 1: disabled and relabelled the instant "confirm" is tapped, for the whole ~3 s endNight
+            // takes - the owner tapped this twice on both real nights because it stayed enabled with no
+            // indication anything was happening.
+            else -> SecondaryActionButton(
+                text = if (state.endingNight) stringResource(R.string.night_ending) else endActionLabel(state.endAction),
+                onClick = onRequestEndNight,
+                enabled = !state.endingNight,
+            )
         }
     }
 
-    if (state.confirmingEndNight) {
+    // Item 1: never shown while ending, even if a stray onRequestEndNight slipped through - the confirmation
+    // dialog must not be re-openable while ending.
+    if (state.confirmingEndNight && !state.endingNight) {
         val (titleRes, messageRes) = confirmDialogTextResources(state.endAction)
         ConfirmDialog(
             title = stringResource(titleRes),

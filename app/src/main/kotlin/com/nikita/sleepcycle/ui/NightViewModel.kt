@@ -39,10 +39,13 @@ import com.nikita.sleepcycle.night.writeAppSettings
 import com.nikita.sleepcycle.ui.permissions.currentPermissionStatus
 import com.nikita.sleepcycle.ui.state.ConnectionTestState
 import com.nikita.sleepcycle.ui.state.DEFAULT_BAND_MAC
+import com.nikita.sleepcycle.ui.state.EndNightFlowState
 import com.nikita.sleepcycle.ui.state.PermissionStatus
 import com.nikita.sleepcycle.ui.state.Screen
 import com.nikita.sleepcycle.ui.state.UiState
 import com.nikita.sleepcycle.ui.state.buildUiState
+import com.nikita.sleepcycle.ui.state.canConfirmEndNight
+import com.nikita.sleepcycle.ui.state.canRequestEndNight
 import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
@@ -78,6 +81,7 @@ private data class ExtraInputs(
     val connectionTest: ConnectionTestState,
     val nightLogFiles: List<File>,
     val confirmingEndNight: Boolean,
+    val endingNight: Boolean,
 )
 
 private data class ReportInputs(
@@ -106,6 +110,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     private val nightLogFiles = MutableStateFlow<List<File>>(emptyList())
     private val confirmingEndNight = MutableStateFlow(false)
+    /** Item 1: true from the moment "confirm" is tapped until endNight's result is rendered - see ui/state/EndNightFlowState.kt. */
+    private val endingNight = MutableStateFlow(false)
     private val showingMorningReport = MutableStateFlow(false)
     private val morningReportEndedAt = MutableStateFlow<Instant?>(null)
     private val cachedEngineView = MutableStateFlow<NightEngineView?>(null)
@@ -117,7 +123,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     val uiState: StateFlow<UiState> = combine(
         combine(appSettings, observedNightState, now, screen, gadgetbridgeInstalled, ::CoreInputs),
-        combine(permissionStatus, connectionTest, nightLogFiles, confirmingEndNight, ::ExtraInputs),
+        combine(permissionStatus, connectionTest, nightLogFiles, confirmingEndNight, endingNight, ::ExtraInputs),
         combine(showingMorningReport, morningReportEndedAt, cachedEngineView, ::ReportInputs),
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
         errorMessage,
@@ -149,6 +155,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             connectionTest = extra.connectionTest,
             nightLogFiles = extra.nightLogFiles,
             confirmingEndNight = extra.confirmingEndNight,
+            endingNight = extra.endingNight,
             showingMorningReport = report.showingMorningReport,
             morningReportEndedAt = report.morningReportEndedAt,
             debugOptions = debug.effectiveOptions(),
@@ -329,12 +336,24 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Night screen actions.
-    fun requestEndNight() { confirmingEndNight.value = true }
+    /** Item 1: ignored while the dialog is already open or a previous confirm is still ending the night - the confirmation dialog must never be re-openable mid-end. */
+    fun requestEndNight() {
+        if (!canRequestEndNight(EndNightFlowState(confirmingEndNight.value, endingNight.value))) return
+        confirmingEndNight.value = true
+    }
     fun cancelEndNight() { confirmingEndNight.value = false }
 
-    /** Renders the report endNight returns from inside its own lock (D1), not a snapshot taken here beforehand - a tick could commit a newer state between that snapshot and endNight's own read. */
+    /**
+     * Renders the report endNight returns from inside its own lock (D1), not a snapshot taken here beforehand -
+     * a tick could commit a newer state between that snapshot and endNight's own read. Item 1: [endingNight]
+     * disables the button and shows "Ending night..." for the whole ~3 s endNight takes, and a second confirm
+     * while it is still running is ignored - `endNightTracking` (NightController.endNight) is itself idempotent
+     * too, so even a call that slipped past this guard would not repeat the work.
+     */
     fun confirmEndNight() {
+        if (!canConfirmEndNight(EndNightFlowState(confirmingEndNight.value, endingNight.value))) return
         confirmingEndNight.value = false
+        endingNight.value = true
         viewModelScope.launch {
             val report = endNightTracking(context, Instant.now())
             if (report != null) {
@@ -342,6 +361,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 morningReportEndedAt.value = report.endedAt
             }
             showingMorningReport.value = true
+            endingNight.value = false
         }
     }
 
@@ -350,6 +370,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         showingMorningReport.value = false
         cachedEngineView.value = null
         morningReportEndedAt.value = null
+        endingNight.value = false
         screen.value = Screen.BeforeBed
         viewModelScope.launch(Dispatchers.IO) { clearMorningReport(context) }
     }

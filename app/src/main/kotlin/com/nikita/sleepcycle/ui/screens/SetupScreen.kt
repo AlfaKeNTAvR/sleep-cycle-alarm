@@ -10,13 +10,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,6 +32,7 @@ import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.SetupCheckReport
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
+import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.permissions.batteryOptimizationSettingsIntent
@@ -48,9 +45,6 @@ import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.ConnectedDot
 import com.nikita.sleepcycle.ui.theme.ErrorRed
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
-import com.nikita.sleepcycle.ui.theme.ScreenContentGap
-import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
-import com.nikita.sleepcycle.ui.theme.ScreenTopPadding
 
 /** The Setup checklist screen. */
 @Composable
@@ -68,14 +62,7 @@ fun SetupScreen(
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = ScreenHorizontalPadding)
-            .padding(top = ScreenTopPadding, bottom = ScreenContentGap),
-        verticalArrangement = Arrangement.spacedBy(ScreenContentGap),
-    ) {
+    ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconGlyphButton(
                 glyph = stringResource(R.string.glyph_back),
@@ -102,6 +89,7 @@ fun SetupScreen(
                 text = stringResource(R.string.setup_pick_export_file),
                 onClick = { exportFileLauncher.launch(arrayOf("*/*")) },
             )
+            Text(text = stringResource(R.string.setup_pick_export_file_helper), style = MaterialTheme.typography.bodySmall)
             if (!state.items.any { it.kind == SetupItemKind.NOTIFICATIONS && it.complete }) {
                 SecondaryActionButton(
                     text = stringResource(R.string.setup_grant) + ": " + stringResource(R.string.setup_item_notifications_label),

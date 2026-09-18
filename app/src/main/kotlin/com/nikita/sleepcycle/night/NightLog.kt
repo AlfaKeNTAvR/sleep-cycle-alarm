@@ -57,11 +57,20 @@ fun appendToCurrentNightLog(context: Context, event: NightLogEvent) {
     appendLogLine(file, event)
 }
 
-/** Appends one formatted log line directly to [file]. The shared primitive behind every log target above. */
+/**
+ * Appends one formatted log line directly to [file]. The shared primitive behind every log target above.
+ * Stamps [NightLogEvent.at] to the moment of THIS write, discarding whatever instant the caller built the
+ * event with: a call site captures `now` before doing its own I/O (a sync, a band command, a dismissal
+ * read-back...) and only logs afterwards, so trusting the caller's `at` can write a line whose timestamp is
+ * earlier than a line already written before it - a night log that does not read in time order is much
+ * harder to diagnose. A caller that needs that earlier instant on record keeps it as its own explicit field
+ * (e.g. `scheduledFor`, `plannedAt`) rather than relying on `at`.
+ */
 fun appendLogLine(file: File, event: NightLogEvent) {
+    val stamped = event.copy(at = Instant.now())
     try {
         file.parentFile?.mkdirs()
-        file.appendText(formatNightLogLine(event) + "\n")
+        file.appendText(formatNightLogLine(stamped) + "\n")
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to append log event ${event.type} to ${file.path}", error)
     }

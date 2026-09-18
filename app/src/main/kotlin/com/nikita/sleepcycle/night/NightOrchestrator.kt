@@ -71,8 +71,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         NightLogEvent(
             now, "tick",
             mapOf(
-                "scheduledFor" to (scheduledFor?.toString() ?: ""),
-                "receivedAt" to (receivedAt?.toString() ?: ""),
+                "scheduledFor" to formatTickTimeField(scheduledFor),
+                "receivedAt" to formatTickTimeField(receivedAt),
                 "startedAt" to startedAt.toString()
             )
         ),

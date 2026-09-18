@@ -6,9 +6,7 @@ package com.nikita.sleepcycle.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,11 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
 import com.nikita.sleepcycle.ui.components.MediumTimeText
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
+import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.components.SleepLengthChip
 import com.nikita.sleepcycle.ui.components.StatusLine
@@ -29,9 +29,6 @@ import com.nikita.sleepcycle.ui.components.ToggleRow
 import com.nikita.sleepcycle.ui.state.BeforeBedUiState
 import com.nikita.sleepcycle.ui.state.SleepLengthOption
 import com.nikita.sleepcycle.ui.theme.ChipGap
-import com.nikita.sleepcycle.ui.theme.ScreenContentGap
-import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
-import com.nikita.sleepcycle.ui.theme.ScreenTopPadding
 import java.time.LocalTime
 
 /**
@@ -52,13 +49,7 @@ fun BeforeBedScreen(
     onConfirmDebugNightStart: () -> Unit = {},
     onCancelDebugNightStart: () -> Unit = {},
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = ScreenHorizontalPadding)
-            .padding(top = ScreenTopPadding, bottom = ScreenContentGap),
-        verticalArrangement = Arrangement.spacedBy(ScreenContentGap),
-    ) {
+    ScreenContainer(scrollable = false) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             StatusLine(
                 text = if (state.bandReady) stringResource(R.string.before_bed_band_connected) else stringResource(R.string.before_bed_band_not_ready),
@@ -123,6 +114,9 @@ fun BeforeBedScreen(
 
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
+        if (state.noPhoneAlarmWarning) {
+            AmberWarningLine(text = stringResource(R.string.warning_no_phone_alarm))
+        }
         if (state.startNightBlocker != null) {
             Text(
                 text = stringResource(setupBlockerReasonRes(state.startNightBlocker)),

@@ -34,7 +34,8 @@ adb -s PHONE_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
 Before the first night, in Gadgetbridge:
 
 - Settings > Developer options > Intent API: turn on "Allow activity sync trigger", "Broadcast on activity sync finish", "Allow database export trigger", "Broadcast on export".
-- Auto export: turn on, and set a save location (the file our app's Setup screen will pick).
+- Settings > Automations > Auto export database: turn on "Auto export enabled", then set "Export location" to a save location our app can read, e.g. Documents (the file our app's Setup screen will pick). This location must be set, or Gadgetbridge's export trigger (what our app sends every sync) writes nothing.
+- Do NOT use Settings > Data management > Export Data instead: since Android 11 that writes inside Gadgetbridge's own app-private folder, which our app cannot read and the system file picker will not even show.
 - Band gear > Developer options: turn on "Allow 3rd party apps to set alarms".
 - Open the band's alarm list and clear the title of one more disabled alarm, so at least two slots are free or already ours (SCA-A / SCA-B); the Setup screen's "Test connection" checks this and tells you exactly how many more it needs.
 - Turn off the band's own smart alarm (e.g. its default 08:30 one) if it is enabled - it will still vibrate on its own schedule regardless of this app, and Setup's connection test flags any such alarm as a non-blocking warning.
