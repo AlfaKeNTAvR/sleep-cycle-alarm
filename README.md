@@ -110,8 +110,10 @@ and the night log all work without waiting for a real night. About 15 minutes en
     into a real bedtime by accident.
 13. Open **Logs**: the night you just ran carries a **simulated** tag, and its file is named
     `night-sim-<yyyyMMdd-HHmm>.jsonl` (a real night is always `night-<yyyyMMdd-HHmm>.jsonl`, so the two can
-    never be confused). Share it to see every `data` event tagged `source=simulated` and every
-    `band_alarm_command` tagged `dryRun=true`.
+    never be confused). Tap the row to reopen that night's summary - the same report you just saw - or use its
+    three-dot button to **Share** it, and see every `data` event tagged `source=simulated` and every
+    `band_alarm_command` tagged `dryRun=true`. The same menu's **Delete** removes a night for good after one
+    confirmation, which is how to clear desk-test logs out.
 14. Separately, any time no night is active (this button is disabled, with a reason shown underneath, while a
     night is running - it must never be able to replace the real night's own alarm): from the Debug screen,
     tap **Ring phone alarm in 1 min** to check the full-screen alarm activity, the sound and the

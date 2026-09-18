@@ -152,7 +152,7 @@ private suspend fun endNightLocked(context: Context, now: Instant): EndNightRepo
     if (state != null) {
         dismissBothBandAlarmTitles(context, state.debugOptions)
         withContext(Dispatchers.IO) { verifyBandAlarmCleanup(context, state) }
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "night_end", mapOf("summary" to nightEndSummaryText(state, now))), state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.startedAt, NightLogEvent(now, "night_end", nightEndFields(state, now)), state.debugOptions.isAnyEnabled)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
     }
     cancelTick(context)
@@ -235,7 +235,10 @@ private fun logAlarmReadiness(context: Context, now: Instant, debugNight: Boolea
     )
 }
 
-private fun nightEndSummaryText(state: NightState, now: Instant): String {
-    val summary = buildNightEngineView(state, now).summary
-    return "total=${summary.totalSleep} stretches=${summary.stretches.size}"
-}
+/**
+ * The night's whole summary, written into night_end as structured fields (see PastNightLog.kt) so the Logs
+ * screen can redraw this night later from its log alone - the old single `summary=total=... stretches=...`
+ * line said how much was slept but not when, which is not enough to draw a morning report.
+ */
+private fun nightEndFields(state: NightState, now: Instant): Map<String, String> =
+    encodeNightEndFields(buildNightEngineView(state, now).summary, state.settings)

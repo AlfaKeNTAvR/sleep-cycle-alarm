@@ -52,6 +52,33 @@ class NightLogTest {
         assertEquals("failed to open \"export.db\"\nsecond line\ttabbed", json.getJSONObject("fields").getString("cause"))
     }
 
+    @Test
+    fun `parses a formatted line back into the event that wrote it`() {
+        val event = NightLogEvent(
+            at = Instant.parse("2026-09-17T00:30:00Z"),
+            type = "sync",
+            fields = mapOf("ok" to "true", "durationMs" to "1234")
+        )
+
+        assertEquals(event, parseNightLogLine(formatNightLogLine(event)))
+    }
+
+    @Test
+    fun `parses a line that carries no fields`() {
+        val event = NightLogEvent(at = Instant.parse("2026-09-17T08:14:00Z"), type = "night_end", fields = emptyMap())
+
+        assertEquals(event, parseNightLogLine(formatNightLogLine(event)))
+    }
+
+    @Test
+    fun `a blank, truncated or non-object line parses as nothing rather than throwing`() {
+        assertEquals(null, parseNightLogLine(""))
+        assertEquals(null, parseNightLogLine("   "))
+        assertEquals(null, parseNightLogLine("""{"at":"2026-09-17T00:30:00Z","type":"sync","fiel"""))
+        assertEquals(null, parseNightLogLine("""{"type":"sync","fields":{}}"""), "a line with no at is not a usable event")
+        assertEquals(null, parseNightLogLine("""{"at":"not a time","type":"sync","fields":{}}"""))
+    }
+
     /**
      * Reproduces the defect from night-20260917-2143.jsonl: a call site captures `now` early, does some I/O,
      * then appends afterwards, so the event's own `at` is earlier than lines already on disk. [appendLogLine]

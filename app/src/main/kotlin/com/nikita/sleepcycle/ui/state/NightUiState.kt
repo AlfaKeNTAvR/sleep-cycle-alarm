@@ -78,12 +78,14 @@ sealed interface NightScreenContent {
     /** Amendment: the night is over (deadline passed, or woken at the alarm) but not ended yet. [reasonText] is the engine's own plain-English reason. [phoneSafetyAlarmTimeLabel] is the phone alarm that is still armed (D4). */
     data class NightFinished(val reasonText: String, val phoneSafetyAlarmTimeLabel: String?) : NightScreenContent
 
-    /** State D: the morning report, shown after "Stop night" / "I'm up, end night" is confirmed. */
+    /** State D: the morning report, shown after "Stop night" / "I'm up, end night" is confirmed, and again whenever a past night is reopened from the Logs screen. */
     data class MorningReport(
         val endedAtTimeLabel: String,
         val totalSleepDurationLabel: String,
         val wokeAtTimeLabel: String?,
         val stretches: List<StretchLine>,
+        /** False only for a past night whose log kept the total but not the per-stretch times (see PastNightLog.kt): the report then shows the real total and leaves the stretch card out, instead of drawing it empty or zeroed. Defaults to true, which is every night ended by this app. */
+        val stretchDetailRecorded: Boolean = true,
     ) : NightScreenContent
 
     data object Loading : NightScreenContent
