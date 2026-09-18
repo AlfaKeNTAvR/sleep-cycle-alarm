@@ -16,7 +16,7 @@ class OutcomeLogEventTest {
 
     @Test
     fun `DISMISS_PENDING logs as info band_alarm_waiting, not error (C5)`() {
-        val event = outcomeLogEvent(decision(BandAlarmOutcome.DISMISS_PENDING, pendingDismissTitles = setOf(BAND_ALARM_TITLE_A)), now)
+        val event = outcomeLogEvent(decision(BandAlarmOutcome.DISMISS_PENDING, pendingDismissTitles = setOf(BAND_ALARM_TITLE)), now)
 
         assertEquals("band_alarm_waiting", event?.type)
         assertNull(event?.fields?.get("step"), "must not carry the 'error' event shape (step/cause)")
@@ -30,11 +30,10 @@ class OutcomeLogEventTest {
     }
 
     @Test
-    fun `REQUESTED, RESENT, BLIND, UNCHANGED and TOO_SOON log nothing extra here`() {
+    fun `REQUESTED, BLIND, UNCHANGED and TOO_SOON log nothing extra here`() {
         // C1: TOO_SOON is logged separately, at info with both times, from NightOrchestrator.resolveBandAlarmState -
         // the only call site with both the target and the refreshed clock on hand - never as an error here.
         assertNull(outcomeLogEvent(decision(BandAlarmOutcome.REQUESTED), now))
-        assertNull(outcomeLogEvent(decision(BandAlarmOutcome.RESENT), now))
         assertNull(outcomeLogEvent(decision(BandAlarmOutcome.BLIND), now))
         assertNull(outcomeLogEvent(decision(BandAlarmOutcome.UNCHANGED), now))
         assertNull(outcomeLogEvent(decision(BandAlarmOutcome.TOO_SOON), now))

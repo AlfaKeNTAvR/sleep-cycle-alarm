@@ -54,8 +54,17 @@ fun mapRawBandAlarmRowsToSlots(rows: List<RawBandAlarmRow>, deviceId: Int): List
         )
     }
 
-/** [slot] looks free the way SET_ALARM decides it - disabled, with a null or empty title - regardless of the smart flag. Only [isFreeBandAlarmSlot] and [listPoachableSmartWakeupBandAlarmSlots] should call this directly. */
+/** [slot] looks free the way SET_ALARM decides it - disabled, with a null or empty title - regardless of the smart flag. Only [isFreeBandAlarmSlot], [findSlotSetAlarmWouldClaim] and [listPoachableSmartWakeupBandAlarmSlots] should call this directly. */
 private fun isDisabledAndUntitled(slot: BandAlarmSlot): Boolean = !slot.enabled && slot.title.isNullOrEmpty()
+
+/**
+ * The slot Gadgetbridge's own SET_ALARM picker would claim right now: the FIRST slot in table order that is
+ * disabled and untitled. That picker never looks at the smart flag (see this file's header), so neither does
+ * this - the point is to predict where a SET will really land, not where we would like it to. Null when no
+ * slot is free. Used to check that a move's SET reclaims the very slot its DISMISS just freed, which is the
+ * only way the time the band is armed with is actually overwritten.
+ */
+fun findSlotSetAlarmWouldClaim(slots: List<BandAlarmSlot>): BandAlarmSlot? = slots.firstOrNull(::isDisabledAndUntitled)
 
 /**
  * A slot is usable by us exactly when SET_ALARM would claim it AND it is not one of the band's own

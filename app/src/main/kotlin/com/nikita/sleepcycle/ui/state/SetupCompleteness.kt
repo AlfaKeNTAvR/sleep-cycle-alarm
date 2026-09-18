@@ -6,8 +6,6 @@ package com.nikita.sleepcycle.ui.state
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
-import com.nikita.sleepcycle.night.MIN_SLOTS_FOR_ALTERNATING_TITLES
-import com.nikita.sleepcycle.night.noPhoneAlarmTonight
 import java.time.Duration
 import java.time.Instant
 
@@ -27,29 +25,12 @@ fun setupCheckIsRecent(lastSetupCheckPassedAt: Instant?, now: Instant): Boolean 
 /** Whether "Start night" is enabled, and, if not, whether that is specifically because the setup check is missing or stale rather than the checklist itself being incomplete (the two reasons are mutually exclusive and shown differently on the Before-bed screen). */
 data class StartNightGate(val enabled: Boolean, val blockedBySetupCheck: Boolean)
 
-/**
- * True when tonight would run on a one-slot band with nothing on the phone to fall back on, which is the one
- * combination that can end with no alarm at all: on a single usable slot every move of the wake time clears
- * the band alarm and sets it again (BandAlarmSingleSlotMode.kt), Gadgetbridge never reports a SET that failed,
- * and after the night's bounded re-sends are spent the band is simply left empty. A deadline or the phone
- * backup guarantees something rings, so one of them is required before such a night may start.
- *
- * [usableBandAlarmSlots] is what the last passing setup check counted
- * ([AppSettings.lastSetupCheckUsableBandAlarmSlots]). Null means no check has passed - nothing is known about
- * the band, and the setup-check gate already blocks the night for that reason - so it never blocks here.
- * [debugOptions] lifts the requirement exactly when [debugOptionsRelaxSetup] does: a night that touches
- * neither Gadgetbridge nor the band has no band alarm to lose in the first place.
- */
-fun singleSlotNightNeedsPhoneAlarm(
-    usableBandAlarmSlots: Int?,
-    deadlineEnabled: Boolean,
-    phoneBackupEnabled: Boolean,
-    debugOptions: DebugOptions = DebugOptions()
-): Boolean {
-    if (debugOptionsRelaxSetup(debugOptions)) return false
-    if (usableBandAlarmSlots == null || usableBandAlarmSlots >= MIN_SLOTS_FOR_ALTERNATING_TITLES) return false
-    return noPhoneAlarmTonight(deadlineEnabled, phoneBackupEnabled)
-}
+// Removed 2026-09-18 (night 1): singleSlotNightNeedsPhoneAlarm blocked "Start night" on a one-slot band with
+// no deadline and no phone backup, on the grounds that a failed SET would leave the band with no alarm at all.
+// The night log disproved that premise - a DISMISS never disarms the band, so a failed move leaves it armed at
+// the PREVIOUS time, never empty. The amber "no phone alarm tonight" line (noPhoneAlarmTonight) still shows on
+// Before bed, the Night screen and the night notification; whether such a night should be blocked outright is
+// an open question for the owner, not something this file decides silently.
 
 /**
  * True only when the Debug screen's simulated band data AND dry-run band commands are both on - the one

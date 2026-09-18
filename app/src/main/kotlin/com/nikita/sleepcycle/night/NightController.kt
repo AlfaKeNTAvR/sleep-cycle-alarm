@@ -103,7 +103,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
                 debugOptions.isAnyEnabled
             )
             logAlarmReadiness(context, now, debugOptions.isAnyEnabled)
-            dismissBothBandAlarmTitles(context, debugOptions)
+            dismissOurBandAlarmTitle(context, debugOptions)
         }
         startNightServiceForTick(context)
     }
@@ -150,8 +150,9 @@ private suspend fun endNightLocked(context: Context, now: Instant): EndNightRepo
     stopAlarmRinging(context, ALARM_STOP_REASON_NIGHT_ENDED)
     val state = withContext(Dispatchers.IO) { loadNightState(context) }
     if (state != null) {
-        dismissBothBandAlarmTitles(context, state.debugOptions)
+        dismissOurBandAlarmTitle(context, state.debugOptions)
         withContext(Dispatchers.IO) { verifyBandAlarmCleanup(context, state) }
+        logLeftoverBandAlarm(context, state, now)
         appendNightLog(context, state.startedAt, NightLogEvent(now, "night_end", mapOf("summary" to nightEndSummaryText(state, now))), state.debugOptions.isAnyEnabled)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
     }
@@ -174,18 +175,50 @@ fun requestImmediateTick(context: Context) {
     }
 }
 
-/** A3: goes through [sendBandAlarmCommand], the one seam that honors dry run - never [sendDismissBandAlarm] directly, which would reach the real band even with "band commands not sent" switched on. */
-private suspend fun dismissBothBandAlarmTitles(context: Context, debugOptions: DebugOptions) {
+/**
+ * A3: goes through [sendBandAlarmCommand], the one seam that honors dry run - never [sendDismissBandAlarm]
+ * directly, which would reach the real band even with "band commands not sent" switched on.
+ *
+ * This does NOT disarm the band, and is not meant to: DISMISS_ALARM only clears Gadgetbridge's own row (see
+ * BandAlarmSingleSlotMode.kt). What it buys is that the row becomes the first free slot again, so the NEXT
+ * night's first SET lands in that same slot and overwrites the time the band is still armed with. What is
+ * left armed in the meantime is reported instead - see [logLeftoverBandAlarm].
+ */
+private suspend fun dismissOurBandAlarmTitle(context: Context, debugOptions: DebugOptions) {
     val deviceMac = readAppSettings(context).first().deviceMac ?: return
-    sendBandAlarmCommand(context, debugOptions, deviceMac, BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A))
-    sendBandAlarmCommand(context, debugOptions, deviceMac, BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_B))
+    sendBandAlarmCommand(context, debugOptions, deviceMac, BandAlarmCommand.Dismiss(BAND_ALARM_TITLE))
 }
 
 /**
- * C4: [dismissBothBandAlarmTitles] just sent both dismissals blind, with no read-back tracking of its own
- * (unlike a normal tick's decideBandAlarmCommands). Runs ONE sync, if a sync is even possible, and logs
- * whether the table now really shows both our titles gone - so ending the night is not "fire and forget" for
- * the very dismissals that matter most (nothing must keep buzzing after the owner said they are up).
+ * Night end, the honest part: the band is still armed at the last minute this app wrote to it
+ * ([NightState.lastBandAlarmSet]), because nothing in Gadgetbridge's Intent API can disarm a slot - SET_ALARM
+ * and DISMISS_ALARM both only edit the database, and only a slot marked "unused" (a long-press in
+ * Gadgetbridge's own alarm list, which the Intent API cannot reach) is ever dropped from what is sent to the
+ * band. So the leftover is recorded rather than pretended away: it will vibrate again at that same local time
+ * unless the next night's first SET overwrites the slot first, or the owner clears it by hand.
+ */
+private fun logLeftoverBandAlarm(context: Context, state: NightState, now: Instant) {
+    val leftover = state.lastBandAlarmSet ?: return
+    appendNightLog(
+        context, state.startedAt,
+        NightLogEvent(
+            now, "band_alarm_leftover",
+            mapOf(
+                "time" to "%02d:%02d".format(leftover.hour, leftover.minute),
+                "title" to leftover.title,
+                "cause" to "the band stays armed at the last time this app set; no Gadgetbridge intent can disarm a slot"
+            )
+        ),
+        state.debugOptions.isAnyEnabled
+    )
+}
+
+/**
+ * C4: [dismissOurBandAlarmTitle] just sent the dismissal blind, with no read-back tracking of its own (unlike
+ * a normal tick's decideBandAlarmCommands). Runs ONE sync, if a sync is even possible, and logs whether the
+ * table now really shows our title gone - so ending the night is not "fire and forget" for the dismissal that
+ * frees the slot tomorrow's first SET has to reclaim. "Confirmed" here means Gadgetbridge's row is clear, not
+ * that the band is disarmed - see [logLeftoverBandAlarm] for what is still armed.
  */
 private suspend fun verifyBandAlarmCleanup(context: Context, state: NightState) {
     val appSettings = readAppSettings(context).first()
@@ -207,7 +240,7 @@ private suspend fun verifyBandAlarmCleanup(context: Context, state: NightState) 
             debugNight
         )
         is BandDataResult.Success -> {
-            val stillPresent = result.bandAlarms.filter { it.title == BAND_ALARM_TITLE_A || it.title == BAND_ALARM_TITLE_B }
+            val stillPresent = result.bandAlarms.filter { it.title == BAND_ALARM_TITLE }
             val event = if (stillPresent.isEmpty()) {
                 NightLogEvent(Instant.now(), "band_alarm_cleanup_confirmed", emptyMap())
             } else {

@@ -23,6 +23,7 @@ private fun state(
     screen: Screen = Screen.BeforeBed,
     showingMorningReport: Boolean = false,
     morningReportEndedAt: String? = null,
+    morningReportBandAlarmLeftover: com.nikita.sleepcycle.night.BandAlarmCommitment? = null,
     debugOptions: DebugOptions = DebugOptions(),
     confirmingEndNight: Boolean = false,
     endingNight: Boolean = false,
@@ -40,6 +41,7 @@ private fun state(
     confirmingEndNight = confirmingEndNight,
     showingMorningReport = showingMorningReport,
     morningReportEndedAt = morningReportEndedAt?.let(::instant),
+    morningReportBandAlarmLeftover = morningReportBandAlarmLeftover,
     debugOptions = debugOptions,
     endingNight = endingNight,
     errorMessage = null,
@@ -200,6 +202,36 @@ class NightScreenStateTest {
         assertEquals("5 h 54", content.totalSleepDurationLabel)
         assertEquals(2, content.stretches.size)
         assertEquals("1.3", content.stretches[0].cyclesLabel)
+        assertNull(content.bandAlarmLeftoverTimeLabel, "nothing was ever set on the band, so nothing is left armed")
+    }
+
+    @Test fun `the morning report names the time the band is still armed at`() {
+        // No Gadgetbridge intent can disarm a slot, so the last minute this app SET survives the night and the
+        // report has to say so rather than implying the band is clear.
+        val view = com.nikita.sleepcycle.night.NightEngineView(
+            sleepState = SleepState.AWAKE,
+            summary = com.nikita.sleepcycle.engine.NightSummary(
+                totalSleep = java.time.Duration.ofMinutes(354),
+                stretches = listOf(
+                    com.nikita.sleepcycle.engine.StretchSummary(instant("2026-09-17T00:30"), instant("2026-09-17T06:15"), java.time.Duration.ofMinutes(345), 3.8),
+                ),
+            ),
+            wakeOptions = emptyList(),
+        )
+
+        val result = state(
+            nightState = null,
+            engineView = view,
+            showingMorningReport = true,
+            morningReportEndedAt = "2026-09-17T06:50",
+            morningReportBandAlarmLeftover = com.nikita.sleepcycle.night.BandAlarmCommitment(
+                com.nikita.sleepcycle.night.BAND_ALARM_TITLE, 8, 20, instant("2026-09-17T06:17")
+            ),
+            screen = Screen.Night,
+        )
+
+        val content = result.night!!.content as NightScreenContent.MorningReport
+        assertEquals("08:20", content.bandAlarmLeftoverTimeLabel)
     }
 
     @Test fun `with no night at all, the night screen state is null`() {

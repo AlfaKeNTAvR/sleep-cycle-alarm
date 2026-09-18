@@ -139,7 +139,7 @@ class NightStateTest {
 
     @Test
     fun `round trips a band alarm commitment's blindResendCount`() {
-        val state = baseState().copy(requestedBandAlarm = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, Instant.parse("2026-09-17T04:00:00Z"), blindResendCount = 3))
+        val state = baseState().copy(requestedBandAlarm = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, Instant.parse("2026-09-17T04:00:00Z"), blindResendCount = 3))
 
         val roundTripped = decodeNightState(encodeNightState(state))
 
@@ -247,24 +247,25 @@ class NightStateTest {
     }
 
     @Test
-    fun `round trips the band alarm slot mode and the single-slot re-send count`() {
-        val state = baseState().copy(bandAlarmSlotMode = BandAlarmSlotMode.SINGLE_SLOT, singleSlotResendsUsed = 3)
+    fun `round trips the last band alarm actually set and the re-send count`() {
+        val lastSet = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 17, Instant.parse("2026-09-17T04:00:00Z"))
+        val state = baseState().copy(lastBandAlarmSet = lastSet, singleSlotResendsUsed = 3)
 
         val roundTripped = decodeNightState(encodeNightState(state))
 
-        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, roundTripped.bandAlarmSlotMode)
+        assertEquals(lastSet, roundTripped.lastBandAlarmSet, "the morning report names the time the band is still armed at")
         assertEquals(3, roundTripped.singleSlotResendsUsed, "a restart mid-night must not hand the band another full set of re-sends")
     }
 
     @Test
-    fun `state saved before the slot mode existed decodes as no mode yet and no re-sends spent`() {
+    fun `state saved before the last-set field existed decodes as nothing set yet and no re-sends spent`() {
         val json = fullStateJson()
-        json.remove("bandAlarmSlotMode")
+        json.remove("lastBandAlarmSet")
         json.remove("singleSlotResendsUsed")
 
         val decoded = decodeNightState(json.toString())
 
-        assertNull(decoded.bandAlarmSlotMode)
+        assertNull(decoded.lastBandAlarmSet)
         assertEquals(0, decoded.singleSlotResendsUsed)
     }
 

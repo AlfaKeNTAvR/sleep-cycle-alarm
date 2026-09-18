@@ -10,6 +10,7 @@ package com.nikita.sleepcycle.night
 // from BandAlarmDecision.kt at all.
 
 import com.nikita.sleepcycle.bridge.BandAlarmSlot
+import com.nikita.sleepcycle.bridge.findSlotSetAlarmWouldClaim
 import java.time.Instant
 import java.time.LocalTime
 
@@ -124,11 +125,11 @@ internal data class OrphanAdoption(
 )
 
 /**
- * C3: any ENABLED slot carrying exactly one of [ALL_BAND_ALARM_TITLES] that is referenced by neither
- * [currentRequested] nor [currentConfirmed] nor already tracked in [currentPendingDismiss] is an orphan -
- * nothing in this run's state accounts for it, which is exactly the trace a kill between sending a SET and
- * saving state leaves behind. A match against [desiredLocalTime] is adopted outright as confirmed; anything
- * else is dismissed and tracked pending, same as any other dismissal.
+ * C3: an ENABLED slot carrying exactly [BAND_ALARM_TITLE] that is referenced by neither [currentRequested] nor
+ * [currentConfirmed] nor already tracked in [currentPendingDismiss] is an orphan - nothing in this run's state
+ * accounts for it, which is exactly the trace a kill between sending a SET and saving state leaves behind. A
+ * match against [desiredLocalTime] is adopted outright as confirmed; anything else is dismissed and tracked
+ * pending, same as any other dismissal.
  */
 internal fun adoptOrphanSlots(
     slots: List<BandAlarmSlot>,
@@ -143,7 +144,7 @@ internal fun adoptOrphanSlots(
     var confirmedBandAlarm: BandAlarmCommitment? = null
     var pendingDismissTitles = currentPendingDismiss
     var outcome: BandAlarmOutcome? = null
-    ALL_BAND_ALARM_TITLES.filter { it !in referencedTitles }.forEach { title ->
+    OUR_BAND_ALARM_TITLES.filter { it !in referencedTitles }.forEach { title ->
         val orphan = slots.firstOrNull { it.enabled && it.title == title } ?: return@forEach
         if (desiredLocalTime != null && orphan.hour == desiredLocalTime.hour && orphan.minute == desiredLocalTime.minute) {
             confirmedBandAlarm = BandAlarmCommitment(title, orphan.hour, orphan.minute, now)
@@ -155,6 +156,30 @@ internal fun adoptOrphanSlots(
         }
     }
     return OrphanAdoption(commands, confirmedBandAlarm, pendingDismissTitles, outcome)
+}
+
+/**
+ * Our alarm sits in [ourPosition] but a move's SET would be claimed by [wouldLandAtPosition] instead, so the
+ * band would stay armed at the old time in [ourPosition] while the new time went somewhere else entirely.
+ * Positions are the exported table's own 0-based ones; the owner-facing wording adds 1, like everywhere else.
+ */
+data class BandAlarmSlotRelocationRisk(val ourPosition: Int, val wouldLandAtPosition: Int)
+
+/**
+ * The move protocol only overwrites what the band is armed with when the SET lands back in the slot the
+ * DISMISS just freed (BandAlarmSingleSlotMode.kt). Gadgetbridge picks the FIRST disabled, untitled slot, so
+ * that holds exactly while no other free slot sits above ours. When one does - the owner deleted an alarm
+ * above us, say - the next move relocates our alarm downwards and abandons the old slot still armed at the old
+ * time, which is precisely how night 1 woke the owner at 07:04. Nothing here can steer Gadgetbridge's picker,
+ * so this only reports it (`band_alarm_slot_risk`); the remedy is the owner giving that higher free slot a
+ * title so the picker skips it. Null when there is no risk, or no slot of ours to be moved yet.
+ */
+fun findBandAlarmSlotRelocationRisk(slots: List<BandAlarmSlot>, title: String): BandAlarmSlotRelocationRisk? {
+    val ourSlot = findActiveSlot(slots, title) ?: return null
+    val afterDismiss = slots.map { if (it.position == ourSlot.position) it.copy(enabled = false, title = "") else it }
+    val claimed = findSlotSetAlarmWouldClaim(afterDismiss) ?: return null
+    if (claimed.position == ourSlot.position) return null
+    return BandAlarmSlotRelocationRisk(ourSlot.position, claimed.position)
 }
 
 /** A slot carrying [title], exactly (never by substring - see BandAlarmMapping.kt for the substring-collision check), regardless of enabled state. */

@@ -45,9 +45,14 @@ data class NightState(
     val finishedCleanupTicksUsed: Int = 0,
     /** BandAlarmDecision.kt's smart-wakeup warning as of the last tick that had a table to check (a blind tick keeps the previous value - see NightOrchestrator.kt). Null once no our-titled slot carries the flag. Defaults to null so state saved before this field existed still decodes. */
     val smartWakeupWarning: BandAlarmSmartWakeupWarning? = null,
-    /** Which band alarm protocol the last tick ran (BandAlarmSlotMode.kt), for the Night screen and the night log. Null before the first tick of the night, and for state saved before this field existed. */
-    val bandAlarmSlotMode: BandAlarmSlotMode? = null,
-    /** How many of the night's [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] single-slot re-sends are already spent. Defaults to 0 so state saved before this field existed still decodes. */
+    /**
+     * The last hour:minute this app really SET on the band tonight, and when. Never cleared by a dismissal:
+     * DISMISS_ALARM only edits Gadgetbridge's database and the band stays armed at its last written value
+     * (BandAlarmSingleSlotMode.kt), so this - not [confirmedBandAlarm] - is what the band is still carrying
+     * once the night ends. Null before the first SET, and for state saved before this field existed.
+     */
+    val lastBandAlarmSet: BandAlarmCommitment? = null,
+    /** How many of the night's [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] bounded re-sends are already spent. Defaults to 0 so state saved before this field existed still decodes. */
     val singleSlotResendsUsed: Int = 0
 )
 
@@ -69,7 +74,7 @@ fun encodeNightState(state: NightState): String {
     json.put("debugOptions", encodeDebugOptions(state.debugOptions))
     json.put("finishedCleanupTicksUsed", state.finishedCleanupTicksUsed)
     json.put("smartWakeupWarning", state.smartWakeupWarning?.let(::encodeSmartWakeupWarning) ?: JSONObject.NULL)
-    json.put("bandAlarmSlotMode", state.bandAlarmSlotMode?.name ?: JSONObject.NULL)
+    json.put("lastBandAlarmSet", state.lastBandAlarmSet?.let(::encodeBandAlarmCommitment) ?: JSONObject.NULL)
     json.put("singleSlotResendsUsed", state.singleSlotResendsUsed)
     return json.toString()
 }
@@ -98,15 +103,9 @@ fun decodeNightState(text: String): NightState {
         debugOptions = decodeDebugOptionsTolerant(json.optJSONObject("debugOptions")),
         finishedCleanupTicksUsed = if (json.has("finishedCleanupTicksUsed")) json.getInt("finishedCleanupTicksUsed") else 0,
         smartWakeupWarning = decodeSmartWakeupWarningTolerant(json.optJSONObject("smartWakeupWarning")),
-        bandAlarmSlotMode = decodeBandAlarmSlotModeTolerant(json.optStringOrNull("bandAlarmSlotMode")),
+        lastBandAlarmSet = decodeCommitmentTolerant(json.optJSONObject("lastBandAlarmSet")),
         singleSlotResendsUsed = if (json.has("singleSlotResendsUsed")) json.getInt("singleSlotResendsUsed") else 0
     )
-}
-
-/** Absent, null, or an unknown mode name (a newer app version wrote it) decodes as null: the screen simply does not name a mode until the next tick resolves one. */
-private fun decodeBandAlarmSlotModeTolerant(name: String?): BandAlarmSlotMode? {
-    if (name == null) return null
-    return BandAlarmSlotMode.values().firstOrNull { it.name == name }
 }
 
 private fun encodeSmartWakeupWarning(warning: BandAlarmSmartWakeupWarning): JSONObject = JSONObject().apply {

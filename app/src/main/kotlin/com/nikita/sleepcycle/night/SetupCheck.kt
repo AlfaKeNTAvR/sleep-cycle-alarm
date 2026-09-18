@@ -25,14 +25,14 @@ import java.time.Instant
 private val CONNECTION_TEST_LOOKBACK: Duration = Duration.ofDays(1)
 
 /**
- * One usable slot is enough to run a night: with exactly one, moving the wake time means clearing our own
- * band alarm and setting it again in the same tick (BandAlarmSingleSlotMode.kt). Below this, nothing can be
- * set at all, which is the only slot situation that still blocks "Start night". "Usable" is
- * [countUsableBandAlarmSlots]'s definition and nothing looser: a disabled slot still carrying one of our own
- * titles is NOT usable, because Gadgetbridge's picker skips it and nothing ever clears it.
+ * One usable slot is all a night ever needs, and all it ever uses: the app holds one title in one slot all
+ * night and moves the wake time by clearing that slot and setting it again in the same tick
+ * (BandAlarmSingleSlotMode.kt). Below this, nothing can be set at all, which is the only slot situation that
+ * blocks "Start night". "Usable" is [countUsableBandAlarmSlots]'s definition and nothing looser: a disabled
+ * slot still carrying our own title is NOT usable, because Gadgetbridge's picker skips it and nothing ever
+ * clears it.
  */
 private const val MIN_USABLE_BAND_ALARM_SLOTS = 1
-private val OUR_BAND_ALARM_TITLES: Set<String> = setOf(BAND_ALARM_TITLE_A, BAND_ALARM_TITLE_B)
 
 /** How urgently one setup check line needs the owner's attention, so the UI can style it without parsing English. */
 enum class SetupCheckLineSeverity {
@@ -49,7 +49,7 @@ enum class SetupCheckLineSeverity {
 /** One line of the setup check report, plain English plus how urgently it needs attention. */
 data class SetupCheckLine(val text: String, val severity: SetupCheckLineSeverity)
 
-/** Everything the setup checklist needs to know to decide whether tonight can start. [usableBandAlarmSlots] is [countUsableBandAlarmSlots]'s count, persisted by the caller so the Before-bed screen can require a phone alarm on a one-slot band (see SetupCompleteness.kt). */
+/** Everything the setup checklist needs to know to decide whether tonight can start. [usableBandAlarmSlots] is [countUsableBandAlarmSlots]'s count, persisted by the caller and shown on the checklist; only one of them is ever used. */
 data class SetupCheckReport(
     val isReady: Boolean,
     val lines: List<SetupCheckLine>,
@@ -111,9 +111,6 @@ internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, ph
             if (slotsShort) SetupCheckLineSeverity.ACTION_NEEDED else SetupCheckLineSeverity.INFO
         )
     )
-    if (usableSlots in MIN_USABLE_BAND_ALARM_SLOTS until MIN_SLOTS_FOR_ALTERNATING_TITLES) {
-        lines += SetupCheckLine(singleSlotAdviceLine(), SetupCheckLineSeverity.INFO)
-    }
     if (otherAlarms.isNotEmpty()) {
         lines += SetupCheckLine(
             "Other band alarms will still ring regardless: ${otherAlarms.joinToString(", ")}.",
@@ -172,18 +169,6 @@ private fun slotAvailabilityLine(freeSlots: Int, usableSlots: Int): String =
         "No band alarm can be set: in Gadgetbridge open the band's alarms and clear the title of $short more " +
             "switched-off alarm(s)."
     }
-
-/**
- * The one-usable-slot case: every move of the wake time clears our band alarm and sets it again in the same
- * tick (BandAlarmSingleSlotMode.kt), so the band is briefly without one - and a SET that silently fails can
- * make that gap permanent. It does not block the setup check itself, but it does mean the night needs a phone
- * alarm of its own; that is enforced on the Before-bed screen (SetupCompleteness.kt).
- */
-private fun singleSlotAdviceLine(): String =
-    "Only one usable band alarm. The band alarm is cleared and set again each time the wake time moves, and " +
-        "if that set is lost the band can be left with no alarm at all - so tonight needs a wake-up deadline " +
-        "or the phone backup alarm switched on. Freeing a second alarm (in Gadgetbridge, switch one off and " +
-        "clear its title) removes the gap entirely."
 
 /** Full-screen intent and notifications block the alarm outright, so a problem there is prominent too; the phone alarm still has the exact-alarm safety net either way, so neither blocks [SetupCheckReport.isReady]. */
 private fun phoneAlarmReadinessLines(readiness: AlarmNotificationReadiness): List<SetupCheckLine> = buildList {

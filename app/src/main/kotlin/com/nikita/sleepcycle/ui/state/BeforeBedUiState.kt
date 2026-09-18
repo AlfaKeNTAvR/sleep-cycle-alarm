@@ -23,8 +23,6 @@ data class BeforeBedUiState(
     val startNightBlocker: SetupItemKind?,
     /** True when the checklist itself is complete but no setup check has passed recently enough (see [SETUP_CHECK_VALIDITY_WINDOW]); mutually exclusive with [startNightBlocker] being non-null. */
     val startNightBlockedBySetupCheck: Boolean,
-    /** True when the band has only one usable alarm slot and neither the deadline nor the phone backup is on, so nothing would be guaranteed to ring (see [singleSlotNightNeedsPhoneAlarm]). Disables "Start night" until one of the two switches is turned on. */
-    val startNightBlockedByNoPhoneAlarm: Boolean = false,
     /** A1: every debug switch currently live: shows the amber warning banner naming all of them when non-empty. */
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
     /** True while "Start night" is asking the owner to confirm a simulated night (any debug option on) before it actually starts. */

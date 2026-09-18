@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.SleepState
+import com.nikita.sleepcycle.night.BandAlarmCommitment
 import com.nikita.sleepcycle.night.BandAlarmStatus
 import com.nikita.sleepcycle.night.MAX_SINGLE_SLOT_RESENDS_PER_NIGHT
 import com.nikita.sleepcycle.night.NightEngineView
@@ -39,6 +40,7 @@ fun buildNightUiState(
     zone: ZoneId,
     showingMorningReport: Boolean,
     morningReportEndedAt: Instant?,
+    morningReportBandAlarmLeftover: BandAlarmCommitment?,
     confirmingEndNight: Boolean,
     endingNight: Boolean = false,
 ): NightUiState? {
@@ -49,7 +51,7 @@ fun buildNightUiState(
             lastSyncOk = null,
             syncFailureCause = null,
             bandAlarmStatus = null,
-            content = buildMorningReportContent(view, morningReportEndedAt ?: now, zone),
+            content = buildMorningReportContent(view, morningReportEndedAt ?: now, zone, morningReportBandAlarmLeftover),
             endAction = EndNightAction.END,
             confirmingEndNight = false,
         )
@@ -61,6 +63,9 @@ fun buildNightUiState(
     val noPhoneAlarmWarning = noPhoneAlarmTonight(deadlineEnabled = state.settings.deadline != null, phoneBackupEnabled = state.settings.phoneBackupEnabled)
     val smartWakeupWarning = smartWakeupWarningUiFor(state)
     val resendLimitReached = state.singleSlotResendsUsed >= MAX_SINGLE_SLOT_RESENDS_PER_NIGHT
+    // resolveSyncOutcome nulls the band alarm table for exactly the ticks whose sync failed or returned stale
+    // data, so "the last sync was not ok" IS "the last tick was blind"; deriving it keeps one source of truth.
+    val bandAlarmBlind = state.lastSyncOk == false
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
@@ -69,7 +74,7 @@ fun buildNightUiState(
             activeDebugSwitches = activeDebugSwitches(state.debugOptions),
             noPhoneAlarmWarning = noPhoneAlarmWarning,
             smartWakeupWarning = smartWakeupWarning,
-            bandAlarmSlotMode = state.bandAlarmSlotMode,
+            bandAlarmBlind = bandAlarmBlind,
             bandAlarmResendLimitReached = resendLimitReached,
         )
     }
@@ -93,7 +98,7 @@ fun buildNightUiState(
         activeDebugSwitches = activeDebugSwitches(state.debugOptions),
         noPhoneAlarmWarning = noPhoneAlarmWarning,
         smartWakeupWarning = smartWakeupWarning,
-        bandAlarmSlotMode = state.bandAlarmSlotMode,
+        bandAlarmBlind = bandAlarmBlind,
         bandAlarmResendLimitReached = resendLimitReached,
     )
 }

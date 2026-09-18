@@ -44,7 +44,14 @@ Why: the phone is already connected and tested there; no IDE needed. Install not
 ## Data and debugging
 
 - **The app keeps a night log**: every sync (time, success, duration), every detected sleep and wake time, every alarm decision with its reason, every error. Exportable for analysis.
-  Why: when a night goes wrong we must be able to answer "why" from data, including overnight sync failures.
+  Why: when a night goes wrong we must be able to answer "why" from data, including overnight sync failures. Night 1 (2026-09-18) is what that bought: the log proved both of that night's bugs from its own fields.
+
+## The band alarm (decided 2026-09-18, after night 1)
+
+- **A DISMISS never disarms the band.** `DISMISS_ALARM` only edits Gadgetbridge's database. The band keeps whatever was LAST WRITTEN to each slot and only a SET into that slot replaces it. Night 1's log showed slot 2 reading `enabled:false, title:""` for an hour and the band vibrating at its old 07:04 anyway.
+- **One title, one slot, for the whole night**, replacing decision 11's two alternating titles. A move is DISMISS our title then SET the new time under the same title, in that order, in one tick, so the SET reclaims the slot the DISMISS just freed. Why: the gap the alternating titles existed to avoid does not exist on this hardware, while the second slot they used really did stay armed at a stale time. On night 1 the owner was woken twice.
+- **While awake, the band keeps the time it already has.** The wake time is only moved when the band reports a real, non-projected onset. Why: every short awakening put the engine back on a projected onset that slides with the clock, which walked the band alarm 77 min across night 1. The phone alarm and the screens still follow the projected onset, which is what they are for.
+- **Nothing can switch a band alarm off from this app.** Gadgetbridge only omits an alarm from what it sends the band when that alarm is marked "unused", which is a long-press in its own alarm list and is not reachable through the Intent API. So the night ends with an alarm still armed, and the app says so: the morning report and the night log both name the time. Clearing it is the owner's: long-press it in Gadgetbridge and mark it unused, or let the next night's first alarm overwrite that slot.
 - Cycle statistics (length per stretch in cycles) live in exported data and the morning report, not on the night screens.
 
 ## UI

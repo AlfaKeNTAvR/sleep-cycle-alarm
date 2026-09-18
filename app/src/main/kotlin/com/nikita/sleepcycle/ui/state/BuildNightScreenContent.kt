@@ -7,6 +7,7 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.WakeOption
+import com.nikita.sleepcycle.night.BandAlarmCommitment
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.napLengthFor
@@ -87,8 +88,17 @@ fun buildOverdueContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.Overd
 fun buildFinishedContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.NightFinished =
     NightScreenContent.NightFinished(plan.reason, plan.phoneAlarm?.let { formatClockTime(it, zone) })
 
-/** State D: the morning report, built from the view captured just before ending the night. */
-fun buildMorningReportContent(view: NightEngineView, endedAt: Instant, zone: ZoneId): NightScreenContent.MorningReport {
+/**
+ * State D: the morning report, built from the view captured just before ending the night.
+ * [bandAlarmLeftover] is [NightState.lastBandAlarmSet]: the band is still armed at that minute, because no
+ * Gadgetbridge intent can disarm a slot, and the report says so rather than implying the night is fully over.
+ */
+fun buildMorningReportContent(
+    view: NightEngineView,
+    endedAt: Instant,
+    zone: ZoneId,
+    bandAlarmLeftover: BandAlarmCommitment? = null,
+): NightScreenContent.MorningReport {
     val stretches = view.summary.stretches.map { stretch ->
         StretchLine(
             startTimeLabel = formatClockTime(stretch.onset, zone),
@@ -102,6 +112,7 @@ fun buildMorningReportContent(view: NightEngineView, endedAt: Instant, zone: Zon
         totalSleepDurationLabel = formatDuration(view.summary.totalSleep),
         wokeAtTimeLabel = view.summary.stretches.lastOrNull()?.end?.let { formatClockTime(it, zone) },
         stretches = stretches,
+        bandAlarmLeftoverTimeLabel = bandAlarmLeftover?.let { "%02d:%02d".format(it.hour, it.minute) },
     )
 }
 

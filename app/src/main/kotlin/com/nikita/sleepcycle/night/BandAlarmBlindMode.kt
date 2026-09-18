@@ -33,10 +33,9 @@ internal fun decideBlindBandAlarmCommands(
     singleSlotResendsUsed: Int
 ): BandAlarmDecision = when {
     requested == null && confirmed == null -> {
-        val title = ALL_BAND_ALARM_TITLES.firstOrNull { it !in pendingDismissTitles } ?: BAND_ALARM_TITLE_A
-        val freshRequest = BandAlarmCommitment(title, desiredTime.hour, desiredTime.minute, now)
+        val freshRequest = BandAlarmCommitment(BAND_ALARM_TITLE, desiredTime.hour, desiredTime.minute, now)
         blindDecision(
-            listOf(BandAlarmCommand.Set(title, desiredTime.hour, desiredTime.minute)),
+            listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE, desiredTime.hour, desiredTime.minute)),
             freshRequest, null, pendingDismissTitles, BandAlarmOutcome.BLIND, singleSlotResendsUsed
         )
     }
@@ -55,7 +54,7 @@ internal fun decideBlindBandAlarmCommands(
     }
 }
 
-/** Every blind decision reports [BandAlarmSlotMode.BLIND] and carries the night's single-slot re-send count through untouched - a blind tick can neither spend nor reset it. */
+/** Every blind decision is marked [BandAlarmDecision.blind] and carries the night's bounded re-send count through untouched - a blind tick can neither spend nor reset it. */
 private fun blindDecision(
     commands: List<BandAlarmCommand>,
     requested: BandAlarmCommitment?,
@@ -65,7 +64,7 @@ private fun blindDecision(
     singleSlotResendsUsed: Int
 ): BandAlarmDecision = BandAlarmDecision(
     commands, requested, confirmed, pendingDismissTitles, outcome,
-    smartWakeupWarning = null, slotMode = BandAlarmSlotMode.BLIND, singleSlotResendsUsed = singleSlotResendsUsed
+    smartWakeupWarning = null, blind = true, singleSlotResendsUsed = singleSlotResendsUsed
 )
 
 /** C2: only the initial, bounded re-send is ever due - once [BandAlarmCommitment.blindResendCount] is exhausted, it is never due again this blind episode. */

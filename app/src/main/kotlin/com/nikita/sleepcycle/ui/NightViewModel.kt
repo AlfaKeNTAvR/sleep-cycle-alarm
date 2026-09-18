@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.nikita.sleepcycle.bridge.isGadgetbridgeInstalled
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.night.AppSettings
+import com.nikita.sleepcycle.night.BandAlarmCommitment
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
@@ -90,10 +91,20 @@ private data class ExtraInputs(
     val endingNight: Boolean,
 )
 
+/**
+ * The morning report is rendered after the night state has been cleared, so everything it needs is captured
+ * here first: the engine view, plus the band alarm the band is STILL armed with, which no Gadgetbridge intent
+ * can disarm (see NightController.logLeftoverBandAlarm).
+ */
+private data class CachedMorningReport(
+    val engineView: NightEngineView,
+    val bandAlarmLeftover: BandAlarmCommitment?,
+)
+
 private data class ReportInputs(
     val showingMorningReport: Boolean,
     val morningReportEndedAt: Instant?,
-    val cachedEngineView: NightEngineView?,
+    val cachedMorningReport: CachedMorningReport?,
 )
 
 private data class DebugInputs(
@@ -126,7 +137,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val endingNight = MutableStateFlow(false)
     private val showingMorningReport = MutableStateFlow(false)
     private val morningReportEndedAt = MutableStateFlow<Instant?>(null)
-    private val cachedEngineView = MutableStateFlow<NightEngineView?>(null)
+    private val cachedMorningReport = MutableStateFlow<CachedMorningReport?>(null)
     private val errorMessage = MutableStateFlow<String?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
 
@@ -139,7 +150,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<UiState> = combine(
         combine(appSettings, observedNightState, now, screen, gadgetbridgeInstalled, ::CoreInputs),
         combine(permissionStatus, connectionTest, nightLogFiles, confirmingEndNight, endingNight, ::ExtraInputs),
-        combine(showingMorningReport, morningReportEndedAt, cachedEngineView, ::ReportInputs),
+        combine(showingMorningReport, morningReportEndedAt, cachedMorningReport, ::ReportInputs),
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
         errorMessage,
     ) { core, extra, report, debugInputs, error -> toUiState(core, extra, report, debugInputs, error) }
@@ -154,7 +165,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private fun toUiState(core: CoreInputs, extra: ExtraInputs, report: ReportInputs, debugInputs: DebugInputs, error: String?): UiState {
         val settings = core.appSettings ?: return UiState.initial()
         val engineView = when {
-            report.showingMorningReport -> report.cachedEngineView
+            report.showingMorningReport -> report.cachedMorningReport?.engineView
             core.nightState != null -> buildNightEngineView(core.nightState, core.now)
             else -> null
         }
@@ -173,6 +184,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             endingNight = extra.endingNight,
             showingMorningReport = report.showingMorningReport,
             morningReportEndedAt = report.morningReportEndedAt,
+            morningReportBandAlarmLeftover = report.cachedMorningReport?.bandAlarmLeftover,
             debugOptions = debug.effectiveOptions(),
             simulatedSleepEvents = debugInputs.simulatedSleepEvents,
             confirmingDebugNightStart = debugInputs.confirmingDebugNightStart,
@@ -221,7 +233,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun restoreMorningReportFromDiskIfAny(nightStateFromDisk: NightState?) {
         if (nightStateFromDisk != null) return
         val saved = withContext(Dispatchers.IO) { loadMorningReport(context) } ?: return
-        cachedEngineView.value = buildNightEngineView(saved.nightState, saved.endedAt)
+        cachedMorningReport.value = CachedMorningReport(buildNightEngineView(saved.nightState, saved.endedAt), saved.nightState.lastBandAlarmSet)
         morningReportEndedAt.value = saved.endedAt
         showingMorningReport.value = true
     }
@@ -379,7 +391,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         // and could let a stale dismissal from that sequence erase the tick's own work (Opus review 3.2).
         startNightTracking(context, nightSettings, startedAt, debugOptions)
         showingMorningReport.value = false
-        cachedEngineView.value = null
+        cachedMorningReport.value = null
         screen.value = Screen.Night
     }
 
@@ -405,7 +417,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val report = endNightTracking(context, Instant.now())
             if (report != null) {
-                cachedEngineView.value = buildNightEngineView(report.nightState, report.endedAt)
+                cachedMorningReport.value = CachedMorningReport(buildNightEngineView(report.nightState, report.endedAt), report.nightState.lastBandAlarmSet)
                 morningReportEndedAt.value = report.endedAt
             }
             showingMorningReport.value = true
@@ -416,7 +428,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** Dismisses the morning report and clears its disk snapshot: once seen, it should not resurface on a later app reopen. */
     fun finishMorningReport() {
         showingMorningReport.value = false
-        cachedEngineView.value = null
+        cachedMorningReport.value = null
         morningReportEndedAt.value = null
         endingNight.value = false
         screen.value = Screen.BeforeBed

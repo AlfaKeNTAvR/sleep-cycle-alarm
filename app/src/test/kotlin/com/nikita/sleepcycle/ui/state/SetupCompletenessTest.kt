@@ -1,7 +1,5 @@
 package com.nikita.sleepcycle.ui.state
 
-import com.nikita.sleepcycle.night.BandCommandMode
-import com.nikita.sleepcycle.night.DebugOptions
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -84,56 +82,5 @@ class StartNightSetupCheckGatingTest {
 
         assertFalse(gate.enabled)
         assertFalse(gate.blockedBySetupCheck, "an incomplete checklist is its own, different blocker")
-    }
-}
-
-/**
- * A one-slot band with nothing on the phone is the one combination that can end the night with no alarm at
- * all: the band alarm is cleared and re-set on every move, a lost SET is never reported, and the bounded
- * re-sends run out. One of the two phone-side alarms must be on before such a night may start.
- */
-class SingleSlotPhoneAlarmGatingTest {
-    @Test
-    fun `one usable slot with no deadline and no phone backup blocks the night`() {
-        assertTrue(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 1, deadlineEnabled = false, phoneBackupEnabled = false))
-    }
-
-    @Test
-    fun `one usable slot with the deadline on is allowed`() {
-        assertFalse(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 1, deadlineEnabled = true, phoneBackupEnabled = false))
-    }
-
-    @Test
-    fun `one usable slot with the phone backup on is allowed`() {
-        assertFalse(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 1, deadlineEnabled = false, phoneBackupEnabled = true))
-    }
-
-    @Test
-    fun `zero usable slots with no phone alarm blocks too - there is even less to fall back on`() {
-        assertTrue(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 0, deadlineEnabled = false, phoneBackupEnabled = false))
-    }
-
-    @Test
-    fun `two usable slots never require a phone alarm - the band is never left without one`() {
-        assertFalse(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 2, deadlineEnabled = false, phoneBackupEnabled = false))
-    }
-
-    @Test
-    fun `an unknown slot count never blocks - the stale-setup-check gate already covers that night`() {
-        assertFalse(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = null, deadlineEnabled = false, phoneBackupEnabled = false))
-    }
-
-    @Test
-    fun `a fully simulated night never requires a phone alarm - no band command is ever sent`() {
-        val simulated = DebugOptions(simulatedBandData = true, bandCommandMode = BandCommandMode.DRY_RUN)
-
-        assertFalse(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 1, deadlineEnabled = false, phoneBackupEnabled = false, debugOptions = simulated))
-    }
-
-    @Test
-    fun `a fast debug night against the real band still requires one`() {
-        val fastOnly = DebugOptions(fastNight = true)
-
-        assertTrue(singleSlotNightNeedsPhoneAlarm(usableBandAlarmSlots = 1, deadlineEnabled = false, phoneBackupEnabled = false, debugOptions = fastOnly))
     }
 }

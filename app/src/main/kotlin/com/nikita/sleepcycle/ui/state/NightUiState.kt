@@ -1,7 +1,6 @@
 package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
-import com.nikita.sleepcycle.night.BandAlarmSlotMode
 
 /** One tick of the "possible wake-ups" timeline: a cycle count, its clock time and hour label, and whether it is the planned one. */
 data class WakeTimelineEntry(
@@ -78,12 +77,17 @@ sealed interface NightScreenContent {
     /** Amendment: the night is over (deadline passed, or woken at the alarm) but not ended yet. [reasonText] is the engine's own plain-English reason. [phoneSafetyAlarmTimeLabel] is the phone alarm that is still armed (D4). */
     data class NightFinished(val reasonText: String, val phoneSafetyAlarmTimeLabel: String?) : NightScreenContent
 
-    /** State D: the morning report, shown after "Stop night" / "I'm up, end night" is confirmed. */
+    /**
+     * State D: the morning report, shown after "Stop night" / "I'm up, end night" is confirmed.
+     * [bandAlarmLeftoverTimeLabel] is the time the band is STILL armed at, if any: no Gadgetbridge intent can
+     * disarm a slot, so the last alarm this app set survives the night (see NightController.logLeftoverBandAlarm).
+     */
     data class MorningReport(
         val endedAtTimeLabel: String,
         val totalSleepDurationLabel: String,
         val wokeAtTimeLabel: String?,
         val stretches: List<StretchLine>,
+        val bandAlarmLeftoverTimeLabel: String? = null,
     ) : NightScreenContent
 
     data object Loading : NightScreenContent
@@ -114,8 +118,8 @@ data class NightUiState(
     val noPhoneAlarmWarning: Boolean = false,
     /** Null unless the slot backing our confirmed or requested band alarm still carries the band's own smart-wakeup flag (BandAlarmDecision.kt cannot fix this, only report it) - shown as an amber status line. Always null while showing the morning report. */
     val smartWakeupWarning: SmartWakeupWarningUi? = null,
-    /** Which band alarm protocol the last tick ran (BandAlarmSlotMode.kt), named in a status line so the owner always knows. Null before the first tick, and while showing the morning report. [BandAlarmSlotMode.SINGLE_SLOT] also adds an amber line about the brief gap on every move, worded by whether a phone alarm exists tonight ([noPhoneAlarmWarning]). */
-    val bandAlarmSlotMode: BandAlarmSlotMode? = null,
-    /** True once tonight's [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] single-slot re-sends are all spent: the app has stopped trying to restore the band alarm, which until now only the night log said. Shown as an amber status line. Always false while showing the morning report. */
+    /** True when the last tick could not read the band's own alarm table at all, so nothing it believes about the band was verified and an existing alarm is being held frozen (BandAlarmBlindMode.kt). Shown as an amber status line. Always false while showing the morning report. */
+    val bandAlarmBlind: Boolean = false,
+    /** True once tonight's [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] bounded re-sends are all spent: the app has stopped trying to restore the band alarm, which until now only the night log said. Shown as an amber status line. Always false while showing the morning report. */
     val bandAlarmResendLimitReached: Boolean = false,
 )

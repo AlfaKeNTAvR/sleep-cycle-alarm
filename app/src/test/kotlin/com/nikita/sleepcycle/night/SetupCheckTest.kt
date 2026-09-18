@@ -49,7 +49,9 @@ class SetupCheckTest {
     }
 
     @Test
-    fun `exactly one usable slot is ready, with a non-blocking line about freeing a second`() {
+    fun `exactly one usable slot is ready, and says nothing about needing a second`() {
+        // One title in one slot is the whole protocol now (BandAlarmSingleSlotMode.kt), so a second free slot
+        // buys nothing and the report must not ask for one.
         val slots = listOf(
             slot(position = 0, enabled = false, hour = 0, minute = 0, title = "Smart", smartWakeup = true, smartWakeupWindowMinutes = 60),
             slot(position = 1, enabled = false, hour = 3, minute = 17, title = null),
@@ -59,10 +61,8 @@ class SetupCheckTest {
         val report = buildSuccessReport(success(slots), NOW, phoneLines = emptyList())
 
         assertTrue(report.isReady, "one usable slot is enough to run a night")
-        val adviceLine = report.lines.singleOrNull { it.text.contains("Only one usable band alarm") }
-        assertTrue(adviceLine != null, "expected the one-slot advice line")
-        assertEquals(SetupCheckLineSeverity.INFO, adviceLine!!.severity, "advice, never a blocker")
-        assertTrue(adviceLine.text.contains("clear its title"), "must say how to free a second alarm")
+        assertEquals(1, report.usableBandAlarmSlots)
+        assertTrue(report.lines.none { it.text.contains("Only one usable band alarm") }, "no advice to free a second slot")
     }
 
     @Test
@@ -87,7 +87,7 @@ class SetupCheckTest {
         val slots = listOf(
             slot(position = 0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true, smartWakeupWindowMinutes = 60),
             slot(position = 1, enabled = true, hour = 7, minute = 0, title = "Work"),
-            slot(position = 2, enabled = false, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A)
+            slot(position = 2, enabled = false, hour = 8, minute = 0, title = BAND_ALARM_TITLE)
         )
 
         val report = buildSuccessReport(success(slots), NOW, phoneLines = emptyList())
@@ -95,22 +95,6 @@ class SetupCheckTest {
         assertEquals(0, report.usableBandAlarmSlots)
         assertFalse(report.isReady, "no slot can take an alarm, so the night must not be allowed to start")
         assertTrue(report.lines.any { it.severity == SetupCheckLineSeverity.ACTION_NEEDED && it.text.contains("No band alarm can be set") })
-    }
-
-    @Test
-    fun `the one-slot advice line says a phone alarm is needed tonight`() {
-        val slots = listOf(
-            slot(position = 0, enabled = false, hour = 0, minute = 0, title = "Smart", smartWakeup = true, smartWakeupWindowMinutes = 60),
-            slot(position = 1, enabled = false, hour = 3, minute = 17, title = null),
-            slot(position = 2, enabled = false, hour = 7, minute = 0, title = "Alarm")
-        )
-
-        val report = buildSuccessReport(success(slots), NOW, phoneLines = emptyList())
-
-        assertEquals(1, report.usableBandAlarmSlots)
-        val adviceLine = report.lines.single { it.text.contains("Only one usable band alarm") }
-        assertTrue(adviceLine.text.contains("deadline"), "must name the deadline as one of the two ways to be safe")
-        assertTrue(adviceLine.text.contains("phone backup"), "must name the phone backup as the other")
     }
 
     @Test

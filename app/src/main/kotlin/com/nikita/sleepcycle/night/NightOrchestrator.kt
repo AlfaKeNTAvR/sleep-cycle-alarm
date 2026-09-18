@@ -114,7 +114,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         phoneAlarmFiredFor = state.phoneAlarmFiredFor,
         finishedCleanupTicksUsed = cleanupTicksUsed,
         smartWakeupWarning = bandAlarmResolution.smartWakeupWarning,
-        bandAlarmSlotMode = bandAlarmResolution.slotMode,
+        lastBandAlarmSet = bandAlarmResolution.lastBandAlarmSet,
         singleSlotResendsUsed = bandAlarmResolution.singleSlotResendsUsed
     )
     if (!saveNightState(context, newState)) {
@@ -183,13 +183,13 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
         }
     }
 
-/** Everything the band alarm decision produced, to persist into NightState. [smartWakeupWarning] is held across a blind tick (no table this tick) rather than cleared, mirroring how [requested]/[confirmed] are held blind - see [resolveBandAlarmState]. */
+/** Everything the band alarm decision produced, to persist into NightState. [smartWakeupWarning] is held across a blind tick (no table this tick) rather than cleared, mirroring how [requested]/[confirmed] are held blind - see [resolveBandAlarmState]. [lastBandAlarmSet] is the last minute this app really wrote to the band tonight, carried forward when this tick wrote nothing. */
 private data class BandAlarmResolution(
     val requested: BandAlarmCommitment?,
     val confirmed: BandAlarmCommitment?,
     val pendingDismissTitles: Set<String>,
     val smartWakeupWarning: BandAlarmSmartWakeupWarning?,
-    val slotMode: BandAlarmSlotMode?,
+    val lastBandAlarmSet: BandAlarmCommitment?,
     val singleSlotResendsUsed: Int
 )
 
@@ -211,17 +211,57 @@ private fun resolveBandAlarmState(
     val deviceMac = appSettings.deviceMac
         ?: return BandAlarmResolution(
             state.requestedBandAlarm, state.confirmedBandAlarm, state.pendingDismissTitles, state.smartWakeupWarning,
-            state.bandAlarmSlotMode, state.singleSlotResendsUsed
+            state.lastBandAlarmSet, state.singleSlotResendsUsed
         )
 
     // outcome.bandAlarms is already null exactly when there is no table to trust this tick (real sync failed
     // or was stale, or - in debug dry-run mode - the simulated table, which is always available; see
     // DebugBandDataSource.kt and resolveSyncOutcome above), so no further gating is needed here.
     val slots = outcome.bandAlarms
+    // Bug 2 (night 1): while the sleeper is not asleep, an existing commitment is held rather than chased
+    // across a projected onset that slides with the clock. The plan itself is untouched, so the phone alarm
+    // and the Night screen keep following it - see BandAlarmRetargeting.kt for why this is not in the engine.
+    val sleepState = buildNightEngineView(state.copy(lastSegments = outcome.segments), now).sleepState
+    val desiredBandAlarm = resolveDesiredBandAlarm(
+        plan, sleepState, state.requestedBandAlarm ?: state.confirmedBandAlarm, now, currentZone(), resolveEngineConfig(state.debugOptions)
+    )
+    if (isBandAlarmHeld(plan, desiredBandAlarm)) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                now, "band_alarm_held",
+                mapOf(
+                    "held" to (desiredBandAlarm?.toString() ?: ""),
+                    "planned" to (plan.bandAlarm?.toString() ?: ""),
+                    "sleepState" to sleepState.name,
+                    "cause" to "not asleep: the band keeps the time it already has until a real onset moves it"
+                )
+            ),
+            state.debugOptions.isAnyEnabled
+        )
+    }
     val decision = decideBandAlarmCommands(
-        plan.bandAlarm, state.requestedBandAlarm, state.confirmedBandAlarm, state.pendingDismissTitles,
+        desiredBandAlarm, state.requestedBandAlarm, state.confirmedBandAlarm, state.pendingDismissTitles,
         slots, now, currentZone(), singleSlotResendsUsed = state.singleSlotResendsUsed
     )
+    // The move protocol only overwrites what the band is armed with when the SET reclaims the slot its own
+    // DISMISS just freed. Reported, never fixed from here: Gadgetbridge's picker cannot be steered.
+    if (slots != null) {
+        findBandAlarmSlotRelocationRisk(slots, BAND_ALARM_TITLE)?.let { risk ->
+            appendNightLog(
+                context, state.startedAt,
+                NightLogEvent(
+                    now, "band_alarm_slot_risk",
+                    mapOf(
+                        "ourSlot" to (risk.ourPosition + SLOT_DISPLAY_OFFSET).toString(),
+                        "wouldLandInSlot" to (risk.wouldLandAtPosition + SLOT_DISPLAY_OFFSET).toString(),
+                        "cause" to "a free alarm slot sits above ours, so the next move would leave our slot armed at the old time"
+                    )
+                ),
+                state.debugOptions.isAnyEnabled
+            )
+        }
+    }
     // C1: skipped for physical send-margin reasons (BandAlarmOutcome.TOO_SOON) is expected and routine, not a
     // planning failure - the engine itself already guarantees a real minAlarmLead cushion - so it is logged
     // at info with both times, never as an error. Logged here, not in NightTickLogging.kt's generic outcome
@@ -253,7 +293,7 @@ private fun resolveBandAlarmState(
     // C3: write-ahead - persist what we are ABOUT to ask the band for before sending any command, so a kill
     // between sending and this tick's normal end-of-tick save still leaves night_state.json knowing what was
     // asked. A no-op (no extra disk write) when this tick has nothing to send.
-    persistBandAlarmCommitmentWriteAhead(context, state, decision)
+    persistBandAlarmCommitmentWriteAhead(context, state, decision, now)
     applyBandAlarmDecision(context, state, deviceMac, decision, slots, now)
     // Held across a blind tick rather than cleared: [slots] null means this tick could not resolve it fresh,
     // and the underlying condition does not stop being true just because we cannot observe it right now - the
@@ -262,16 +302,30 @@ private fun resolveBandAlarmState(
     val smartWakeupWarning = if (slots != null) decision.smartWakeupWarning else state.smartWakeupWarning
     return BandAlarmResolution(
         decision.requestedBandAlarm, decision.confirmedBandAlarm, decision.pendingDismissTitles, smartWakeupWarning,
-        decision.slotMode, decision.singleSlotResendsUsed
+        lastBandAlarmSetAfter(state.lastBandAlarmSet, decision, now), decision.singleSlotResendsUsed
     )
 }
 
-private fun persistBandAlarmCommitmentWriteAhead(context: Context, state: NightState, decision: BandAlarmDecision) {
+/** Gadgetbridge's alarm list shows no numbers, so every owner-facing slot reference counts from 1, not from the exported table's 0. */
+private const val SLOT_DISPLAY_OFFSET = 1
+
+/**
+ * The last minute this app really wrote to the band tonight. A DISMISS never clears it, because a DISMISS
+ * never disarms the band (BandAlarmSingleSlotMode.kt) - this is exactly the value the morning report needs in
+ * order to name what is still armed after the night ends. `internal`, not `private`, so it is JVM-testable.
+ */
+internal fun lastBandAlarmSetAfter(previous: BandAlarmCommitment?, decision: BandAlarmDecision, now: Instant): BandAlarmCommitment? {
+    val lastSet = decision.commands.filterIsInstance<BandAlarmCommand.Set>().lastOrNull() ?: return previous
+    return BandAlarmCommitment(lastSet.title, lastSet.hour, lastSet.minute, now)
+}
+
+private fun persistBandAlarmCommitmentWriteAhead(context: Context, state: NightState, decision: BandAlarmDecision, now: Instant) {
     if (decision.commands.isEmpty()) return
     val writeAheadState = state.copy(
         requestedBandAlarm = decision.requestedBandAlarm,
         confirmedBandAlarm = decision.confirmedBandAlarm,
         pendingDismissTitles = decision.pendingDismissTitles,
+        lastBandAlarmSet = lastBandAlarmSetAfter(state.lastBandAlarmSet, decision, now),
         singleSlotResendsUsed = decision.singleSlotResendsUsed
     )
     if (!saveNightState(context, writeAheadState)) {

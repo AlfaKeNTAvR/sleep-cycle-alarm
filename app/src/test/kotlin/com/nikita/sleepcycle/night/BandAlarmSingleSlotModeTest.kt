@@ -1,10 +1,10 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: the single-slot protocol (BandAlarmSingleSlotMode.kt) - the owner's real band has exactly one
-// slot this app can use, so a move means DISMISS our own title then SET it again in the same tick. Covers a
-// whole sequence of moves, the self-healing re-send after a SET that silently never landed, the per-night
-// re-send bound, switching modes mid-night as slots free up and fill again, and the guarantee that the
-// two-slot protocol still never dismisses anything before its replacement is confirmed.
+// File purpose: the band alarm move protocol (BandAlarmSingleSlotMode.kt) - one title in one slot all night,
+// so a move means DISMISS our own title then SET it again in the same tick, which is the only sequence that
+// overwrites the time the band is really armed with. Covers a whole sequence of moves, the self-healing
+// re-send after a SET that silently never landed, the per-night re-send bound, the table shapes that make a
+// SET impossible, and the relocation risk that is reported when a free slot sits above ours.
 
 import com.nikita.sleepcycle.bridge.BandAlarmSlot
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -29,9 +29,8 @@ class BandAlarmSingleSlotModeTest {
 
         // Tick 1: nothing of ours on the band yet -> a plain first SET, no dismissal.
         val first = decide(instantAt(8, 0), requested, confirmed, singleSlotTable(ours = null), NOW)
-        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, first.slotMode)
         assertEquals(BandAlarmOutcome.REQUESTED, first.outcome)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 0)), first.commands)
+        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE, 8, 0)), first.commands)
         requested = first.requestedBandAlarm; confirmed = first.confirmedBandAlarm
 
         // Tick 2: the table shows it, so it is confirmed.
@@ -46,12 +45,11 @@ class BandAlarmSingleSlotModeTest {
             val moveTick = NOW.plusSeconds(600L + index * 600L)
             val move = decide(instantAt(target.first, target.second), requested, confirmed, singleSlotTable(ours = confirmedTime), moveTick)
 
-            assertEquals(BandAlarmSlotMode.SINGLE_SLOT, move.slotMode, "move $index")
             assertEquals(BandAlarmOutcome.MOVED_IN_ONE_SLOT, move.outcome, "move $index")
             assertEquals(
                 listOf(
-                    BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A),
-                    BandAlarmCommand.Set(BAND_ALARM_TITLE_A, target.first, target.second)
+                    BandAlarmCommand.Dismiss(BAND_ALARM_TITLE),
+                    BandAlarmCommand.Set(BAND_ALARM_TITLE, target.first, target.second)
                 ),
                 move.commands,
                 "move $index: exactly one DISMISS then one SET, in that order, under the same title"
@@ -62,7 +60,7 @@ class BandAlarmSingleSlotModeTest {
 
             val confirmTick = decide(instantAt(target.first, target.second), requested, confirmed, singleSlotTable(ours = target), moveTick.plusSeconds(300))
             assertEquals(BandAlarmOutcome.CONFIRMED, confirmTick.outcome, "move $index: confirmed on the next tick")
-            assertEquals(BAND_ALARM_TITLE_A, confirmTick.confirmedBandAlarm?.title, "move $index")
+            assertEquals(BAND_ALARM_TITLE, confirmTick.confirmedBandAlarm?.title, "move $index")
             assertEquals(target.first, confirmTick.confirmedBandAlarm?.hour, "move $index")
             assertEquals(target.second, confirmTick.confirmedBandAlarm?.minute, "move $index")
             assertTrue(confirmTick.commands.isEmpty(), "move $index: nothing more to send once it matches")
@@ -73,7 +71,7 @@ class BandAlarmSingleSlotModeTest {
 
     @Test
     fun `a target that has not moved sends nothing at all`() {
-        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(900))
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, NOW.minusSeconds(900))
 
         val decision = decide(instantAt(8, 0), null, confirmed, singleSlotTable(ours = 8 to 0), NOW)
 
@@ -87,12 +85,12 @@ class BandAlarmSingleSlotModeTest {
     @Test
     fun `a SET the table never shows is re-sent on the next tick without waiting for the target to move`() {
         // The move's DISMISS landed but its SET silently did not, so the band now has no alarm of ours at all.
-        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 20, NOW.minusSeconds(300))
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 20, NOW.minusSeconds(300))
 
         val decision = decide(instantAt(8, 20), requested, confirmed = null, singleSlotTable(ours = null), NOW)
 
         assertEquals(BandAlarmOutcome.MISSING_RESENT, decision.outcome)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 20)), decision.commands)
+        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE, 8, 20)), decision.commands)
         assertEquals(1, decision.singleSlotResendsUsed, "the re-send is counted against tonight's bound")
         assertTrue(decision.commands.none { it is BandAlarmCommand.Dismiss }, "there is nothing on the band to dismiss")
     }
@@ -102,7 +100,7 @@ class BandAlarmSingleSlotModeTest {
         // A is confirmed for 08:00 and the target moves to 08:30: DISMISS then SET, both silently lost. The
         // next table still shows A at 08:00 - the OLD alarm, not the requested one. Reading that as "the
         // request landed" was what let this repeat every tick forever without ever spending a re-send.
-        var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(300))
+        var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 30, NOW.minusSeconds(300))
         var resendsUsed = 0
 
         repeat(3) { index ->
@@ -115,8 +113,8 @@ class BandAlarmSingleSlotModeTest {
             assertNull(tick.confirmedBandAlarm, "tick $index: nothing is confirmed while the band holds the wrong time")
             assertEquals(
                 listOf(
-                    BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A),
-                    BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)
+                    BandAlarmCommand.Dismiss(BAND_ALARM_TITLE),
+                    BandAlarmCommand.Set(BAND_ALARM_TITLE, 8, 30)
                 ),
                 tick.commands,
                 "tick $index: the whole move goes out again, the stale alarm first"
@@ -133,7 +131,6 @@ class BandAlarmSingleSlotModeTest {
         // title is left on a switched-off slot Gadgetbridge's picker will never claim.
         val decision = decide(instantAt(8, 20), requested = null, confirmed = null, zeroSlotTable(), NOW)
 
-        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, decision.slotMode)
         assertEquals(BandAlarmOutcome.NO_FREE_SLOT, decision.outcome)
         assertTrue(decision.commands.isEmpty(), "a SET no slot can take is withheld, not guessed at")
         assertNull(decision.requestedBandAlarm, "nothing was asked for, so nothing is on file")
@@ -142,7 +139,7 @@ class BandAlarmSingleSlotModeTest {
 
     @Test
     fun `a zero-slot table never spends the night's re-send bound`() {
-        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 20, NOW.minusSeconds(300))
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 20, NOW.minusSeconds(300))
 
         val decision = decide(instantAt(8, 20), requested, confirmed = null, zeroSlotTable(), NOW, singleSlotResendsUsed = 2)
 
@@ -154,7 +151,7 @@ class BandAlarmSingleSlotModeTest {
 
     @Test
     fun `re-sends stop at the per-night bound and say so`() {
-        var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 20, NOW.minusSeconds(300))
+        var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 20, NOW.minusSeconds(300))
         var resendsUsed = 0
 
         repeat(MAX_SINGLE_SLOT_RESENDS_PER_NIGHT) { index ->
@@ -177,7 +174,7 @@ class BandAlarmSingleSlotModeTest {
             assertEquals(BandAlarmOutcome.RESEND_LIMIT_REACHED, boundHit.outcome, "after the bound, tick $index")
             assertTrue(boundHit.commands.isEmpty(), "tick $index: nothing more is sent once the bound is spent")
             assertEquals(MAX_SINGLE_SLOT_RESENDS_PER_NIGHT, boundHit.singleSlotResendsUsed, "tick $index: the count stops at the bound")
-            assertEquals(BAND_ALARM_TITLE_A, boundHit.requestedBandAlarm?.title, "tick $index: the request stays on file")
+            assertEquals(BAND_ALARM_TITLE, boundHit.requestedBandAlarm?.title, "tick $index: the request stays on file")
             assertNull(boundHit.confirmedBandAlarm, "tick $index: still nothing confirmed on the band")
 
             val logEvent = outcomeLogEvent(boundHit, NOW)
@@ -193,7 +190,7 @@ class BandAlarmSingleSlotModeTest {
 
     @Test
     fun `the bound is spent only by re-sends, never by ordinary moves`() {
-        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(900))
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, NOW.minusSeconds(900))
 
         val move = decide(instantAt(8, 30), null, confirmed, singleSlotTable(ours = 8 to 0), NOW, singleSlotResendsUsed = 2)
 
@@ -201,67 +198,42 @@ class BandAlarmSingleSlotModeTest {
         assertEquals(2, move.singleSlotResendsUsed)
     }
 
-    // ---- Switching modes mid-night as slots free up and fill again -------------------------------------------
-
     @Test
-    fun `freeing a second alarm mid-night switches to the two-slot protocol, and filling it switches back`() {
-        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(900))
-
-        val oneSlot = decide(instantAt(8, 30), null, confirmed, singleSlotTable(ours = 8 to 0), NOW)
-        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, oneSlot.slotMode)
-        assertEquals(BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A), oneSlot.commands.first())
-
-        // The owner clears another alarm's title, so a second slot is now free.
-        val twoSlots = decide(instantAt(8, 30), null, confirmed, singleSlotTable(ours = 8 to 0) + freeSlot(4), NOW.plusSeconds(300))
-        assertEquals(BandAlarmSlotMode.ALTERNATING_TITLES, twoSlots.slotMode)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_B, 8, 30)), twoSlots.commands)
-        assertEquals(confirmed, twoSlots.confirmedBandAlarm, "the old alarm stays until the new one is confirmed")
-
-        // The owner sets that alarm again for something else: back to one usable slot.
-        val filledAgain = decide(
-            instantAt(8, 30), null, confirmed,
-            singleSlotTable(ours = 8 to 0) + slot(4, enabled = true, hour = 6, minute = 0, title = "Gym"),
-            NOW.plusSeconds(600)
-        )
-        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, filledAgain.slotMode)
-        assertEquals(BandAlarmOutcome.MOVED_IN_ONE_SLOT, filledAgain.outcome)
-    }
-
-    @Test
-    fun `no table at all is blind mode, never single-slot - a blind tick still never dismisses`() {
-        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(900))
+    fun `no table at all is blind mode, never a move - a blind tick still never dismisses`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, NOW.minusSeconds(900))
 
         val decision = decideBandAlarmCommands(instantAt(8, 30), null, confirmed, emptySet(), null, NOW, ZONE_UTC)
 
-        assertEquals(BandAlarmSlotMode.BLIND, decision.slotMode)
+        assertTrue(decision.blind)
         assertEquals(BandAlarmOutcome.BLIND_FROZEN, decision.outcome)
         assertTrue(decision.commands.isEmpty())
     }
 
-    // ---- The two-slot protocol is untouched ------------------------------------------------------------------
+    // ---- The slot a move's SET would actually land in --------------------------------------------------------
 
     @Test
-    fun `two-slot mode never dismisses before the replacement is confirmed`() {
-        var confirmed: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(900))
-        val tableWithA = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A), freeSlot(3), freeSlot(4))
+    fun `no relocation risk while our slot is the first free one after its own dismissal`() {
+        assertNull(findBandAlarmSlotRelocationRisk(singleSlotTable(ours = 8 to 0), BAND_ALARM_TITLE))
+    }
 
-        val move = decide(instantAt(8, 30), null, confirmed, tableWithA, NOW)
-        assertEquals(BandAlarmSlotMode.ALTERNATING_TITLES, move.slotMode)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_B, 8, 30)), move.commands, "the replacement goes out under the other title, nothing is dismissed")
-        assertEquals(confirmed, move.confirmedBandAlarm)
+    @Test
+    fun `a free slot above ours is reported as a relocation risk, naming both slots`() {
+        // The owner cleared the foreign alarm in slot 1, so Gadgetbridge would claim THAT slot next, leaving
+        // slot 2 armed at the old time - exactly how night 1 ended up with two alarms ringing.
+        val table = listOf(
+            slot(0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true),
+            freeSlot(1),
+            slot(2, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE)
+        )
 
-        // B lands: only now is A dismissed.
-        val tableWithBoth = tableWithA.drop(1) +
-            listOf(
-                slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A),
-                slot(1, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_B)
-            )
-        val confirm = decide(instantAt(8, 30), move.requestedBandAlarm, move.confirmedBandAlarm, tableWithBoth, NOW.plusSeconds(300))
-        confirmed = confirm.confirmedBandAlarm
+        val risk = findBandAlarmSlotRelocationRisk(table, BAND_ALARM_TITLE)
 
-        assertEquals(BandAlarmOutcome.CONFIRMED, confirm.outcome)
-        assertEquals(BAND_ALARM_TITLE_B, confirmed?.title)
-        assertEquals(listOf(BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A)), confirm.commands)
+        assertEquals(BandAlarmSlotRelocationRisk(ourPosition = 2, wouldLandAtPosition = 1), risk)
+    }
+
+    @Test
+    fun `nothing of ours on the band is not a relocation risk`() {
+        assertNull(findBandAlarmSlotRelocationRisk(singleSlotTable(ours = null), BAND_ALARM_TITLE))
     }
 
     private fun decide(
@@ -286,14 +258,14 @@ class BandAlarmSingleSlotModeTest {
     private fun singleSlotTable(ours: Pair<Int, Int>?): List<BandAlarmSlot> = listOf(
         slot(0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true),
         slot(1, enabled = true, hour = 7, minute = 0, title = "Work"),
-        ours?.let { slot(2, enabled = true, hour = it.first, minute = it.second, title = BAND_ALARM_TITLE_A) } ?: freeSlot(2)
+        ours?.let { slot(2, enabled = true, hour = it.first, minute = it.second, title = BAND_ALARM_TITLE) } ?: freeSlot(2)
     )
 
     /** The same band with its one free slot taken by someone else, and one of our titles left behind on a switched-off slot: nothing this app can set an alarm into at all. */
     private fun zeroSlotTable(): List<BandAlarmSlot> = listOf(
         slot(0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true),
         slot(1, enabled = true, hour = 7, minute = 0, title = "Work"),
-        slot(2, enabled = false, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A)
+        slot(2, enabled = false, hour = 8, minute = 0, title = BAND_ALARM_TITLE)
     )
 
     private fun freeSlot(position: Int): BandAlarmSlot = slot(position, enabled = false, hour = 0, minute = 0, title = null)

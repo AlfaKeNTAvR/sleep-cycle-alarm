@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.night.BandAlarmSlotMode
 import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
@@ -63,19 +62,8 @@ fun NightScreen(
         state.smartWakeupWarning?.let { warning ->
             AmberWarningLine(text = smartWakeupWarningText(warning))
         }
-        state.bandAlarmSlotMode?.let { mode ->
-            StatusLine(text = bandAlarmSlotModeText(mode), ok = mode != BandAlarmSlotMode.BLIND)
-            if (mode == BandAlarmSlotMode.SINGLE_SLOT) {
-                // The safety-net sentence is only true when a phone alarm actually exists tonight; with none,
-                // the honest line is that nothing else will ring.
-                AmberWarningLine(
-                    text = if (state.noPhoneAlarmWarning) {
-                        stringResource(R.string.warning_band_single_slot_no_phone_alarm)
-                    } else {
-                        stringResource(R.string.warning_band_single_slot)
-                    }
-                )
-            }
+        if (state.bandAlarmBlind) {
+            AmberWarningLine(text = stringResource(R.string.warning_band_alarm_blind))
         }
         if (state.bandAlarmResendLimitReached) {
             AmberWarningLine(text = stringResource(R.string.warning_band_resend_limit_reached))
@@ -131,14 +119,6 @@ private fun statusLineText(state: NightUiState): String = when {
         stringResource(R.string.night_status_sync_failed, state.lastSyncTimeLabel.orEmpty(), state.syncFailureCause)
     state.lastSyncOk == false -> stringResource(R.string.night_status_data_stale, state.lastSyncTimeLabel.orEmpty())
     else -> stringResource(R.string.night_status_synced_ok, state.lastSyncTimeLabel.orEmpty())
-}
-
-/** Names the band alarm protocol in use, so the owner can always tell from the screen which one produced tonight's commands. */
-@Composable
-private fun bandAlarmSlotModeText(mode: BandAlarmSlotMode): String = when (mode) {
-    BandAlarmSlotMode.ALTERNATING_TITLES -> stringResource(R.string.night_band_alarm_mode_two_slots)
-    BandAlarmSlotMode.SINGLE_SLOT -> stringResource(R.string.night_band_alarm_mode_single_slot)
-    BandAlarmSlotMode.BLIND -> stringResource(R.string.night_band_alarm_mode_blind)
 }
 
 @Composable

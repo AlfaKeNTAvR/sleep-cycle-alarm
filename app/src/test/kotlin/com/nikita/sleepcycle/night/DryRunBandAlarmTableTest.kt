@@ -39,7 +39,6 @@ class DryRunBandAlarmTableTest {
         val slot = slots.single()
         assertNull(slot.title, "free means untitled")
         assertFalse(slot.enabled, "free means switched off - the only shape Gadgetbridge's picker claims")
-        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, chooseBandAlarmSlotMode(slots), "one usable slot, like the owner's real band")
     }
 
     @Test
@@ -53,17 +52,17 @@ class DryRunBandAlarmTableTest {
         )
 
         assertEquals(BandAlarmOutcome.REQUESTED, decision.outcome)
-        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)), decision.commands)
+        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE, 8, 30)), decision.commands)
     }
 
     @Test
     fun `a pending request appears as an enabled slot under its own title, hour and minute`() {
-        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, t0)
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 30, t0)
 
         val slots = simulatedDryRunBandAlarmSlots(state(requested = requested, confirmed = null))
 
         val slot = slots.single()
-        assertEquals(BAND_ALARM_TITLE_A, slot.title)
+        assertEquals(BAND_ALARM_TITLE, slot.title)
         assertEquals(8, slot.hour)
         assertEquals(30, slot.minute)
         assertTrue(slot.enabled)
@@ -71,7 +70,7 @@ class DryRunBandAlarmTableTest {
 
     @Test
     fun `a dry-run SET is confirmed exactly one tick after it was requested`() {
-        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, t0)
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 30, t0)
         val nextTickNow = t0.plusSeconds(300)
 
         // The table as of the end of the tick that sent the SET - built from the still-pending request.
@@ -83,25 +82,25 @@ class DryRunBandAlarmTableTest {
         )
 
         assertEquals(BandAlarmOutcome.CONFIRMED, decision.outcome)
-        assertEquals(BAND_ALARM_TITLE_A, decision.confirmedBandAlarm?.title)
+        assertEquals(BAND_ALARM_TITLE, decision.confirmedBandAlarm?.title)
         assertNull(decision.requestedBandAlarm)
     }
 
     @Test
     fun `a confirmed alarm with a pending dismissal is left out of the table, confirming the dismiss one tick later`() {
-        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, t0)
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, t0)
 
-        val slots = simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = confirmed, pendingDismiss = setOf(BAND_ALARM_TITLE_A)))
+        val slots = simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = confirmed, pendingDismiss = setOf(BAND_ALARM_TITLE)))
 
-        assertTrue(slots.none { it.title == BAND_ALARM_TITLE_A }, "the dismissed alarm is gone from the table")
+        assertTrue(slots.none { it.title == BAND_ALARM_TITLE }, "the dismissed alarm is gone from the table")
     }
 
     @Test
     fun `a confirmed alarm with no pending dismissal keeps appearing in the table`() {
-        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, t0)
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, t0)
 
         val slots = simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = confirmed))
 
-        assertEquals(BAND_ALARM_TITLE_A, slots.single().title)
+        assertEquals(BAND_ALARM_TITLE, slots.single().title)
     }
 }

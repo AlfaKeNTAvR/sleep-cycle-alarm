@@ -82,7 +82,9 @@ Worked example, the owner's: picked 7.5 h (5 cycles). Asleep 23:00, alarm 06:30.
 
 **Phone alarm.** With a deadline: always exactly the deadline, in every mode. Without one: if `phoneBackupEnabled`, `bandAlarm + phoneBackupOffset` for `FULL_CYCLES` and `NAP`; in `OVERDUE` and `FINISHED` keep `previousPlan.phoneAlarm` (the backup must not slide away with the snooze); else null.
 
-**Known and accepted:** while lying awake the projected onset moves with `now`, so the band alarm moves at each sync and drops by one cycle when a cycle stops fitting. That is rule 1 working as intended. The app only writes to the band when the alarm minute actually changes.
+**Known and accepted:** while lying awake the projected onset moves with `now`, so the plan's band alarm moves at each sync and drops by one cycle when a cycle stops fitting. That is rule 1 working as intended, and the phone alarm and the Night screen follow it.
+
+**The app does not write every one of those moves to the band** (decided 2026-09-18 after night 1; the engine is unchanged). While the sleeper is not `ASLEEP`, the app holds whatever the band already carries instead of chasing the projected onset - see app-spec.md's `BandAlarmRetargeting.kt`. That is a band-write rule, deliberately outside the engine: the engine stays a pure function of (segments, settings, now, previousPlan) and knows nothing about what the band is holding. What it does owe the app is already on the plan: `referenceOnset` and `onsetIsProjected` say which onset a target was computed from.
 
 `reason` is one plain English sentence for the night log with the numbers used, e.g. `"Asleep since 00:30, 5 of 5 picked cycles fit before 08:30, band alarm 08:00"`. Format times in the zone passed to the function.
 

@@ -67,9 +67,6 @@ fun buildBeforeBedUiState(
     }
     val checklistComplete = isSetupComplete(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions)
     val gate = startNightGate(checklistComplete, appSettings.lastSetupCheckPassedAt, now, debugOptions)
-    val needsPhoneAlarm = singleSlotNightNeedsPhoneAlarm(
-        appSettings.lastSetupCheckUsableBandAlarmSlots, appSettings.deadlineEnabled, appSettings.phoneBackupEnabled, debugOptions
-    )
     return BeforeBedUiState(
         bandReady = bandReady,
         deadlineEnabled = appSettings.deadlineEnabled,
@@ -77,10 +74,9 @@ fun buildBeforeBedUiState(
         sleepLengthOptions = sleepLengthOptions,
         phoneBackupRowVisible = !appSettings.deadlineEnabled,
         phoneBackupEnabled = appSettings.phoneBackupEnabled,
-        startNightEnabled = gate.enabled && !nightActive && !needsPhoneAlarm,
+        startNightEnabled = gate.enabled && !nightActive,
         startNightBlocker = startNightBlocker(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions),
         startNightBlockedBySetupCheck = gate.blockedBySetupCheck,
-        startNightBlockedByNoPhoneAlarm = needsPhoneAlarm,
         activeDebugSwitches = activeDebugSwitches(debugOptions),
         confirmingDebugNightStart = confirmingDebugNightStart,
         noPhoneAlarmWarning = noPhoneAlarmTonight(appSettings.deadlineEnabled, appSettings.phoneBackupEnabled),
