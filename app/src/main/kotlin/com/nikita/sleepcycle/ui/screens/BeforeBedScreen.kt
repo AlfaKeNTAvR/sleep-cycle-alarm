@@ -127,6 +127,11 @@ fun BeforeBedScreen(
                 text = stringResource(R.string.start_blocked_setup_check_stale),
                 style = MaterialTheme.typography.bodySmall,
             )
+        } else if (state.startNightBlockedByNoPhoneAlarm) {
+            Text(
+                text = stringResource(R.string.start_blocked_single_slot_needs_phone_alarm),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         PrimaryActionButton(
             text = stringResource(R.string.before_bed_start_night),

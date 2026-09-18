@@ -57,6 +57,8 @@
     <string name="setup_check_passed_headline">Setup check passed</string>
     <string name="setup_check_failed_headline">Setup check failed</string>
     <string name="start_blocked_setup_check_stale">Run \"Test connection\" in Setup again; the last pass is over 24 h old.</string>
+    <!-- One usable band alarm slot and no phone alarm at all: the band alarm can go missing mid-night with nothing left to ring -->
+    <string name="start_blocked_single_slot_needs_phone_alarm">Your band has only one alarm slot for this app, so its alarm can go missing during the night. Turn on the wake-up deadline or the phone backup alarm, so something is certain to wake you.</string>
 
     <!-- Before bed screen -->
     <string name="before_bed_title">Tonight</string>
@@ -142,8 +144,14 @@
     <string name="night_band_alarm_mode_single_slot">Band alarm mode: one slot</string>
     <string name="night_band_alarm_mode_blind">Band alarm mode: no alarm table yet, holding the last alarm</string>
 
-    <!-- Single-slot mode: the band has no alarm between the clear and the re-set on every move -->
+    <!-- Single-slot mode: the band has no alarm between the clear and the re-set on every move. Which line
+         shows depends on whether a phone alarm exists at all tonight - claiming a safety net that is switched
+         off is exactly what contradicted warning_no_phone_alarm on the same screen. -->
     <string name="warning_band_single_slot">Only one band alarm slot: the band alarm is briefly cleared each time the wake time moves. The phone alarm is the safety net.</string>
+    <string name="warning_band_single_slot_no_phone_alarm">Only one band alarm slot: the band alarm is briefly cleared each time the wake time moves, and nothing on the phone will ring if it does not come back.</string>
+
+    <!-- Single-slot mode: tonight's bounded re-sends are all spent, so the app stopped trying to restore the band alarm -->
+    <string name="warning_band_resend_limit_reached">The band alarm could not be set again tonight; the app has stopped retrying. Check your band, or rely on the phone alarm.</string>
 
     <!-- Smart-wakeup: the slot backing our confirmed or requested band alarm still carries the band's own smart-wakeup flag -->
     <string name="warning_band_smart_wakeup">Band may wake you up to %1$d min early: slot %2$d is a smart alarm</string>

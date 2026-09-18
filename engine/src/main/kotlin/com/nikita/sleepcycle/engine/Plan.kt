@@ -63,7 +63,8 @@ fun computeAlarmPlan(
         mode, reference, settings, cycles, bandAlarm, zone, outcomeOverdueSince, overdueCapReached, sleptSoFar
     )
     return AlarmPlan(
-        mode, bandAlarm, phoneAlarm, cycles, referenceOnset, onsetIsProjected, reason, overdueSince
+        mode, bandAlarm, phoneAlarm, cycles, referenceOnset, onsetIsProjected, reason, overdueSince,
+        sleptSoFar, owedCycles
     )
 }
 

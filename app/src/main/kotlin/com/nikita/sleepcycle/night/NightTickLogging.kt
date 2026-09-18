@@ -50,6 +50,12 @@ fun logDataAndPlan(context: Context, state: NightState, outcome: SyncOutcome, pl
                 "bandAlarm" to (plan.bandAlarm?.toString() ?: ""),
                 "phoneAlarm" to (plan.phoneAlarm?.toString() ?: ""),
                 "cycles" to plan.cycles.toString(),
+                // The two numbers rule 2's night total is decided from: how much sleep was already had, and
+                // how many whole cycles that left owed BEFORE any deadline cap. Fields, not just prose in
+                // `reason`, because together with `cycles` they are what says whether the total or the
+                // deadline bound this plan.
+                "sleptSoFarMinutes" to plan.sleptSoFar.toMinutes().toString(),
+                "owedCycles" to plan.owedCycles.toString(),
                 "referenceOnset" to (plan.referenceOnset?.toString() ?: ""),
                 "onsetIsProjected" to plan.onsetIsProjected.toString(),
                 "overdueSince" to (plan.overdueSince?.toString() ?: ""),
@@ -170,8 +176,10 @@ internal fun outcomeLogEvent(decision: BandAlarmDecision, now: Instant): NightLo
         now, "error",
         mapOf(
             "step" to "band_alarm",
+            // Never claims a phone alarm exists: on a night with no deadline and no backup there is none, and
+            // saying otherwise is exactly the contradiction the Night screen's own wording had.
             "cause" to "tonight's single-slot re-send limit ($MAX_SINGLE_SLOT_RESENDS_PER_NIGHT) is spent; " +
-                "not re-sending again, the phone alarm is the safety net"
+                "not re-sending again - whatever phone alarm this night has is the only thing left"
         )
     )
     // The one place a dismissal precedes a confirmed replacement: with a single usable slot there is nowhere

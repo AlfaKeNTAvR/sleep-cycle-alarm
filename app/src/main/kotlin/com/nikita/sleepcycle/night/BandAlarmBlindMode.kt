@@ -8,6 +8,10 @@ package com.nikita.sleepcycle.night
 // failure), which could leave the band at zero alarms - the one outcome this app exists to prevent. So a
 // commitment already on file is held exactly as it is instead (BandAlarmOutcome.BLIND_FROZEN), and the only
 // thing ever attempted here beyond the first blind SET of the night is one bounded retry per blind episode.
+// Nothing in THIS file ever dismisses. The FINISHED teardown does dismiss blind, but it never reaches here:
+// BandAlarmDecision.kt handles a null desired alarm before dispatching to any slot mode, and it dismisses
+// deliberately - once no alarm is wanted at all, there is nothing left to protect and a stale title on the
+// band would ring tomorrow morning.
 
 import java.time.Instant
 import java.time.LocalTime

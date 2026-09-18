@@ -63,11 +63,11 @@ fun buildNapAsleepContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.Nap
  */
 fun buildWokeUpContent(plan: AlarmPlan, deadline: Instant?, view: NightEngineView, zone: ZoneId, napOnly: Boolean, debugOptions: DebugOptions): NightScreenContent.WokeUp {
     val latestStretchDuration = view.summary.stretches.lastOrNull()?.duration ?: Duration.ZERO
-    val headerBoundary = if (napOnly) deadline else deadline?.minus(sleepLengthFor(1, debugOptions))
+    val headerTime = if (napOnly) deadline else deadline?.minus(sleepLengthFor(1, debugOptions))
     return NightScreenContent.WokeUp(
         napOnly = napOnly,
         sleptDurationLabel = formatDuration(latestStretchDuration),
-        wakeBoundaryTimeLabel = headerBoundary?.let { formatClockTime(it, zone) },
+        headerTimeLabel = headerTime?.let { formatClockTime(it, zone) },
         timeline = if (napOnly) emptyList() else view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone, debugOptions) },
         napLengthLabel = if (napOnly) formatDuration(napLengthFor(debugOptions)) else null,
         tonightSoFarLabel = if (napOnly) formatDuration(view.summary.totalSleep) else null,

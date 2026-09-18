@@ -98,6 +98,26 @@ class NightTotalCyclesTest {
         assertEquals("06:50", formatTime(result.bandAlarm!!, testZone))
     }
 
+    @Test fun `hours into the new stretch the alarm still counts from ITS onset, with only completed sleep subtracted`() {
+        // Every other already-slept case is measured one minute into the new stretch, where subtracting the
+        // current stretch by mistake would change the answer by one minute and no test would notice. Here the
+        // sleeper has been back asleep for two hours: 3 h completed, so 3 cycles are owed from the 02:10
+        // onset (06:40). Counting the current stretch too would leave 5 h slept, 2 cycles, and 05:10.
+        val segments = listOf(
+            segment("2026-09-16T23:00", "2026-09-17T02:00", SegmentKind.LIGHT),
+            segment("2026-09-17T02:00", "2026-09-17T02:10", SegmentKind.AWAKE),
+            segment("2026-09-17T02:10", "2026-09-17T04:10", SegmentKind.LIGHT)
+        )
+
+        val result = plan(segments, settings(cycles = 5), "2026-09-17T04:10", firstPlanOfTheNight())
+
+        assertEquals(AlarmMode.FULL_CYCLES, result.mode)
+        assertEquals(Duration.ofHours(3), result.sleptSoFar, "only the COMPLETED stretch counts as already slept")
+        assertEquals(3, result.owedCycles)
+        assertEquals(3, result.cycles)
+        assertEquals("06:40", formatTime(result.bandAlarm!!, testZone))
+    }
+
     // ---- Rounding to the nearest cycle ----------------------------------------------------------------------
 
     @Test fun `exactly half a cycle remaining rounds UP to one more cycle`() {

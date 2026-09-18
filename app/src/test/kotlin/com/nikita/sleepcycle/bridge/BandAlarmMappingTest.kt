@@ -49,15 +49,29 @@ class BandAlarmMappingTest {
     }
 
     @Test
-    fun `free-or-owned counts free slots plus slots already carrying one of our titles, enabled or not`() {
+    fun `usable counts free slots plus slots holding one of our ENABLED alarms, never a disabled one of ours`() {
         val slots = listOf(
             slot(0, enabled = false, title = null), // free
-            slot(1, enabled = true, hour = 8, minute = 0, title = "SCA-A"), // ours, enabled
-            slot(2, enabled = false, hour = 7, minute = 0, title = "SCA-B"), // ours, currently disabled
+            slot(1, enabled = true, hour = 8, minute = 0, title = "SCA-A"), // ours, enabled: reclaimable by dismiss-then-set
+            slot(2, enabled = false, hour = 7, minute = 0, title = "SCA-B"), // ours, but disabled AND titled: nothing can use or free it
             slot(3, enabled = false, title = "Alarm") // not free, not ours
         )
 
-        assertEquals(3, countFreeOrOwnedBandAlarmSlots(slots, OUR_TITLES))
+        assertEquals(2, countUsableBandAlarmSlots(slots, OUR_TITLES))
+    }
+
+    @Test
+    fun `a band whose only our-titled slot is disabled has nothing usable at all`() {
+        // B1: this is the owner's band after a night whose alarm rang - the slot keeps our title, switched
+        // off. Gadgetbridge's picker skips a titled slot and nothing in the protocol ever clears it, so
+        // counting it as usable made every SET fail silently while the setup check said the night could run.
+        val slots = listOf(
+            slot(0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true),
+            slot(1, enabled = true, hour = 7, minute = 0, title = "Work"),
+            slot(2, enabled = false, hour = 8, minute = 0, title = "SCA-A")
+        )
+
+        assertEquals(0, countUsableBandAlarmSlots(slots, OUR_TITLES))
     }
 
     @Test
@@ -71,7 +85,7 @@ class BandAlarmMappingTest {
         )
 
         assertEquals(0, countFreeBandAlarmSlots(slots))
-        assertEquals(0, countFreeOrOwnedBandAlarmSlots(slots, OUR_TITLES))
+        assertEquals(0, countUsableBandAlarmSlots(slots, OUR_TITLES))
     }
 
     @Test
@@ -84,14 +98,14 @@ class BandAlarmMappingTest {
         )
 
         assertEquals(1, countFreeBandAlarmSlots(slots))
-        assertEquals(1, countFreeOrOwnedBandAlarmSlots(slots, OUR_TITLES))
+        assertEquals(1, countUsableBandAlarmSlots(slots, OUR_TITLES))
     }
 
     @Test
-    fun `a smart-wakeup slot carrying one of our titles is never counted as owned either`() {
+    fun `a smart-wakeup slot carrying one of our titles is never counted as usable either`() {
         val slots = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = "SCA-A", smartWakeup = true, smartWakeupWindowMinutes = 60))
 
-        assertEquals(0, countFreeOrOwnedBandAlarmSlots(slots, OUR_TITLES))
+        assertEquals(0, countUsableBandAlarmSlots(slots, OUR_TITLES))
     }
 
     @Test

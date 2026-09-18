@@ -15,6 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.time.Duration
 import java.time.Instant
 
 private const val NIGHT_STATE_FILE_NAME = "night_state.json"
@@ -183,6 +184,8 @@ private fun encodeAlarmPlan(plan: AlarmPlan): JSONObject = JSONObject().apply {
     put("onsetIsProjected", plan.onsetIsProjected)
     put("reason", plan.reason)
     put("overdueSince", plan.overdueSince?.toString() ?: JSONObject.NULL)
+    put("sleptSoFarSeconds", plan.sleptSoFar.seconds)
+    put("owedCycles", plan.owedCycles)
 }
 
 private fun decodeAlarmPlan(json: JSONObject): AlarmPlan = AlarmPlan(
@@ -193,7 +196,9 @@ private fun decodeAlarmPlan(json: JSONObject): AlarmPlan = AlarmPlan(
     referenceOnset = json.optStringOrNull("referenceOnset")?.let(Instant::parse),
     onsetIsProjected = json.getBoolean("onsetIsProjected"),
     reason = json.getString("reason"),
-    overdueSince = json.optStringOrNull("overdueSince")?.let(Instant::parse)
+    overdueSince = json.optStringOrNull("overdueSince")?.let(Instant::parse),
+    sleptSoFar = if (json.has("sleptSoFarSeconds")) Duration.ofSeconds(json.getLong("sleptSoFarSeconds")) else Duration.ZERO,
+    owedCycles = if (json.has("owedCycles")) json.getInt("owedCycles") else 0
 )
 
 /** An unknown mode (a newer app version wrote it) or any other malformed plan is dropped: the state loads with `lastPlan = null` instead of failing entirely. */

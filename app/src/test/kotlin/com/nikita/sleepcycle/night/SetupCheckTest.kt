@@ -80,6 +80,40 @@ class SetupCheckTest {
     }
 
     @Test
+    fun `a band whose only our-titled slot is switched off is not ready - nothing could be set into it`() {
+        // B1: the slot keeps our title from an earlier night but is disabled, so Gadgetbridge's picker skips
+        // it and nothing ever clears it. Counting it as usable let this report say the night could run while
+        // every SET silently failed.
+        val slots = listOf(
+            slot(position = 0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true, smartWakeupWindowMinutes = 60),
+            slot(position = 1, enabled = true, hour = 7, minute = 0, title = "Work"),
+            slot(position = 2, enabled = false, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A)
+        )
+
+        val report = buildSuccessReport(success(slots), NOW, phoneLines = emptyList())
+
+        assertEquals(0, report.usableBandAlarmSlots)
+        assertFalse(report.isReady, "no slot can take an alarm, so the night must not be allowed to start")
+        assertTrue(report.lines.any { it.severity == SetupCheckLineSeverity.ACTION_NEEDED && it.text.contains("No band alarm can be set") })
+    }
+
+    @Test
+    fun `the one-slot advice line says a phone alarm is needed tonight`() {
+        val slots = listOf(
+            slot(position = 0, enabled = false, hour = 0, minute = 0, title = "Smart", smartWakeup = true, smartWakeupWindowMinutes = 60),
+            slot(position = 1, enabled = false, hour = 3, minute = 17, title = null),
+            slot(position = 2, enabled = false, hour = 7, minute = 0, title = "Alarm")
+        )
+
+        val report = buildSuccessReport(success(slots), NOW, phoneLines = emptyList())
+
+        assertEquals(1, report.usableBandAlarmSlots)
+        val adviceLine = report.lines.single { it.text.contains("Only one usable band alarm") }
+        assertTrue(adviceLine.text.contains("deadline"), "must name the deadline as one of the two ways to be safe")
+        assertTrue(adviceLine.text.contains("phone backup"), "must name the phone backup as the other")
+    }
+
+    @Test
     fun `two usable slots add no one-slot advice line`() {
         val slots = listOf(
             slot(position = 0, enabled = false, hour = 3, minute = 17, title = null),

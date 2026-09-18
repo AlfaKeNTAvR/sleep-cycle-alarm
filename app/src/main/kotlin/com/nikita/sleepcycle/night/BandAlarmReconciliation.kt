@@ -30,8 +30,9 @@ internal data class ReconciledBandAlarm(
 /**
  * Rule 1: reconcile first, always, before any new command is decided. Re-sends a dismissal the table still
  * shows as present, demotes a confirmed alarm that has vanished, promotes a pending request the table now
- * carries (under whatever hour/minute the band actually holds, never the time we asked for), adopts or clears
- * orphan slots (C3), and reports the band's own smart-wakeup flag if it sits on one of our slots.
+ * carries AT THE REQUESTED HOUR AND MINUTE (the same title at another time is the old alarm, not the new
+ * one), adopts or clears orphan slots (C3), and reports the band's own smart-wakeup flag if it sits on one of
+ * our slots.
  */
 internal fun reconcileAgainstTable(
     slots: List<BandAlarmSlot>,
@@ -59,7 +60,11 @@ internal fun reconcileAgainstTable(
     }
 
     val pending = currentRequested
-    val landedSlot = pending?.let { findActiveSlot(slots, it.title) }
+    // A slot under our title only counts as "the request landed" when it carries the hour and minute we
+    // actually asked for. The same title at a DIFFERENT time is the old alarm still sitting there - a move
+    // whose DISMISS or SET was silently lost - and promoting that was how a failing move looked like a
+    // success, repeating forever without ever spending the single-slot re-send bound.
+    val landedSlot = pending?.let { findActiveSlot(slots, it.title) }?.takeIf { it.hour == pending.hour && it.minute == pending.minute }
     if (pending != null && landedSlot != null) {
         val promoted = pending.copy(hour = landedSlot.hour, minute = landedSlot.minute)
         val previousConfirmed = currentConfirmed

@@ -24,10 +24,10 @@ class BandAlarmDecisionTest {
     // ---- Basic shape: first request, confirmation, zone handling -----------------------------------------
 
     @Test
-    fun `first request of the night sets under title A from an empty but present table`() {
+    fun `first request of the night sets under title A from a table with room in it`() {
         val desired = Instant.parse("2026-09-17T08:30:00Z")
 
-        val decision = decideBandAlarmCommands(desired, requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = emptyList(), now = NOW, zone = ZONE_UTC)
+        val decision = decideBandAlarmCommands(desired, requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = listOf(freeSlot(3), freeSlot(4)), now = NOW, zone = ZONE_UTC)
 
         assertEquals(BandAlarmOutcome.REQUESTED, decision.outcome)
         assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)), decision.commands)
@@ -123,7 +123,9 @@ class BandAlarmDecisionTest {
 
     @Test
     fun `a foreign alarm titled Backup SCA-A does not block a fresh SET under our own exact title`() {
-        val slots = listOf(slot(0, enabled = true, hour = 7, minute = 0, title = "Backup $BAND_ALARM_TITLE_A"))
+        // A genuinely free slot alongside the foreign alarm: the question here is whether the superstring
+        // title blocks OUR title, not whether the band has room.
+        val slots = listOf(slot(0, enabled = true, hour = 7, minute = 0, title = "Backup $BAND_ALARM_TITLE_A"), freeSlot(3))
 
         val decision = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = slots, now = NOW, zone = ZONE_UTC)
 
@@ -159,12 +161,12 @@ class BandAlarmDecisionTest {
 
     @Test
     fun `a target whose local minute starts exactly MIN_SEND_MARGIN ahead is sent`() {
-        // now=00:00:15, next minute boundary 00:01:00 is exactly 45 s away. slots is an empty but PRESENT
-        // table (not null), so this exercises the table-available path - REQUESTED, not BLIND.
+        // now=00:00:15, next minute boundary 00:01:00 is exactly 45 s away. slots is a PRESENT table with
+        // room in it (not null), so this exercises the table-available path - REQUESTED, not BLIND.
         val now = Instant.parse("2026-09-17T00:00:15Z")
         val desired = Instant.parse("2026-09-17T00:01:05Z")
 
-        val decision = decideBandAlarmCommands(desired, requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = emptyList(), now = now, zone = ZONE_UTC)
+        val decision = decideBandAlarmCommands(desired, requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = listOf(freeSlot(3), freeSlot(4)), now = now, zone = ZONE_UTC)
 
         assertEquals(BandAlarmOutcome.REQUESTED, decision.outcome)
         assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 0, 1)), decision.commands)

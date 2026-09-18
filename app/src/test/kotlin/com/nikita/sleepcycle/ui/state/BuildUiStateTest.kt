@@ -6,6 +6,7 @@ import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
+import com.nikita.sleepcycle.night.MAX_SINGLE_SLOT_RESENDS_PER_NIGHT
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -291,6 +292,28 @@ class NoPhoneAlarmWarningWiringTest {
         val view = testEngineView(SleepState.ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night)
         assertFalse(result.night!!.noPhoneAlarmWarning)
+    }
+}
+
+/** The single-slot re-send bound, wired end to end: once it is spent the app stops trying to restore the band alarm, which until now only the night log said. */
+class BandAlarmResendLimitWiringTest {
+    private val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+
+    @Test fun `the night screen flags the spent re-send bound`() {
+        val night = testNightState(lastPlan = plan, singleSlotResendsUsed = MAX_SINGLE_SLOT_RESENDS_PER_NIGHT)
+        val result = state(nightState = night, engineView = testEngineView(SleepState.ASLEEP), screen = Screen.Night)
+        assertTrue(result.night!!.bandAlarmResendLimitReached)
+    }
+
+    @Test fun `one re-send short of the bound is not flagged`() {
+        val night = testNightState(lastPlan = plan, singleSlotResendsUsed = MAX_SINGLE_SLOT_RESENDS_PER_NIGHT - 1)
+        val result = state(nightState = night, engineView = testEngineView(SleepState.ASLEEP), screen = Screen.Night)
+        assertFalse(result.night!!.bandAlarmResendLimitReached)
+    }
+
+    @Test fun `a night before its first tick is not flagged`() {
+        val result = state(nightState = testNightState(), engineView = null, screen = Screen.Night)
+        assertFalse(result.night!!.bandAlarmResendLimitReached)
     }
 }
 

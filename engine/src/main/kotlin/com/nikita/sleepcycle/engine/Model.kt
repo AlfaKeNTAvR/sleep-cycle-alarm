@@ -34,6 +34,10 @@ data class NightSettings(
  * sentence for the night log. `overdueSince` is null unless [mode] is [AlarmMode.OVERDUE]: the band alarm that was missed and started the
  * overdue period (the overdue rule's `maxOverdueDuration` cap counts from this instant). Added last with a
  * default so existing positional call sites keep compiling.
+ *
+ * [sleptSoFar] and [owedCycles] are the two numbers rule 2's night total is decided from (see
+ * `sumSleepAlreadyHad` and `countOwedCycles`), carried on the plan so the night log can record them as fields
+ * rather than only inside [reason]'s prose: [cycles] alone cannot say whether the deadline or the total bound.
  */
 data class AlarmPlan(
     val mode: AlarmMode,
@@ -43,7 +47,11 @@ data class AlarmPlan(
     val referenceOnset: Instant?,
     val onsetIsProjected: Boolean,
     val reason: String,
-    val overdueSince: Instant? = null
+    val overdueSince: Instant? = null,
+    /** Sleep already had tonight, excluding the stretch this plan's alarm is measured from. */
+    val sleptSoFar: Duration = Duration.ZERO,
+    /** Whole cycles still owed of the picked total, BEFORE any deadline cap ([cycles] is after it). */
+    val owedCycles: Int = 0
 )
 
 /** One entry in the wake-time picker: waking after [cycles] cycles, at [wakeTime], having slept [sleepDuration]. */

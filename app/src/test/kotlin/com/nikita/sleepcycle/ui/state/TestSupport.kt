@@ -33,6 +33,7 @@ internal fun testAppSettings(
     pickedCycles: Int = 5,
     phoneBackupEnabled: Boolean = false,
     lastSetupCheckPassedAt: Instant? = null,
+    lastSetupCheckUsableBandAlarmSlots: Int? = null,
 ): AppSettings = AppSettings(
     deviceMac = deviceMac,
     exportUri = null,
@@ -41,6 +42,7 @@ internal fun testAppSettings(
     pickedCycles = pickedCycles,
     phoneBackupEnabled = phoneBackupEnabled,
     lastSetupCheckPassedAt = lastSetupCheckPassedAt,
+    lastSetupCheckUsableBandAlarmSlots = lastSetupCheckUsableBandAlarmSlots,
 )
 
 internal fun testPermissionStatus(allGranted: Boolean = true): PermissionStatus = PermissionStatus(
@@ -78,6 +80,7 @@ internal fun testNightState(
     lastSyncOk: Boolean? = null,
     lastSyncFailureCause: String? = null,
     debugOptions: DebugOptions = DebugOptions(),
+    singleSlotResendsUsed: Int = 0,
 ): NightState = NightState(
     startedAt = instant(startedAt),
     settings = settings,
@@ -90,6 +93,7 @@ internal fun testNightState(
     lastExportFileModifiedAt = null,
     lastSyncFailureCause = lastSyncFailureCause,
     debugOptions = debugOptions,
+    singleSlotResendsUsed = singleSlotResendsUsed,
 )
 
 internal fun testEngineView(

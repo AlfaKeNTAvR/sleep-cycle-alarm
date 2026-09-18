@@ -67,9 +67,18 @@ private fun isFreeBandAlarmSlot(slot: BandAlarmSlot): Boolean = isDisabledAndUnt
 /** How many alarm slots SET_ALARM could claim right now, excluding any smart-wakeup slot. Drives the setup checklist's shortage message. */
 fun countFreeBandAlarmSlots(slots: List<BandAlarmSlot>): Int = slots.count(::isFreeBandAlarmSlot)
 
-/** Free slots plus slots already carrying one of [ourTitles], excluding a smart-wakeup slot either way: both can be (re)claimed by dismiss-then-set, a smart slot never can. */
-fun countFreeOrOwnedBandAlarmSlots(slots: List<BandAlarmSlot>, ourTitles: Set<String>): Int =
-    slots.count { isFreeBandAlarmSlot(it) || (it.title in ourTitles && !it.smartWakeup) }
+/**
+ * How many slots this app can actually put an alarm into right now: slots SET_ALARM would claim, plus slots
+ * currently holding one of our own ENABLED alarms, which we can reclaim by dismiss-then-set. A smart-wakeup
+ * slot never counts either way (see this file's header).
+ *
+ * A DISABLED slot still carrying one of [ourTitles] is deliberately NOT counted: Gadgetbridge's picker skips
+ * it (it has a title) and nothing in the protocol ever clears it - orphan adoption only dismisses ENABLED
+ * slots - so counting it made the app believe it had a usable slot while every SET silently failed. Such a
+ * slot is dead weight until the owner clears its title, and the setup check says so.
+ */
+fun countUsableBandAlarmSlots(slots: List<BandAlarmSlot>, ourTitles: Set<String>): Int =
+    slots.count { isFreeBandAlarmSlot(it) || (it.enabled && it.title in ourTitles && !it.smartWakeup) }
 
 /**
  * Smart-wakeup slots that SET_ALARM could still claim right now (disabled, untitled) - the live danger this

@@ -1,5 +1,7 @@
 package com.nikita.sleepcycle.night
 
+import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SegmentKind
 import com.nikita.sleepcycle.engine.SleepSegment
@@ -49,15 +51,67 @@ class NightUiSupportTest {
         assertTrue(view.wakeOptions.all { it.wakeTime.isAfter(startedAt) })
     }
 
+    @Test
+    fun `after an awakening the timeline offers only what the plan still owes, never a fresh full night`() {
+        // 7.5 h picked, 6 h already slept, awake and back asleep at 05:30: the engine plans ONE more cycle.
+        // Listing the whole picked length here offered wake-ups out to 13 h, hours past anything the engine
+        // would ever set.
+        val onset = Instant.parse("2026-09-17T05:30:00Z")
+        val plan = AlarmPlan(
+            mode = AlarmMode.FULL_CYCLES,
+            bandAlarm = Instant.parse("2026-09-17T07:00:00Z"),
+            phoneAlarm = null,
+            cycles = 1,
+            referenceOnset = onset,
+            onsetIsProjected = false,
+            reason = "one cycle still owed"
+        )
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false), lastPlan = plan)
+
+        val view = buildNightEngineView(state, now = onset)
+
+        assertEquals(listOf(1), view.wakeOptions.map { it.cycles })
+        assertEquals(Instant.parse("2026-09-17T07:00:00Z"), view.wakeOptions.single().wakeTime)
+    }
+
+    @Test
+    fun `before any plan exists the timeline still offers the whole picked length`() {
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false))
+
+        val view = buildNightEngineView(state, now = startedAt)
+
+        assertEquals(listOf(1, 2, 3, 4, 5), view.wakeOptions.map { it.cycles }, "nothing slept yet, so the whole picked night is still owed")
+    }
+
+    @Test
+    fun `a plan owing nothing at all offers no wake-up options`() {
+        val onset = Instant.parse("2026-09-17T07:40:00Z")
+        val plan = AlarmPlan(
+            mode = AlarmMode.NAP,
+            bandAlarm = Instant.parse("2026-09-17T08:00:00Z"),
+            phoneAlarm = null,
+            cycles = 0,
+            referenceOnset = onset,
+            onsetIsProjected = false,
+            reason = "nap"
+        )
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false), lastPlan = plan)
+
+        val view = buildNightEngineView(state, now = onset)
+
+        assertTrue(view.wakeOptions.isEmpty(), "the picked total is used up; there is no further cycle to offer")
+    }
+
     private fun nightState(
         segments: List<SleepSegment>,
         settings: NightSettings,
         requestedBandAlarm: BandAlarmCommitment? = null,
         confirmedBandAlarm: BandAlarmCommitment? = null,
+        lastPlan: AlarmPlan? = null,
     ) = NightState(
         startedAt = startedAt,
         settings = settings,
-        lastPlan = null,
+        lastPlan = lastPlan,
         requestedBandAlarm = requestedBandAlarm,
         confirmedBandAlarm = confirmedBandAlarm,
         lastSyncAt = null,

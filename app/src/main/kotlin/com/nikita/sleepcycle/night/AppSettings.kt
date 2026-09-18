@@ -29,8 +29,9 @@ private val KEY_DEADLINE_ENABLED = booleanPreferencesKey("deadline_enabled")
 private val KEY_PICKED_CYCLES = intPreferencesKey("picked_cycles")
 private val KEY_PHONE_BACKUP_ENABLED = booleanPreferencesKey("phone_backup_enabled")
 private val KEY_LAST_SETUP_CHECK_PASSED_AT = longPreferencesKey("last_setup_check_passed_at_epoch_ms")
+private val KEY_LAST_SETUP_CHECK_USABLE_SLOTS = intPreferencesKey("last_setup_check_usable_band_alarm_slots")
 
-/** The user's saved setup and last-used night settings. */
+/** The user's saved setup and last-used night settings. [lastSetupCheckUsableBandAlarmSlots] is how many band alarm slots the last passing setup check found usable; null when no check has passed, and what tells the Before-bed screen tonight would run on one slot (see SetupCompleteness.kt). */
 data class AppSettings(
     val deviceMac: String?,
     val exportUri: Uri?,
@@ -38,7 +39,8 @@ data class AppSettings(
     val deadlineEnabled: Boolean,
     val pickedCycles: Int,
     val phoneBackupEnabled: Boolean,
-    val lastSetupCheckPassedAt: Instant?
+    val lastSetupCheckPassedAt: Instant?,
+    val lastSetupCheckUsableBandAlarmSlots: Int? = null
 )
 
 /** Streams the saved app settings, with sensible defaults before anything has been picked. */
@@ -51,7 +53,8 @@ fun readAppSettings(context: Context): Flow<AppSettings> =
             deadlineEnabled = preferences[KEY_DEADLINE_ENABLED] ?: DEFAULT_DEADLINE_ENABLED,
             pickedCycles = preferences[KEY_PICKED_CYCLES] ?: DEFAULT_PICKED_CYCLES,
             phoneBackupEnabled = preferences[KEY_PHONE_BACKUP_ENABLED] ?: DEFAULT_PHONE_BACKUP_ENABLED,
-            lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli)
+            lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli),
+            lastSetupCheckUsableBandAlarmSlots = preferences[KEY_LAST_SETUP_CHECK_USABLE_SLOTS]
         )
     }
 
@@ -66,15 +69,20 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         preferences[KEY_PHONE_BACKUP_ENABLED] = settings.phoneBackupEnabled
         settings.lastSetupCheckPassedAt?.let { preferences[KEY_LAST_SETUP_CHECK_PASSED_AT] = it.toEpochMilli() }
             ?: preferences.remove(KEY_LAST_SETUP_CHECK_PASSED_AT)
+        settings.lastSetupCheckUsableBandAlarmSlots?.let { preferences[KEY_LAST_SETUP_CHECK_USABLE_SLOTS] = it }
+            ?: preferences.remove(KEY_LAST_SETUP_CHECK_USABLE_SLOTS)
     }
 }
 
 /** [settings] with [mac] as the device MAC, normalised to upper case and trimmed before use and compare (Gadgetbridge's own address matching is case-sensitive). A passing setup check is only trustworthy for the band it checked, so changing the MAC clears it. */
 fun withDeviceMac(settings: AppSettings, mac: String): AppSettings {
     val normalized = mac.trim().uppercase()
-    return settings.copy(deviceMac = normalized, lastSetupCheckPassedAt = if (normalized != settings.deviceMac) null else settings.lastSetupCheckPassedAt)
+    if (normalized == settings.deviceMac) return settings.copy(deviceMac = normalized)
+    return settings.copy(deviceMac = normalized, lastSetupCheckPassedAt = null, lastSetupCheckUsableBandAlarmSlots = null)
 }
 
 /** [settings] with [uri] as the export file. A passing setup check is only trustworthy for the file it read, so changing it clears the check. */
-fun withExportUri(settings: AppSettings, uri: Uri): AppSettings =
-    settings.copy(exportUri = uri, lastSetupCheckPassedAt = if (uri != settings.exportUri) null else settings.lastSetupCheckPassedAt)
+fun withExportUri(settings: AppSettings, uri: Uri): AppSettings {
+    if (uri == settings.exportUri) return settings
+    return settings.copy(exportUri = uri, lastSetupCheckPassedAt = null, lastSetupCheckUsableBandAlarmSlots = null)
+}

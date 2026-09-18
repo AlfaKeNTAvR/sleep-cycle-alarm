@@ -6,9 +6,12 @@ package com.nikita.sleepcycle.night
 // and is excluded (see BandAlarmMapping.kt's header), and freeing a second alarm is not something the owner
 // wants to be forced into. With one slot there is no other title to set the replacement under, so moving the
 // wake time means DISMISS our own confirmed title and SET the same title again, in that order, in one tick -
-// the band is briefly without an alarm, which is why the Night screen says so and the phone alarm is the
-// safety net. This is the ONLY place allowed to dismiss before a replacement is confirmed, and only because
-// the table itself proved there is no second slot to alternate into (rule 3 stands everywhere else).
+// the band is briefly without an alarm, which is why the Night screen says so and why a night that starts on
+// a one-slot band must have a phone alarm of its own (a deadline or the phone backup - see
+// SetupCompleteness.kt's singleSlotNightNeedsPhoneAlarm): every SET here can silently fail, and without a
+// phone alarm nothing would be left to ring. This is the ONLY place allowed to dismiss before a replacement
+// is confirmed, and only because the table itself proved there is no second slot to alternate into (rule 3
+// stands everywhere else).
 //
 // Self-healing: a SET that silently never lands (Gadgetbridge never reports that failure) leaves a pending
 // request that the next tick's table does not show. That tick re-sends it immediately rather than waiting for
@@ -16,6 +19,7 @@ package com.nikita.sleepcycle.night
 // alarms altogether cannot be hammered all night.
 
 import com.nikita.sleepcycle.bridge.BandAlarmSlot
+import com.nikita.sleepcycle.bridge.countUsableBandAlarmSlots
 import java.time.Instant
 import java.time.LocalTime
 
@@ -39,13 +43,24 @@ internal fun decideSingleSlotBandAlarmCommands(
     now: Instant,
     resendsUsed: Int
 ): BandAlarmDecision {
+    // The table proves what can be placed. With nothing free and nothing of ours enabled, every command this
+    // protocol could send would be dropped by Gadgetbridge unheard (SET_ALARM only logs its own failure), so
+    // it is withheld instead - including the re-send, which would otherwise burn the whole night's bound on
+    // sends that never had a slot to land in.
+    if (countUsableBandAlarmSlots(slots, ALL_BAND_ALARM_TITLES.toSet()) == 0) {
+        return singleSlotDecision(
+            reconciled, reconciled.requested, reconciled.confirmed, emptyList(), BandAlarmOutcome.NO_FREE_SLOT, resendsUsed
+        )
+    }
+
     val confirmed = reconciled.confirmed
     if (confirmed != null) return moveConfirmedAlarmInPlace(reconciled, confirmed, desiredTime, now, resendsUsed)
 
     val requested = reconciled.requested
-    // Reconciliation already ran, so a request still pending here is one the table did not show: the SET
-    // never landed, or the slot was cleared behind our back.
-    if (requested != null) return resendMissingAlarm(reconciled, requested, desiredTime, now, resendsUsed)
+    // Reconciliation already ran, so a request still pending here is one the table did not show AT THE TIME WE
+    // ASKED FOR: the SET never landed (or, after a move, the DISMISS did not either and the old alarm is still
+    // sitting there under the same title).
+    if (requested != null) return resendMissingAlarm(reconciled, requested, slots, desiredTime, now, resendsUsed)
 
     val title = ALL_BAND_ALARM_TITLES.firstOrNull { !titleOccupied(slots, it) && it !in reconciled.pendingDismissTitles }
         ?: return singleSlotDecision(reconciled, null, null, emptyList(), BandAlarmOutcome.NO_FREE_SLOT, resendsUsed)
@@ -87,10 +102,18 @@ private fun moveConfirmedAlarmInPlace(
     )
 }
 
-/** Self-healing for a SET the table never showed: re-send it at once, at the current target, until the per-night bound is spent. */
+/**
+ * Self-healing for a request the table does not show at the time we asked for: re-send it at once, at the
+ * current target, until the per-night bound is spent. Every attempt costs one of the night's re-sends,
+ * including the case where the title is still on the band at the OLD time - a move whose DISMISS was lost
+ * leaves exactly that, and the whole move (DISMISS then SET, same order as any other single-slot move) has to
+ * go out again. Without charging that case the bound was never reached at all: the stale alarm looked like a
+ * landed request, was promoted, and the move repeated every tick for the rest of the night.
+ */
 private fun resendMissingAlarm(
     reconciled: ReconciledBandAlarm,
     requested: BandAlarmCommitment,
+    slots: List<BandAlarmSlot>,
     desiredTime: LocalTime,
     now: Instant,
     resendsUsed: Int
@@ -98,11 +121,20 @@ private fun resendMissingAlarm(
     if (resendsUsed >= MAX_SINGLE_SLOT_RESENDS_PER_NIGHT) {
         return singleSlotDecision(reconciled, requested, null, emptyList(), BandAlarmOutcome.RESEND_LIMIT_REACHED, resendsUsed)
     }
+    val staleAlarmStillThere = titleOccupied(slots, requested.title)
+    val commands = if (staleAlarmStillThere) {
+        listOf(
+            BandAlarmCommand.Dismiss(requested.title),
+            BandAlarmCommand.Set(requested.title, desiredTime.hour, desiredTime.minute)
+        )
+    } else {
+        listOf(BandAlarmCommand.Set(requested.title, desiredTime.hour, desiredTime.minute))
+    }
     return singleSlotDecision(
         reconciled,
         requestedBandAlarm = requested.copy(hour = desiredTime.hour, minute = desiredTime.minute, at = now, blindResendCount = 0),
         confirmedBandAlarm = null,
-        extraCommands = listOf(BandAlarmCommand.Set(requested.title, desiredTime.hour, desiredTime.minute)),
+        extraCommands = commands,
         candidateOutcome = BandAlarmOutcome.MISSING_RESENT,
         resendsUsed = resendsUsed + 1
     )

@@ -81,13 +81,18 @@ and the night log all work without waiting for a real night. About 15 minutes en
 8. Tap that gear icon, then **I fell asleep now**. The **Simulated timeline** list grows a `LIGHT` entry
    right there. Tap back - the Night screen now shows a real onset and a band alarm about 15 minutes away
    (fast night: 5 min per cycle, 3 picked cycles = 15 min).
-9. Wait about a minute, reopen Debug, tap **I woke up now**, wait a few seconds, tap **Fell back asleep
-   now**. Waking this early after falling asleep still leaves plenty of room before the band alarm, so the
-   plan restarts a full cycle count rather than switching to a nap - watch the Night screen's alarm time move
-   out a little each time.
-10. Repeat wake / fell-back-asleep once you are close to the current band alarm time (within one cycle
-    length, i.e. within about 5 minutes of it). This time the Night screen switches to the **nap** card
-    instead - only a short (3 min) nap fits before the wake boundary. Keep the app open and do not press
+9. Wait a couple of minutes, reopen Debug, tap **I woke up now**, wait a few seconds, tap **Fell back asleep
+   now**. The picked length is the whole night's budget (3 cycles = 15 min here), so every minute you "slept"
+   is subtracted from it: the plan does not start a fresh count from the new onset, it counts only what is
+   still owed. Watch the Night screen's timeline lose an option each round, and the alarm land roughly 15
+   minutes after you first fell asleep however often you wake.
+10. Keep repeating wake / fell-back-asleep until about 13 of the 15 minutes have been slept in total (the
+    timeline is down to its last option, and the alarm is only a few minutes out). The next time you fall
+    back asleep, less than half a cycle is left of the budget, nothing whole is owed, and the Night screen
+    switches to the **nap** card: a short 3 min nap from that onset. This is the way to reach the nap card on
+    a night with no deadline - using up the total is the only thing that ends such a night, so waking near
+    the previous alarm no longer produces a nap by itself. (With the deadline switch on instead, a nap also
+    appears as soon as less than one cycle fits before the deadline.) Keep the app open and do not press
     anything else: the nap alarm actually reaches its own time and you can watch it fire (band alarm, then
     the phone backup) before anything turns to OVERDUE.
 11. If you let the phone keep "sleeping" past the nap alarm instead of ending the night, the screen switches

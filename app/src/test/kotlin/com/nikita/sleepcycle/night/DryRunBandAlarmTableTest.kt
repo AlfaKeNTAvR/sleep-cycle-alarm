@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.night
 
 import com.nikita.sleepcycle.engine.NightSettings
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -32,8 +33,27 @@ class DryRunBandAlarmTableTest {
     )
 
     @Test
-    fun `an empty state has an empty simulated table`() {
-        assertTrue(simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = null)).isEmpty())
+    fun `an empty state still offers one free slot, so the first dry-run SET has somewhere to land`() {
+        val slots = simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = null))
+
+        val slot = slots.single()
+        assertNull(slot.title, "free means untitled")
+        assertFalse(slot.enabled, "free means switched off - the only shape Gadgetbridge's picker claims")
+        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, chooseBandAlarmSlotMode(slots), "one usable slot, like the owner's real band")
+    }
+
+    @Test
+    fun `the first dry-run tick really does send a SET, rather than withholding it for want of a slot`() {
+        val slots = simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = null))
+
+        val decision = decideBandAlarmCommands(
+            desiredBandAlarm = Instant.parse("2026-09-17T08:30:00Z"),
+            requested = null, confirmed = null, pendingDismissTitles = emptySet(),
+            slots = slots, now = t0, zone = zone
+        )
+
+        assertEquals(BandAlarmOutcome.REQUESTED, decision.outcome)
+        assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)), decision.commands)
     }
 
     @Test
@@ -73,7 +93,7 @@ class DryRunBandAlarmTableTest {
 
         val slots = simulatedDryRunBandAlarmSlots(state(requested = null, confirmed = confirmed, pendingDismiss = setOf(BAND_ALARM_TITLE_A)))
 
-        assertTrue(slots.isEmpty())
+        assertTrue(slots.none { it.title == BAND_ALARM_TITLE_A }, "the dismissed alarm is gone from the table")
     }
 
     @Test

@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.ui.state
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.BandAlarmStatus
+import com.nikita.sleepcycle.night.MAX_SINGLE_SLOT_RESENDS_PER_NIGHT
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.activeDebugSwitches
@@ -59,6 +60,7 @@ fun buildNightUiState(
     val bandAlarmStatus = bandAlarmStatusUiFor(state)
     val noPhoneAlarmWarning = noPhoneAlarmTonight(deadlineEnabled = state.settings.deadline != null, phoneBackupEnabled = state.settings.phoneBackupEnabled)
     val smartWakeupWarning = smartWakeupWarningUiFor(state)
+    val resendLimitReached = state.singleSlotResendsUsed >= MAX_SINGLE_SLOT_RESENDS_PER_NIGHT
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
@@ -68,6 +70,7 @@ fun buildNightUiState(
             noPhoneAlarmWarning = noPhoneAlarmWarning,
             smartWakeupWarning = smartWakeupWarning,
             bandAlarmSlotMode = state.bandAlarmSlotMode,
+            bandAlarmResendLimitReached = resendLimitReached,
         )
     }
 
@@ -91,5 +94,6 @@ fun buildNightUiState(
         noPhoneAlarmWarning = noPhoneAlarmWarning,
         smartWakeupWarning = smartWakeupWarning,
         bandAlarmSlotMode = state.bandAlarmSlotMode,
+        bandAlarmResendLimitReached = resendLimitReached,
     )
 }

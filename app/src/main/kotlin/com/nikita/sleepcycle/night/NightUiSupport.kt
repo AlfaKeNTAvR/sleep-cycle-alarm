@@ -28,6 +28,12 @@ data class NightEngineView(
  * from pure engine functions, using the EngineConfig [resolveEngineConfig] derives from [state]'s own debug
  * options - so a fast debug night is shown with fast-night timing from its very first tick onward, and the
  * night screen and the orchestrator (NightOrchestrator.kt) can never disagree about which config applies.
+ *
+ * The timeline is listed up to what the last plan still owes ([AlarmPlan.cycles]), never the whole picked
+ * length: after an awakening the night's total is mostly spent, so offering a fresh full night there was
+ * offering something the engine had already decided against (waking at 05:30 of a 7.5 h night listed options
+ * out to 13 h while the plan was one cycle). Before the first plan exists there is nothing slept yet, so the
+ * picked length is exactly what is owed.
  */
 fun buildNightEngineView(state: NightState, now: Instant): NightEngineView {
     val config = resolveEngineConfig(state.debugOptions)
@@ -35,8 +41,9 @@ fun buildNightEngineView(state: NightState, now: Instant): NightEngineView {
     val stretches = buildSleepStretches(timeline)
     val sleepState = detectSleepState(timeline)
     val summary = summarizeNight(stretches, config)
-    val referenceOnset = state.lastPlan?.referenceOnset ?: now
-    val wakeOptions = listWakeOptions(referenceOnset, state.settings, config)
+    val plan = state.lastPlan
+    val referenceOnset = plan?.referenceOnset ?: now
+    val wakeOptions = listWakeOptions(referenceOnset, state.settings, config, upToCycles = plan?.cycles ?: state.settings.pickedCycles)
     return NightEngineView(sleepState, summary, wakeOptions)
 }
 

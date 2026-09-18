@@ -23,8 +23,8 @@ fun WokeUpContent(content: NightScreenContent.WokeUp) {
         HeroNumeral(
             caption = stringResource(R.string.night_woke_caption),
             value = content.sleptDurationLabel,
-            detail = if (content.napOnly && content.wakeBoundaryTimeLabel != null) {
-                stringResource(R.string.night_c_timeline_header, content.wakeBoundaryTimeLabel)
+            detail = if (content.napOnly && content.headerTimeLabel != null) {
+                stringResource(R.string.night_c_timeline_header, content.headerTimeLabel)
             } else {
                 null
             },
@@ -39,8 +39,8 @@ fun WokeUpContent(content: NightScreenContent.WokeUp) {
             }
         } else {
             SettingsCard {
-                if (content.wakeBoundaryTimeLabel != null) {
-                    Text(text = stringResource(R.string.night_b_timeline_header, content.wakeBoundaryTimeLabel), style = MaterialTheme.typography.bodySmall)
+                if (content.headerTimeLabel != null) {
+                    Text(text = stringResource(R.string.night_b_timeline_header, content.headerTimeLabel), style = MaterialTheme.typography.bodySmall)
                 }
                 WakeTimeline(entries = content.timeline)
             }

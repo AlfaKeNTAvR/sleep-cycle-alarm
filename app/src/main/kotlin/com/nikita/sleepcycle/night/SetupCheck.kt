@@ -13,7 +13,7 @@ import com.nikita.sleepcycle.bridge.BandAlarmSlot
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
 import com.nikita.sleepcycle.bridge.countFreeBandAlarmSlots
-import com.nikita.sleepcycle.bridge.countFreeOrOwnedBandAlarmSlots
+import com.nikita.sleepcycle.bridge.countUsableBandAlarmSlots
 import com.nikita.sleepcycle.bridge.describeOtherBandAlarm
 import com.nikita.sleepcycle.bridge.findTitlesConflictingWithOurs
 import com.nikita.sleepcycle.bridge.listOtherEnabledBandAlarms
@@ -27,12 +27,11 @@ private val CONNECTION_TEST_LOOKBACK: Duration = Duration.ofDays(1)
 /**
  * One usable slot is enough to run a night: with exactly one, moving the wake time means clearing our own
  * band alarm and setting it again in the same tick (BandAlarmSingleSlotMode.kt). Below this, nothing can be
- * set at all, which is the only slot situation that still blocks "Start night".
+ * set at all, which is the only slot situation that still blocks "Start night". "Usable" is
+ * [countUsableBandAlarmSlots]'s definition and nothing looser: a disabled slot still carrying one of our own
+ * titles is NOT usable, because Gadgetbridge's picker skips it and nothing ever clears it.
  */
-private const val MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS = 1
-
-/** With this many, the app can set the replacement before clearing the old alarm, so the band is never briefly without one. */
-private const val GAPLESS_FREE_OR_OWNED_BAND_ALARM_SLOTS = 2
+private const val MIN_USABLE_BAND_ALARM_SLOTS = 1
 private val OUR_BAND_ALARM_TITLES: Set<String> = setOf(BAND_ALARM_TITLE_A, BAND_ALARM_TITLE_B)
 
 /** How urgently one setup check line needs the owner's attention, so the UI can style it without parsing English. */
@@ -50,19 +49,20 @@ enum class SetupCheckLineSeverity {
 /** One line of the setup check report, plain English plus how urgently it needs attention. */
 data class SetupCheckLine(val text: String, val severity: SetupCheckLineSeverity)
 
-/** Everything the setup checklist needs to know to decide whether tonight can start. */
+/** Everything the setup checklist needs to know to decide whether tonight can start. [usableBandAlarmSlots] is [countUsableBandAlarmSlots]'s count, persisted by the caller so the Before-bed screen can require a phone alarm on a one-slot band (see SetupCompleteness.kt). */
 data class SetupCheckReport(
     val isReady: Boolean,
     val lines: List<SetupCheckLine>,
     val freeBandAlarmSlots: Int,
-    val otherEnabledBandAlarms: List<String>
+    val otherEnabledBandAlarms: List<String>,
+    val usableBandAlarmSlots: Int = 0
 )
 
 /**
  * Runs one sync-and-read cycle, checks band alarm slot availability and data freshness, and reports the
  * phone alarm's notification readiness, all as plain English lines. Every step is written to setup.jsonl.
- * [isReady] requires a successful sync/export/read, fresh data, and at least [MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS]
- * band alarm slots that are free or already ours.
+ * [isReady] requires a successful sync/export/read, fresh data, and at least [MIN_USABLE_BAND_ALARM_SLOTS]
+ * band alarm slots this app could actually put an alarm into.
  */
 suspend fun runSetupCheck(context: Context, deviceMac: String, exportUri: Uri, now: Instant): SetupCheckReport {
     val since = now.minus(CONNECTION_TEST_LOOKBACK)
@@ -96,10 +96,10 @@ private fun buildReport(context: Context, result: BandDataResult, now: Instant):
 internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, phoneLines: List<SetupCheckLine>): SetupCheckReport {
     val freshness = checkDataFreshness(result.newestSampleAt, now, result.exportFileModifiedAt, previousExportFileModifiedAt = null, threshold = BAND_DATA_FRESHNESS_THRESHOLD)
     val freeSlots = countFreeBandAlarmSlots(result.bandAlarms)
-    val freeOrOwned = countFreeOrOwnedBandAlarmSlots(result.bandAlarms, OUR_BAND_ALARM_TITLES)
+    val usableSlots = countUsableBandAlarmSlots(result.bandAlarms, OUR_BAND_ALARM_TITLES)
     val otherAlarms = listOtherEnabledBandAlarms(result.bandAlarms, OUR_BAND_ALARM_TITLES).map(::describeOtherBandAlarm)
     val poachableSmartSlots = listPoachableSmartWakeupBandAlarmSlots(result.bandAlarms)
-    val slotsShort = freeOrOwned < MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS
+    val slotsShort = usableSlots < MIN_USABLE_BAND_ALARM_SLOTS
 
     val lines = mutableListOf(
         SetupCheckLine(
@@ -107,11 +107,11 @@ internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, ph
             if (freshness.isFresh) SetupCheckLineSeverity.INFO else SetupCheckLineSeverity.ACTION_NEEDED
         ),
         SetupCheckLine(
-            slotAvailabilityLine(freeSlots, freeOrOwned),
+            slotAvailabilityLine(freeSlots, usableSlots),
             if (slotsShort) SetupCheckLineSeverity.ACTION_NEEDED else SetupCheckLineSeverity.INFO
         )
     )
-    if (freeOrOwned in MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS until GAPLESS_FREE_OR_OWNED_BAND_ALARM_SLOTS) {
+    if (usableSlots in MIN_USABLE_BAND_ALARM_SLOTS until MIN_SLOTS_FOR_ALTERNATING_TITLES) {
         lines += SetupCheckLine(singleSlotAdviceLine(), SetupCheckLineSeverity.INFO)
     }
     if (otherAlarms.isNotEmpty()) {
@@ -136,7 +136,8 @@ internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, ph
         isReady = freshness.isFresh && !slotsShort && conflictingTitles.isEmpty() && poachableSmartSlots.isEmpty(),
         lines = lines,
         freeBandAlarmSlots = freeSlots,
-        otherEnabledBandAlarms = otherAlarms
+        otherEnabledBandAlarms = otherAlarms,
+        usableBandAlarmSlots = usableSlots
     )
 }
 
@@ -163,23 +164,26 @@ private fun freshnessLine(newestSampleAt: Instant?, isFresh: Boolean): String = 
     else -> "newest heart-rate sample at $newestSampleAt, which is stale"
 }
 
-private fun slotAvailabilityLine(freeSlots: Int, freeOrOwned: Int): String =
-    if (freeOrOwned >= MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS) {
-        "$freeSlots band alarm slot(s) free."
+private fun slotAvailabilityLine(freeSlots: Int, usableSlots: Int): String =
+    if (usableSlots >= MIN_USABLE_BAND_ALARM_SLOTS) {
+        "$freeSlots band alarm slot(s) free, $usableSlots usable tonight."
     } else {
-        val short = MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS - freeOrOwned
-        "In Gadgetbridge open the band's alarms and clear the title of $short more disabled alarm(s)."
+        val short = MIN_USABLE_BAND_ALARM_SLOTS - usableSlots
+        "No band alarm can be set: in Gadgetbridge open the band's alarms and clear the title of $short more " +
+            "switched-off alarm(s)."
     }
 
 /**
- * Non-blocking advice for the one-usable-slot case: the night runs fine, but every move of the wake time
- * clears our band alarm and sets it again in the same tick (BandAlarmSingleSlotMode.kt), so the band is
- * briefly without one. A second free alarm removes that gap entirely.
+ * The one-usable-slot case: every move of the wake time clears our band alarm and sets it again in the same
+ * tick (BandAlarmSingleSlotMode.kt), so the band is briefly without one - and a SET that silently fails can
+ * make that gap permanent. It does not block the setup check itself, but it does mean the night needs a phone
+ * alarm of its own; that is enforced on the Before-bed screen (SetupCompleteness.kt).
  */
 private fun singleSlotAdviceLine(): String =
-    "Only one usable band alarm. The night will run, but the band alarm is briefly cleared each time the " +
-        "wake time moves. Freeing a second one (in Gadgetbridge, switch another alarm off and clear its " +
-        "title) lets the app set the new alarm before clearing the old one."
+    "Only one usable band alarm. The band alarm is cleared and set again each time the wake time moves, and " +
+        "if that set is lost the band can be left with no alarm at all - so tonight needs a wake-up deadline " +
+        "or the phone backup alarm switched on. Freeing a second alarm (in Gadgetbridge, switch one off and " +
+        "clear its title) removes the gap entirely."
 
 /** Full-screen intent and notifications block the alarm outright, so a problem there is prominent too; the phone alarm still has the exact-alarm safety net either way, so neither blocks [SetupCheckReport.isReady]. */
 private fun phoneAlarmReadinessLines(readiness: AlarmNotificationReadiness): List<SetupCheckLine> = buildList {

@@ -12,11 +12,23 @@ fun isSleepLengthAvailable(cycles: Int, now: Instant, deadline: Instant?, config
     return deadline == null || !wakeIfPicked.isAfter(deadline)
 }
 
-/** Every cycle-end wake time from [referenceOnset] up to the picker, dropping anything after the deadline (rule 4). */
-fun listWakeOptions(referenceOnset: Instant, settings: NightSettings, config: EngineConfig): List<WakeOption> {
+/**
+ * Every cycle-end wake time from [referenceOnset] up to [upToCycles], dropping anything after the deadline
+ * (rule 4). [upToCycles] defaults to the whole picked length, which is what a night that has not slept
+ * anything yet is still owed; once sleep has been had, the caller passes what the plan actually still owes
+ * (`plan.cycles`), so the timeline can never offer a night the engine is no longer planning. It is a plain
+ * count, not a picker value, so - unlike [NightSettings.pickedCycles] - it may be any number from 0 up.
+ */
+fun listWakeOptions(
+    referenceOnset: Instant,
+    settings: NightSettings,
+    config: EngineConfig,
+    upToCycles: Int = settings.pickedCycles
+): List<WakeOption> {
     validateConfig(config)
     validateSettings(settings, config)
-    return (1..settings.pickedCycles).mapNotNull { cycles ->
+    require(upToCycles >= 0) { "upToCycles must not be negative" }
+    return (1..upToCycles).mapNotNull { cycles ->
         val duration = config.cycleLength.multipliedBy(cycles.toLong())
         val wake = referenceOnset.plus(duration)
         if (settings.deadline == null || !wake.isAfter(settings.deadline)) WakeOption(cycles, wake, duration) else null

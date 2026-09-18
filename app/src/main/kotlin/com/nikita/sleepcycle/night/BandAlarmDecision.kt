@@ -3,9 +3,10 @@ package com.nikita.sleepcycle.night
 // File purpose: the band alarm protocol's pure decision function. Gadgetbridge's SET_ALARM only logs an
 // error when no slot is free - the sender is never told - so this never trusts a "set" broadcast alone: only
 // a matching, enabled, EXACT-title slot in the next export counts as confirmed. Reconciliation against the
-// freshly read table always runs first, before any new command is decided (rule 1): a pending request that
-// is present is confirmed under whatever hour/minute the band actually holds, and a confirmed alarm that
-// vanished is demoted rather than trusted. Dismissals are tracked as pending until the table shows the title
+// freshly read table always runs first, before any new command is decided (rule 1): a pending request is
+// confirmed only where the table shows our title at the hour and minute we asked for (the same title at
+// another time is the old alarm, still there because a move's DISMISS or SET was lost), and a confirmed alarm
+// that vanished is demoted rather than trusted. Dismissals are tracked as pending until the table shows the title
 // gone (rule 2), so a lost DISMISS_ALARM is retried instead of silently leaving a stale slot occupied. A
 // replacement never dismisses the alarm it is replacing until the new one is confirmed (rule 3): the band is
 // never left with zero alarms because a target moved. The ONE exception is single-slot mode

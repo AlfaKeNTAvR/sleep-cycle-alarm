@@ -14,6 +14,12 @@ import com.nikita.sleepcycle.bridge.BandAlarmSlot
  * having landed - dismissals confirm after one tick too), plus a slot for whatever [NightState.requestedBandAlarm]
  * is pending. Feeding this into [decideBandAlarmCommands] as this tick's `slots` promotes a pending request to
  * confirmed exactly the way a real read-back would.
+ *
+ * While nothing of ours is on the simulated band, the table still carries one genuinely free slot. A table
+ * with no usable slot at all is a band that can take no alarm (see `countUsableBandAlarmSlots`), and the
+ * protocol rightly withholds every SET against such a table - which would leave a dry-run night with no band
+ * alarm from its very first tick. One free slot models the owner's real band, whose single usable slot is
+ * either free or holding our own alarm, so a dry run exercises the same single-slot protocol a real night does.
  */
 fun simulatedDryRunBandAlarmSlots(state: NightState): List<BandAlarmSlot> {
     val slots = mutableMapOf<String, BandAlarmSlot>()
@@ -23,8 +29,20 @@ fun simulatedDryRunBandAlarmSlots(state: NightState): List<BandAlarmSlot> {
     state.requestedBandAlarm?.let { commitment ->
         slots[commitment.title] = simulatedSlotFor(commitment, position = 1)
     }
+    if (slots.isEmpty()) return listOf(SIMULATED_FREE_SLOT)
     return slots.values.toList()
 }
+
+/** The one slot this app may use on the simulated band while nothing of ours is in it: disabled and untitled, the only shape Gadgetbridge's own picker claims. */
+private val SIMULATED_FREE_SLOT = BandAlarmSlot(
+    position = 2,
+    enabled = false,
+    hour = 0,
+    minute = 0,
+    title = null,
+    smartWakeup = false,
+    repetition = 0,
+)
 
 private fun simulatedSlotFor(commitment: BandAlarmCommitment, position: Int): BandAlarmSlot = BandAlarmSlot(
     position = position,

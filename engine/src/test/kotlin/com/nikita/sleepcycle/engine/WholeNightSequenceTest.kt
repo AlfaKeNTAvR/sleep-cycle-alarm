@@ -3,6 +3,7 @@ package com.nikita.sleepcycle.engine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import java.time.Duration
 
 /** Replays a night as a series of syncs, feeding each plan back in as `previousPlan`, per the engine's real call shape. */
 class WholeNightSequenceTest {
@@ -43,7 +44,7 @@ class WholeNightSequenceTest {
         assertEquals("08:15", formatTime(movesOn.phoneAlarm!!, testZone))
     }
 
-    @Test fun `a full night with a brief awakening restarts the count, then overdues, then finishes at the deadline`() {
+    @Test fun `a full night with a brief awakening owes only the rest of the total, then overdues, then finishes at the deadline`() {
         val setting = settings(deadline = "2026-09-17T08:30", cycles = 5)
 
         val fallsAsleep = plan(listOf(segment("2026-09-17T00:30", "2026-09-17T00:45", SegmentKind.LIGHT)), setting, "2026-09-17T00:45", null)
@@ -56,6 +57,12 @@ class WholeNightSequenceTest {
         )
         assertEquals(AlarmMode.FULL_CYCLES, wakesBriefly.mode)
         assertEquals("08:20", formatTime(wakesBriefly.bandAlarm!!, testZone))
+        // 08:20 alone proves nothing: only one cycle fits between the 06:50 projected onset and the 08:30
+        // deadline either way, so the old per-stretch count (5 cycles, capped to 1) lands on the same time.
+        // What the total rule changes is the owed count BEFORE the cap - 6 h of the picked 7.5 h is slept, so
+        // one cycle is owed, not five. The no-deadline sibling test below is where the two rules diverge.
+        assertEquals(1, wakesBriefly.owedCycles)
+        assertEquals(Duration.ofHours(6), wakesBriefly.sleptSoFar)
 
         val fallsBackAsleep = plan(
             listOf(
@@ -90,5 +97,25 @@ class WholeNightSequenceTest {
         assertEquals(AlarmMode.FINISHED, finished.mode)
         assertNull(finished.bandAlarm)
         assertNull(finished.referenceOnset)
+    }
+
+    @Test fun `the same brief awakening with NO deadline owes one cycle, where a per-stretch count would owe five`() {
+        // Nothing caps this night but the picked total, so the alarm time itself is the whole proof: 6 h of
+        // 7.5 h slept leaves one cycle from the 06:50 projected onset (08:20). Counting cycles per stretch,
+        // as the engine did before the total rule, would plan five more cycles and wake the sleeper at 14:20.
+        val setting = settings(cycles = 5)
+
+        val fallsAsleep = plan(listOf(segment("2026-09-17T00:30", "2026-09-17T00:45", SegmentKind.LIGHT)), setting, "2026-09-17T00:45", null)
+        assertEquals("08:00", formatTime(fallsAsleep.bandAlarm!!, testZone))
+
+        val wakesBriefly = plan(
+            listOf(segment("2026-09-17T00:30", "2026-09-17T06:30", SegmentKind.LIGHT), segment("2026-09-17T06:30", "2026-09-17T06:35", SegmentKind.AWAKE)),
+            setting, "2026-09-17T06:35", fallsAsleep
+        )
+
+        assertEquals(AlarmMode.FULL_CYCLES, wakesBriefly.mode)
+        assertEquals(1, wakesBriefly.owedCycles)
+        assertEquals(1, wakesBriefly.cycles, "with no deadline nothing caps the owed count")
+        assertEquals("08:20", formatTime(wakesBriefly.bandAlarm!!, testZone))
     }
 }

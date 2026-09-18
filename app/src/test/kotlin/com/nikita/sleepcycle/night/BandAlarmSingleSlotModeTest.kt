@@ -98,6 +98,61 @@ class BandAlarmSingleSlotModeTest {
     }
 
     @Test
+    fun `a move whose DISMISS was lost is re-sent whole and charged against the bound, never mistaken for landed`() {
+        // A is confirmed for 08:00 and the target moves to 08:30: DISMISS then SET, both silently lost. The
+        // next table still shows A at 08:00 - the OLD alarm, not the requested one. Reading that as "the
+        // request landed" was what let this repeat every tick forever without ever spending a re-send.
+        var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(300))
+        var resendsUsed = 0
+
+        repeat(3) { index ->
+            val tick = decide(
+                instantAt(8, 30), requested, confirmed = null, singleSlotTable(ours = 8 to 0),
+                NOW.plusSeconds(index * 300L), resendsUsed
+            )
+
+            assertEquals(BandAlarmOutcome.MISSING_RESENT, tick.outcome, "tick $index: the old alarm at the old time is not a confirmation")
+            assertNull(tick.confirmedBandAlarm, "tick $index: nothing is confirmed while the band holds the wrong time")
+            assertEquals(
+                listOf(
+                    BandAlarmCommand.Dismiss(BAND_ALARM_TITLE_A),
+                    BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 30)
+                ),
+                tick.commands,
+                "tick $index: the whole move goes out again, the stale alarm first"
+            )
+            assertEquals(index + 1, tick.singleSlotResendsUsed, "tick $index: every attempt costs one of tonight's re-sends")
+            requested = tick.requestedBandAlarm
+            resendsUsed = tick.singleSlotResendsUsed
+        }
+    }
+
+    @Test
+    fun `nothing at all is sent when the table shows no slot this app could use`() {
+        // Slot 0 is the band's own smart alarm, the one free slot was taken by a foreign alarm, and our own
+        // title is left on a switched-off slot Gadgetbridge's picker will never claim.
+        val decision = decide(instantAt(8, 20), requested = null, confirmed = null, zeroSlotTable(), NOW)
+
+        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, decision.slotMode)
+        assertEquals(BandAlarmOutcome.NO_FREE_SLOT, decision.outcome)
+        assertTrue(decision.commands.isEmpty(), "a SET no slot can take is withheld, not guessed at")
+        assertNull(decision.requestedBandAlarm, "nothing was asked for, so nothing is on file")
+        assertEquals("error", outcomeLogEvent(decision, NOW)?.type, "the owner is told no slot could take the alarm")
+    }
+
+    @Test
+    fun `a zero-slot table never spends the night's re-send bound`() {
+        val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 20, NOW.minusSeconds(300))
+
+        val decision = decide(instantAt(8, 20), requested, confirmed = null, zeroSlotTable(), NOW, singleSlotResendsUsed = 2)
+
+        assertEquals(BandAlarmOutcome.NO_FREE_SLOT, decision.outcome)
+        assertTrue(decision.commands.isEmpty())
+        assertEquals(2, decision.singleSlotResendsUsed, "re-sending into a band with no usable slot would burn the bound for nothing")
+        assertEquals(requested, decision.requestedBandAlarm, "the pending request is kept, not dropped")
+    }
+
+    @Test
     fun `re-sends stop at the per-night bound and say so`() {
         var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 20, NOW.minusSeconds(300))
         var resendsUsed = 0
@@ -111,12 +166,29 @@ class BandAlarmSingleSlotModeTest {
         }
         assertEquals(MAX_SINGLE_SLOT_RESENDS_PER_NIGHT, resendsUsed)
 
-        val boundHit = decide(instantAt(8, 20), requested, null, singleSlotTable(ours = null), NOW.plusSeconds(3600), resendsUsed)
+        // Every tick from here on: nothing sent, the count frozen, the request kept on file, and the Night
+        // screen's own amber line on (the night log is no longer the only place that says the app gave up).
+        repeat(4) { index ->
+            val boundHit = decide(
+                instantAt(8, 20), requested, null, singleSlotTable(ours = null),
+                NOW.plusSeconds(3600L + index * 300L), resendsUsed
+            )
 
-        assertEquals(BandAlarmOutcome.RESEND_LIMIT_REACHED, boundHit.outcome)
-        assertTrue(boundHit.commands.isEmpty(), "nothing more is sent once the bound is spent")
-        assertEquals(MAX_SINGLE_SLOT_RESENDS_PER_NIGHT, boundHit.singleSlotResendsUsed, "the count stops at the bound")
-        assertEquals("error", outcomeLogEvent(boundHit, NOW)?.type, "the owner is told the band alarm gave up")
+            assertEquals(BandAlarmOutcome.RESEND_LIMIT_REACHED, boundHit.outcome, "after the bound, tick $index")
+            assertTrue(boundHit.commands.isEmpty(), "tick $index: nothing more is sent once the bound is spent")
+            assertEquals(MAX_SINGLE_SLOT_RESENDS_PER_NIGHT, boundHit.singleSlotResendsUsed, "tick $index: the count stops at the bound")
+            assertEquals(BAND_ALARM_TITLE_A, boundHit.requestedBandAlarm?.title, "tick $index: the request stays on file")
+            assertNull(boundHit.confirmedBandAlarm, "tick $index: still nothing confirmed on the band")
+
+            val logEvent = outcomeLogEvent(boundHit, NOW)
+            assertEquals("error", logEvent?.type, "tick $index: the owner is told the band alarm gave up")
+            assertTrue(
+                logEvent?.fields?.get("cause")?.contains("not re-sending again") == true,
+                "tick $index: the cause says the app stopped, without claiming a phone alarm that may not exist"
+            )
+            requested = boundHit.requestedBandAlarm
+            resendsUsed = boundHit.singleSlotResendsUsed
+        }
     }
 
     @Test
@@ -206,13 +278,22 @@ class BandAlarmSingleSlotModeTest {
 
     /**
      * The owner's real band as the export shows it: slot 0 is the band's own smart alarm, parked (titled,
-     * switched off) so Gadgetbridge's picker skips it, one foreign alarm is in use, and the only slot this app
-     * can use either holds our own alarm ([ours] as hour to minute) or nothing at all.
+     * switched off) so Gadgetbridge's picker skips it, one foreign alarm is in use, and exactly one slot is
+     * this app's to use - either holding our own alarm ([ours] as hour to minute) or genuinely free (disabled
+     * AND untitled, the only shape Gadgetbridge's picker will claim). One usable slot either way: a table
+     * where that slot is simply absent is a ZERO-slot band, which is a different case with its own test.
      */
-    private fun singleSlotTable(ours: Pair<Int, Int>?): List<BandAlarmSlot> = listOfNotNull(
+    private fun singleSlotTable(ours: Pair<Int, Int>?): List<BandAlarmSlot> = listOf(
         slot(0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true),
         slot(1, enabled = true, hour = 7, minute = 0, title = "Work"),
-        ours?.let { slot(2, enabled = true, hour = it.first, minute = it.second, title = BAND_ALARM_TITLE_A) }
+        ours?.let { slot(2, enabled = true, hour = it.first, minute = it.second, title = BAND_ALARM_TITLE_A) } ?: freeSlot(2)
+    )
+
+    /** The same band with its one free slot taken by someone else, and one of our titles left behind on a switched-off slot: nothing this app can set an alarm into at all. */
+    private fun zeroSlotTable(): List<BandAlarmSlot> = listOf(
+        slot(0, enabled = false, hour = 5, minute = 29, title = "Smart", smartWakeup = true),
+        slot(1, enabled = true, hour = 7, minute = 0, title = "Work"),
+        slot(2, enabled = false, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A)
     )
 
     private fun freeSlot(position: Int): BandAlarmSlot = slot(position, enabled = false, hour = 0, minute = 0, title = null)

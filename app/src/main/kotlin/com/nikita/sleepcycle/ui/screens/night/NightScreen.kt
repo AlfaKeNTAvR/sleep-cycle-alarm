@@ -66,8 +66,19 @@ fun NightScreen(
         state.bandAlarmSlotMode?.let { mode ->
             StatusLine(text = bandAlarmSlotModeText(mode), ok = mode != BandAlarmSlotMode.BLIND)
             if (mode == BandAlarmSlotMode.SINGLE_SLOT) {
-                AmberWarningLine(text = stringResource(R.string.warning_band_single_slot))
+                // The safety-net sentence is only true when a phone alarm actually exists tonight; with none,
+                // the honest line is that nothing else will ring.
+                AmberWarningLine(
+                    text = if (state.noPhoneAlarmWarning) {
+                        stringResource(R.string.warning_band_single_slot_no_phone_alarm)
+                    } else {
+                        stringResource(R.string.warning_band_single_slot)
+                    }
+                )
             }
+        }
+        if (state.bandAlarmResendLimitReached) {
+            AmberWarningLine(text = stringResource(R.string.warning_band_resend_limit_reached))
         }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {

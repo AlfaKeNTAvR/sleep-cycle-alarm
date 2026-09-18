@@ -318,7 +318,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Runs the full setup check and, per its result, sets or clears [AppSettings.lastSetupCheckPassedAt] (see SetupCompleteness.kt for how that gates "Start night"). */
+    /** Runs the full setup check and, per its result, sets or clears [AppSettings.lastSetupCheckPassedAt] and the usable-slot count it found (see SetupCompleteness.kt for how the two gate "Start night"). */
     fun runSetupCheckAction() {
         val settings = appSettings.value ?: return
         val mac = settings.deviceMac
@@ -333,7 +333,15 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 setupCheckFailureReport(error)
             }
             connectionTest.value = ConnectionTestState.Done(report)
-            persistSettings { it.copy(lastSetupCheckPassedAt = if (report.isReady) now else null) }
+            persistSettings {
+                it.copy(
+                    lastSetupCheckPassedAt = if (report.isReady) now else null,
+                    // Only a passing check's slot count means anything; a failed one leaves nothing known
+                    // about the band, which the Before-bed gate reads as "do not judge" (see
+                    // singleSlotNightNeedsPhoneAlarm) - the stale-check gate blocks that night anyway.
+                    lastSetupCheckUsableBandAlarmSlots = if (report.isReady) report.usableBandAlarmSlots else null
+                )
+            }
         }
     }
 

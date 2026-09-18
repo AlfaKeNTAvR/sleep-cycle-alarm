@@ -54,7 +54,13 @@ sealed interface NightScreenContent {
     data class WokeUp(
         val napOnly: Boolean,
         val sleptDurationLabel: String,
-        val wakeBoundaryTimeLabel: String?,
+        /**
+         * The time in this card's header sentence, already formatted: C's "No full cycle fits before X" (the
+         * deadline) or B's "Fall back asleep by X" (the deadline minus one cycle). Null on a night with no
+         * deadline, where neither sentence has a time to name. Named for what it is - the header's time -
+         * since the "wake boundary" it used to be named after no longer exists anywhere in the engine.
+         */
+        val headerTimeLabel: String?,
         val timeline: List<WakeTimelineEntry>,
         val napLengthLabel: String?,
         val tonightSoFarLabel: String?,
@@ -108,6 +114,8 @@ data class NightUiState(
     val noPhoneAlarmWarning: Boolean = false,
     /** Null unless the slot backing our confirmed or requested band alarm still carries the band's own smart-wakeup flag (BandAlarmDecision.kt cannot fix this, only report it) - shown as an amber status line. Always null while showing the morning report. */
     val smartWakeupWarning: SmartWakeupWarningUi? = null,
-    /** Which band alarm protocol the last tick ran (BandAlarmSlotMode.kt), named in a status line so the owner always knows. Null before the first tick, and while showing the morning report. [BandAlarmSlotMode.SINGLE_SLOT] also adds an amber line about the brief gap on every move. */
+    /** Which band alarm protocol the last tick ran (BandAlarmSlotMode.kt), named in a status line so the owner always knows. Null before the first tick, and while showing the morning report. [BandAlarmSlotMode.SINGLE_SLOT] also adds an amber line about the brief gap on every move, worded by whether a phone alarm exists tonight ([noPhoneAlarmWarning]). */
     val bandAlarmSlotMode: BandAlarmSlotMode? = null,
+    /** True once tonight's [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] single-slot re-sends are all spent: the app has stopped trying to restore the band alarm, which until now only the night log said. Shown as an amber status line. Always false while showing the morning report. */
+    val bandAlarmResendLimitReached: Boolean = false,
 )
