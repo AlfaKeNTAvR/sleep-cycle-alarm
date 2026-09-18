@@ -25,6 +25,7 @@ import com.nikita.sleepcycle.ui.shareNightLogFile
 import com.nikita.sleepcycle.ui.screens.BeforeBedScreen
 import com.nikita.sleepcycle.ui.screens.DebugScreen
 import com.nikita.sleepcycle.ui.screens.LogsScreen
+import com.nikita.sleepcycle.ui.screens.PastNightScreen
 import com.nikita.sleepcycle.ui.screens.SetupScreen
 import com.nikita.sleepcycle.ui.screens.night.NightScreen
 import com.nikita.sleepcycle.ui.state.Screen
@@ -54,6 +55,7 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val setupWizardPage by viewModel.setupWizardPage.collectAsState()
+    val pastNight by viewModel.pastNight.collectAsState()
 
     LifecycleResumeEffect(Unit) {
         viewModel.setScreenVisible(true)
@@ -102,9 +104,14 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                     }
                     is Screen.Logs -> LogsScreen(
                         state = uiState.logs,
+                        onOpenLog = viewModel::openNightLog,
                         onShareLog = { log -> shareNightLogFile(context, log) },
+                        onDeleteLog = viewModel::deleteNightLog,
                         onBack = viewModel::closeSetupOrLogs,
                     )
+                    is Screen.PastNight -> pastNight?.let { night ->
+                        PastNightScreen(state = night, onBack = viewModel::closePastNight)
+                    }
                     is Screen.Debug -> DebugScreen(
                         state = uiState.debug,
                         onSimulatedBandDataChange = viewModel::setSimulatedBandData,

@@ -33,6 +33,23 @@ fun formatNightLogLine(event: NightLogEvent): String {
 }
 
 /**
+ * Parses one log line back into the event that wrote it, the inverse of [formatNightLogLine]. Returns null for
+ * a line that is not a well-formed log object - a log truncated mid-write by a crash still reads back
+ * everything before the break, rather than failing as a whole.
+ */
+fun parseNightLogLine(line: String): NightLogEvent? {
+    if (line.isBlank()) return null
+    return try {
+        val json = JSONObject(line)
+        val fieldsJson = json.optJSONObject("fields")
+        val fields = fieldsJson?.keys()?.asSequence()?.associateWith { key -> fieldsJson.getString(key) } ?: emptyMap()
+        NightLogEvent(at = Instant.parse(json.getString("at")), type = json.getString("type"), fields = fields)
+    } catch (error: Exception) {
+        null
+    }
+}
+
+/**
  * Appends one event to the log file for the night that started at [startedAt], creating the file and
  * directory on first use. [debugNight] must be true whenever this night ran with any debug option on (see
  * DebugOptions.kt) - it changes the file's name to `night-sim-...` so a simulated night can never be mistaken
@@ -86,6 +103,18 @@ fun listNightLogs(context: Context): List<File> =
         ?.filter { it.isFile && it.name != SETUP_LOG_FILE_NAME }
         ?.sortedByDescending { it.lastModified() }
         ?: emptyList()
+
+/** Deletes one saved night log, for the Logs screen's delete action. Returns false, with the cause logged, if the file is still there afterwards. */
+fun deleteNightLog(file: File): Boolean {
+    val deleted = try {
+        file.delete()
+    } catch (error: Exception) {
+        Log.e(LOG_TAG, "failed to delete the night log ${file.path}", error)
+        false
+    }
+    if (!deleted) Log.e(LOG_TAG, "night log ${file.path} was not deleted")
+    return deleted
+}
 
 private fun currentOrNewestNightLogFile(context: Context): File? {
     val activeState = loadNightState(context)

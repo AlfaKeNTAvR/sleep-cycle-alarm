@@ -78,7 +78,8 @@ sealed interface NightScreenContent {
     data class NightFinished(val reasonText: String, val phoneSafetyAlarmTimeLabel: String?) : NightScreenContent
 
     /**
-     * State D: the morning report, shown after "Stop night" / "I'm up, end night" is confirmed.
+     * State D: the morning report, shown after "Stop night" / "I'm up, end night" is confirmed, and again
+     * whenever a past night is reopened from the Logs screen.
      * [bandAlarmLeftoverTimeLabel] is the time the band is STILL armed at, if any: no Gadgetbridge intent can
      * disarm a slot, so the last alarm this app set survives the night (see NightController.logLeftoverBandAlarm).
      */
@@ -88,6 +89,8 @@ sealed interface NightScreenContent {
         val wokeAtTimeLabel: String?,
         val stretches: List<StretchLine>,
         val bandAlarmLeftoverTimeLabel: String? = null,
+        /** False only for a past night whose log kept the total but not the per-stretch times (see PastNightLog.kt): the report then shows the real total and leaves the stretch card out, instead of drawing it empty or zeroed. Defaults to true, which is every night ended by this app. */
+        val stretchDetailRecorded: Boolean = true,
     ) : NightScreenContent
 
     data object Loading : NightScreenContent

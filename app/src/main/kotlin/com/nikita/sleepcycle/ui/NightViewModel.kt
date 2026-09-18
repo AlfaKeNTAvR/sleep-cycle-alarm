@@ -20,6 +20,7 @@ import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import com.nikita.sleepcycle.night.buildNightEngineView
 import com.nikita.sleepcycle.night.clearMorningReport
+import com.nikita.sleepcycle.night.deleteNightLog as deleteNightLogFile
 import com.nikita.sleepcycle.night.endNight as endNightTracking
 import com.nikita.sleepcycle.night.listNightLogs
 import com.nikita.sleepcycle.night.loadMorningReport
@@ -27,6 +28,7 @@ import com.nikita.sleepcycle.night.loadNightState
 import com.nikita.sleepcycle.night.observedNightState
 import com.nikita.sleepcycle.night.publishNightState
 import com.nikita.sleepcycle.night.readAppSettings
+import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.runSetupCheck
@@ -45,9 +47,12 @@ import com.nikita.sleepcycle.ui.screens.setup.previousSetupWizardPage
 import com.nikita.sleepcycle.ui.state.ConnectionTestState
 import com.nikita.sleepcycle.ui.state.DEFAULT_BAND_MAC
 import com.nikita.sleepcycle.ui.state.EndNightFlowState
+import com.nikita.sleepcycle.ui.state.NightLogSummary
+import com.nikita.sleepcycle.ui.state.PastNightUiState
 import com.nikita.sleepcycle.ui.state.PermissionStatus
 import com.nikita.sleepcycle.ui.state.Screen
 import com.nikita.sleepcycle.ui.state.UiState
+import com.nikita.sleepcycle.ui.state.buildPastNightUiState
 import com.nikita.sleepcycle.ui.state.buildSetupUiState
 import com.nikita.sleepcycle.ui.state.buildUiState
 import com.nikita.sleepcycle.ui.state.canConfirmEndNight
@@ -132,6 +137,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val gadgetbridgeInstalled = MutableStateFlow(false)
     private val connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     private val nightLogFiles = MutableStateFlow<List<File>>(emptyList())
+    private val openedPastNight = MutableStateFlow<PastNightUiState?>(null)
     private val confirmingEndNight = MutableStateFlow(false)
     /** Item 1: true from the moment "confirm" is tapped until endNight's result is rendered - see ui/state/EndNightFlowState.kt. */
     private val endingNight = MutableStateFlow(false)
@@ -146,6 +152,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Which Setup wizard page (if any) is showing; null means the one-page checklist. See [setupWizardPageState]. */
     val setupWizardPage: StateFlow<SetupWizardPage?> = setupWizardPageState.asStateFlow()
+
+    /** The saved night currently reopened from the Logs list, or null when none is. Kept out of UiState for the same reason as [setupWizardPageState]: it is additive, and it only needs to outlive the ViewModel. */
+    val pastNight: StateFlow<PastNightUiState?> = openedPastNight.asStateFlow()
 
     val uiState: StateFlow<UiState> = combine(
         combine(appSettings, observedNightState, now, screen, gadgetbridgeInstalled, ::CoreInputs),
@@ -289,6 +298,26 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** The gear icon: always opens the one-page checklist, never the wizard - re-checks stay quick. */
     fun openSetup() { screen.value = Screen.Setup; setupWizardPageState.value = null }
     fun openLogs() { screen.value = Screen.Logs; nightLogFiles.value = listNightLogs(context) }
+
+    /** Reopens one saved night as its own summary screen. Reading and parsing the log is disk I/O, so it happens off the main thread before the screen switches. */
+    fun openNightLog(log: NightLogSummary) {
+        viewModelScope.launch {
+            val parsed = withContext(Dispatchers.IO) { readPastNightLog(log.file) }
+            openedPastNight.value = buildPastNightUiState(log, parsed, currentZone())
+            screen.value = Screen.PastNight
+        }
+    }
+
+    fun closePastNight() { openedPastNight.value = null; screen.value = Screen.Logs }
+
+    /** Deletes one saved night log and re-lists what is left. Called only after the Logs screen's own confirmation. */
+    fun deleteNightLog(log: NightLogSummary) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { deleteNightLogFile(log.file) }
+            nightLogFiles.value = listNightLogs(context)
+        }
+    }
+
     fun closeSetupOrLogs() {
         screen.value = if (observedNightState.value != null) Screen.Night else Screen.BeforeBed
         setupWizardPageState.value = null

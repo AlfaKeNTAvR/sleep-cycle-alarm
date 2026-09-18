@@ -8,7 +8,6 @@
     <string name="glyph_setup">⚙</string>
     <string name="glyph_logs">≡</string>
     <string name="glyph_back">←</string>
-    <string name="glyph_share">↑</string>
     <string name="content_description_open_setup">Open setup</string>
     <string name="content_description_open_logs">Open night logs</string>
     <string name="content_description_back">Back</string>
@@ -124,7 +123,23 @@
     <!-- Logs screen -->
     <string name="logs_title">Night logs</string>
     <string name="logs_empty">No night logs yet.</string>
-    <string name="content_description_share_log">Share this night log</string>
+    <string name="glyph_more">⋮</string>
+    <string name="content_description_log_menu">More actions for this night</string>
+    <string name="logs_menu_share">Share</string>
+    <string name="logs_menu_delete">Delete</string>
+    <string name="logs_confirm_delete_title">Delete this night?</string>
+    <string name="logs_confirm_delete_message">The log for %1$s will be removed from this phone. This cannot be undone.</string>
+    <string name="logs_confirm_delete_confirm">Delete</string>
+
+    <!-- Past night: one saved night reopened from the Logs list -->
+    <string name="past_night_slept">You slept</string>
+    <string name="past_night_deadline">Wake by</string>
+    <string name="past_night_picked_length">Picked</string>
+    <plurals name="past_night_stretches_not_recorded">
+        <item quantity="one">This night was logged before sleep stretches were recorded one by one: %1$d stretch, but not its times.</item>
+        <item quantity="other">This night was logged before sleep stretches were recorded one by one: %1$d stretches, but not their times.</item>
+    </plurals>
+    <string name="past_night_no_summary">No summary was recorded for this night: it was never ended in the app.</string>
 
     <!-- Alarm notification -->
     <string name="alarm_notification_title">Wake up</string>
