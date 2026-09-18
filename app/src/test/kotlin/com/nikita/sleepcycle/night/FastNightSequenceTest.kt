@@ -5,7 +5,7 @@ package com.nikita.sleepcycle.night
 // the Debug screen's simulator would build them (BandDataSimulator.kt). Mirrors the style of :engine's own
 // WholeNightSequenceTest: feeds each plan back in as previousPlan and asserts mode and bandAlarm at every
 // step. Covers: start, fell asleep, waking early enough that a full cycle still fits (restart), falling back
-// asleep, waking close enough to the wake boundary that only a nap fits, falling back asleep again - NAP
+// asleep, waking with the picked total all but used up so that only a nap is left, falling back asleep again - NAP
 // still holds for at least one further tick before anything turns to OVERDUE, because napLength (3 min)
 // leaves a whole sync delay's worth of lead over minAlarmLead (see EngineConfigResolutionTest's pinned
 // property) - then OVERDUE once the nap alarm time is actually reached and slept through, OVERDUE continuing
@@ -59,35 +59,37 @@ class FastNightSequenceTest {
         assertEquals(AlarmMode.FULL_CYCLES, plan3.mode)
         assertEquals(at("22:17"), plan3.bandAlarm)
 
-        // "I woke up now" at 22:13:00, close enough to the 22:17 wake boundary that only a nap fits.
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, at("22:13"))
-        val plan4 = computeAlarmPlan(buildSimulatedSegments(events, at("22:13:30")), settings, at("22:13:30"), plan3, zone, config)
+        // "I woke up now" at 22:14:00, with 13 of the picked 15 min already slept: less than half a short
+        // cycle is left, so nothing whole is still owed and only a nap fits. (There is no deadline here, so
+        // the 22:17 alarm of the previous plan has no say in this - only the picked total does.)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, at("22:14"))
+        val plan4 = computeAlarmPlan(buildSimulatedSegments(events, at("22:14:30")), settings, at("22:14:30"), plan3, zone, config)
         assertEquals(AlarmMode.NAP, plan4.mode)
-        assertEquals(at("22:16:30"), plan4.bandAlarm)
+        assertEquals(at("22:17:30"), plan4.bandAlarm)
 
-        // "Fell back asleep now" at 22:14:00 for the nap. Unlike the old (1 min nap / 1 min lead) config, the
+        // "Fell back asleep now" at 22:15:00 for the nap. Unlike the old (1 min nap / 1 min lead) config, the
         // nap alarm is still comfortably ahead of now + minAlarmLead here, so NAP holds on this tick too -
         // the tester actually sees the nap card, not an instant jump to OVERDUE.
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:14"))
-        val plan5 = computeAlarmPlan(buildSimulatedSegments(events, at("22:14:15")), settings, at("22:14:15"), plan4, zone, config)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:15"))
+        val plan5 = computeAlarmPlan(buildSimulatedSegments(events, at("22:15:15")), settings, at("22:15:15"), plan4, zone, config)
         assertEquals(AlarmMode.NAP, plan5.mode)
-        assertEquals(at("22:17"), plan5.bandAlarm)
+        assertEquals(at("22:18"), plan5.bandAlarm)
 
-        // Time passes with no new events, past the nap alarm's own time (22:17): still "asleep" per the
+        // Time passes with no new events, past the nap alarm's own time (22:18): still "asleep" per the
         // simulator, so now it becomes OVERDUE - the band/phone alarm was reached and slept through. C1: a
-        // fresh overdue alarm computed from a mid-minute now (22:17:30) rounds UP to the next whole minute
-        // (22:18:30 -> 22:19), never down.
-        val plan6 = computeAlarmPlan(buildSimulatedSegments(events, at("22:17:30")), settings, at("22:17:30"), plan5, zone, config)
+        // fresh overdue alarm computed from a mid-minute now (22:18:30) rounds UP to the next whole minute
+        // (22:19:30 -> 22:20), never down.
+        val plan6 = computeAlarmPlan(buildSimulatedSegments(events, at("22:18:30")), settings, at("22:18:30"), plan5, zone, config)
         assertEquals(AlarmMode.OVERDUE, plan6.mode)
-        assertEquals(at("22:19"), plan6.bandAlarm)
+        assertEquals(at("22:20"), plan6.bandAlarm)
 
         // Further time passes: still asleep, buzzing again (snoozing), not yet at the cap.
-        val plan7 = computeAlarmPlan(buildSimulatedSegments(events, at("22:20")), settings, at("22:20"), plan6, zone, config)
+        val plan7 = computeAlarmPlan(buildSimulatedSegments(events, at("22:21")), settings, at("22:21"), plan6, zone, config)
         assertEquals(AlarmMode.OVERDUE, plan7.mode)
-        assertEquals(at("22:21"), plan7.bandAlarm)
+        assertEquals(at("22:22"), plan7.bandAlarm)
 
-        // Now reaches the 5-minute overdue cap (from the 22:17 band alarm that was missed): FINISHED.
-        val plan8 = computeAlarmPlan(buildSimulatedSegments(events, at("22:22")), settings, at("22:22"), plan7, zone, config)
+        // Now reaches the 5-minute overdue cap (from the 22:18 band alarm that was missed): FINISHED.
+        val plan8 = computeAlarmPlan(buildSimulatedSegments(events, at("22:23")), settings, at("22:23"), plan7, zone, config)
         assertEquals(AlarmMode.FINISHED, plan8.mode)
         assertNull(plan8.bandAlarm)
     }
@@ -102,13 +104,13 @@ class FastNightSequenceTest {
         previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:01:30")), settings, at("22:01:30"), previous, zone, config)
         events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:02"))
         previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:03")), settings, at("22:03"), previous, zone, config)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, at("22:13"))
-        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:13:30")), settings, at("22:13:30"), previous, zone, config)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:14"))
-        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:14:15")), settings, at("22:14:15"), previous, zone, config)
-        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:17:30")), settings, at("22:17:30"), previous, zone, config)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, at("22:14"))
+        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:14:30")), settings, at("22:14:30"), previous, zone, config)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:15"))
+        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:15:15")), settings, at("22:15:15"), previous, zone, config)
+        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:18:30")), settings, at("22:18:30"), previous, zone, config)
 
-        val justBeforeCap = computeAlarmPlan(buildSimulatedSegments(events, at("22:21:59")), settings, at("22:21:59"), previous, zone, config)
+        val justBeforeCap = computeAlarmPlan(buildSimulatedSegments(events, at("22:22:59")), settings, at("22:22:59"), previous, zone, config)
 
         assertEquals(AlarmMode.OVERDUE, justBeforeCap.mode)
     }
@@ -123,11 +125,11 @@ class FastNightSequenceTest {
         previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:01:30")), settings, at("22:01:30"), previous, zone, config)
         events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:02"))
         previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:03")), settings, at("22:03"), previous, zone, config)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, at("22:13"))
-        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:13:30")), settings, at("22:13:30"), previous, zone, config)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:14"))
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, at("22:14"))
+        previous = computeAlarmPlan(buildSimulatedSegments(events, at("22:14:30")), settings, at("22:14:30"), previous, zone, config)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, at("22:15"))
 
-        val backAsleepTick = computeAlarmPlan(buildSimulatedSegments(events, at("22:14:15")), settings, at("22:14:15"), previous, zone, config)
+        val backAsleepTick = computeAlarmPlan(buildSimulatedSegments(events, at("22:15:15")), settings, at("22:15:15"), previous, zone, config)
 
         assertEquals(AlarmMode.NAP, backAsleepTick.mode)
     }

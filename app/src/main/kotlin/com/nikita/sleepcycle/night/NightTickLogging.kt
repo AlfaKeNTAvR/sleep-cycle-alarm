@@ -52,7 +52,6 @@ fun logDataAndPlan(context: Context, state: NightState, outcome: SyncOutcome, pl
                 "cycles" to plan.cycles.toString(),
                 "referenceOnset" to (plan.referenceOnset?.toString() ?: ""),
                 "onsetIsProjected" to plan.onsetIsProjected.toString(),
-                "wakeBoundary" to (plan.wakeBoundary?.toString() ?: ""),
                 "overdueSince" to (plan.overdueSince?.toString() ?: ""),
                 "reason" to plan.reason
             )

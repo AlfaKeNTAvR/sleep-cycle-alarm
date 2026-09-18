@@ -27,7 +27,7 @@ class ComputePhoneAlarmTest {
     @Test fun `no deadline, OVERDUE and FINISHED keep the previous phone alarm so the snooze cannot drag it`() {
         val previous = AlarmPlan(
             AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), instant("2026-09-17T08:15"), 5,
-            instant("2026-09-17T00:30"), false, instant("2026-09-17T08:00"), "r"
+            instant("2026-09-17T00:30"), false, "r"
         )
         assertEquals(
             instant("2026-09-17T08:15"),

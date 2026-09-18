@@ -30,7 +30,6 @@ fun computeAlarmPlan(
 
     // Step 2: the plan.
     val reference = findReferenceOnset(state, stretches, now, config)
-    val wakeBoundaryBefore = findWakeBoundary(settings.deadline, previousPlan)
     // Rule 2 as a night total: what is still owed once the sleep already had is subtracted, then capped by
     // what still fits before the deadline. `sleptSoFar` deliberately excludes the stretch the new alarm is
     // measured from, so that stretch is never subtracted twice.
@@ -39,17 +38,15 @@ fun computeAlarmPlan(
     val cycles = capCyclesByDeadline(owedCycles, reference.onset, settings, config)
 
     val rule = chooseMode(
-        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, wakeBoundaryBefore, now,
-        previousPlan, config
+        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, now, previousPlan, config
     )
     val outcome = computeBandAlarm(
-        rule, state, reference.onset, wakeBoundaryBefore, settings.deadline, cycles, now, previousPlan, config
+        rule, state, reference.onset, settings.deadline, cycles, now, previousPlan, config
     )
     val mode = modeOf(outcome)
     val bandAlarm = alarmOf(outcome)
     val outcomeOverdueSince = overdueSinceOf(outcome)
     val overdueSince = if (mode == AlarmMode.OVERDUE) outcomeOverdueSince else null
-    val wakeBoundary = refreshWakeBoundary(settings.deadline, mode, bandAlarm, wakeBoundaryBefore)
     val phoneAlarm = computePhoneAlarm(
         settings.deadline, settings.phoneBackupEnabled, mode, bandAlarm, previousPlan, config
     )
@@ -63,11 +60,10 @@ fun computeAlarmPlan(
         !now.isBefore(outcomeOverdueSince.plus(config.maxOverdueDuration))
 
     val reason = describePlan(
-        mode, reference, settings, cycles, bandAlarm, wakeBoundary, zone, outcomeOverdueSince, overdueCapReached,
-        sleptSoFar
+        mode, reference, settings, cycles, bandAlarm, zone, outcomeOverdueSince, overdueCapReached, sleptSoFar
     )
     return AlarmPlan(
-        mode, bandAlarm, phoneAlarm, cycles, referenceOnset, onsetIsProjected, wakeBoundary, reason, overdueSince
+        mode, bandAlarm, phoneAlarm, cycles, referenceOnset, onsetIsProjected, reason, overdueSince
     )
 }
 
@@ -85,21 +81,6 @@ private fun alarmOf(outcome: BandAlarmResult): Instant? = when (outcome) {
 private fun overdueSinceOf(outcome: BandAlarmResult): Instant? = when (outcome) {
     is BandAlarmResult.Finished -> outcome.overdueSince
     is BandAlarmResult.Scheduled -> outcome.overdueSince
-}
-
-/**
- * The wake boundary to carry into the next round: this round's own alarm when it landed on [AlarmMode.FULL_CYCLES]
- * without a deadline (that becomes "the latest FULL_CYCLES plan"), otherwise the carried-forward value unchanged.
- */
-private fun refreshWakeBoundary(
-    deadline: Instant?,
-    mode: AlarmMode,
-    bandAlarm: Instant?,
-    wakeBoundaryBefore: Instant?
-): Instant? = when {
-    deadline != null -> deadline
-    mode == AlarmMode.FULL_CYCLES -> bandAlarm
-    else -> wakeBoundaryBefore
 }
 
 /** Rule 6/7's "is this a return to sleep after an awakening": true in AWAKE with history, or ASLEEP after one. */
@@ -133,7 +114,6 @@ internal fun describePlan(
     settings: NightSettings,
     cycles: Int,
     bandAlarm: Instant?,
-    wakeBoundary: Instant?,
     zone: ZoneId,
     overdueSince: Instant? = null,
     overdueCapReached: Boolean = false,
@@ -166,9 +146,9 @@ internal fun describePlan(
         }
         // Rule 5: no whole cycle fits before the deadline, so the band vibrates at the deadline.
         AlarmMode.DEADLINE_ONLY -> "No full cycle fits before the deadline, band alarm $alarmText."
-        // Rule 7: a short nap after an awakening, capped by the wake boundary.
+        // Rule 7: a short nap after an awakening, capped by the deadline when there is one.
         AlarmMode.NAP -> {
-            val boundaryText = wakeBoundary?.let { ", capped at ${formatTime(it, zone)}" } ?: ""
+            val boundaryText = settings.deadline?.let { ", capped at ${formatTime(it, zone)}" } ?: ""
             val sleptText = if (sleptSoFar.isZero) "" else ", ${formatSleepDuration(sleptSoFar)} slept tonight"
             "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText, band alarm $alarmText$boundaryText."
         }

@@ -56,13 +56,14 @@ fun buildNapAsleepContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.Nap
 
 /**
  * States B (more sleep fits) and C (only a nap fits), selected by [napOnly]. The header time differs by
- * state: C's "No full cycle fits before X" wants the wake boundary itself, but B's "Fall back asleep by X"
+ * state: C's "No full cycle fits before X" wants [deadline] itself, but B's "Fall back asleep by X"
  * wants a genuine fall-asleep time - the latest instant at which falling back asleep still lets one more
- * cycle land before the boundary, i.e. the boundary minus one cycle length (D4).
+ * cycle land before the deadline, i.e. the deadline minus one cycle length (D4). On a night with no deadline
+ * there is no such time at all (the picked total alone decides when the night ends), so the header is dropped.
  */
-fun buildWokeUpContent(plan: AlarmPlan, view: NightEngineView, zone: ZoneId, napOnly: Boolean, debugOptions: DebugOptions): NightScreenContent.WokeUp {
+fun buildWokeUpContent(plan: AlarmPlan, deadline: Instant?, view: NightEngineView, zone: ZoneId, napOnly: Boolean, debugOptions: DebugOptions): NightScreenContent.WokeUp {
     val latestStretchDuration = view.summary.stretches.lastOrNull()?.duration ?: Duration.ZERO
-    val headerBoundary = if (napOnly) plan.wakeBoundary else plan.wakeBoundary?.minus(sleepLengthFor(1, debugOptions))
+    val headerBoundary = if (napOnly) deadline else deadline?.minus(sleepLengthFor(1, debugOptions))
     return NightScreenContent.WokeUp(
         napOnly = napOnly,
         sleptDurationLabel = formatDuration(latestStretchDuration),

@@ -30,9 +30,8 @@ data class NightSettings(
 
 /**
  * The engine's decision for one sync. `bandAlarm` and `referenceOnset` are null exactly when [mode] is
- * [AlarmMode.FINISHED]: the night is over, there is nothing left to plan. `wakeBoundary` is what rule 7's
- * "the planned alarm" means (see `findWakeBoundary`). `reason` is one plain-English sentence for the night log.
- * `overdueSince` is null unless [mode] is [AlarmMode.OVERDUE]: the band alarm that was missed and started the
+ * [AlarmMode.FINISHED]: the night is over, there is nothing left to plan. `reason` is one plain-English
+ * sentence for the night log. `overdueSince` is null unless [mode] is [AlarmMode.OVERDUE]: the band alarm that was missed and started the
  * overdue period (the overdue rule's `maxOverdueDuration` cap counts from this instant). Added last with a
  * default so existing positional call sites keep compiling.
  */
@@ -43,7 +42,6 @@ data class AlarmPlan(
     val cycles: Int,
     val referenceOnset: Instant?,
     val onsetIsProjected: Boolean,
-    val wakeBoundary: Instant?,
     val reason: String,
     val overdueSince: Instant? = null
 )

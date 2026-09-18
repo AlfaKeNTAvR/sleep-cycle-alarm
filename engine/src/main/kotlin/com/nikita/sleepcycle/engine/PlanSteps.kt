@@ -25,15 +25,6 @@ fun findReferenceOnset(
 }
 
 /**
- * What rule 7's "the planned alarm" means (spec step 2, "Wake boundary"): the deadline when there is one,
- * otherwise the band alarm of the latest [AlarmMode.FULL_CYCLES] plan, carried forward through every other mode.
- * Null before a [AlarmMode.FULL_CYCLES] plan has ever been made without a deadline. This is the carried-forward
- * value going into the round; `computeAlarmPlan` refreshes it to this round's own alarm afterward when the round
- * itself lands on `FULL_CYCLES`.
- */
-fun findWakeBoundary(deadline: Instant?, previousPlan: AlarmPlan?): Instant? = deadline ?: previousPlan?.wakeBoundary
-
-/**
  * The sleep already had tonight that rule 2's night-total budget is measured against (spec step 2, "Cycles
  * still owed"): the summed length of every [SleepStretch], EXCLUDING the one currently in progress while
  * [state] is [SleepState.ASLEEP]. The current stretch is the one the new alarm is measured from, so counting
@@ -73,7 +64,6 @@ fun chooseMode(
     cycles: Int,
     owedCycles: Int,
     referenceOnset: Instant,
-    wakeBoundary: Instant?,
     now: Instant,
     previousPlan: AlarmPlan?,
     config: EngineConfig
@@ -81,8 +71,8 @@ fun chooseMode(
     // Rule 1: the deadline has passed, or the band shows AWAKE at or after the previous band alarm.
     isPastDeadline(deadline, now) || isAwokenAtAlarm(state, previousPlan, now) -> PlanRule.FINISHED
     // Rule 7: returning to sleep (or still lying awake) with less than one cycle still owed of the night's
-    // total, or less than one cycle left before the wake boundary.
-    isNapEligible(afterAwakening, owedCycles, referenceOnset, wakeBoundary, config) -> PlanRule.NAP
+    // total, or - only when there is a deadline - less than one cycle left before it.
+    isNapEligible(afterAwakening, owedCycles, referenceOnset, deadline, config) -> PlanRule.NAP
     // Rule 5: a deadline exists, no whole cycle fits before it, and this is not a return to sleep.
     deadline != null && cycles == 0 && !afterAwakening -> PlanRule.DEADLINE_ONLY
     // Rules 3, 4, 6: the normal case, whole cycles counted from the reference onset.
@@ -95,17 +85,20 @@ private fun isAwokenAtAlarm(state: SleepState, previousPlan: AlarmPlan?, now: In
     state == SleepState.AWAKE && previousPlan?.bandAlarm?.let { !it.isAfter(now) } == true
 
 /**
- * Rule 7, both of its triggers. The owed test needs no wake boundary at all, so with the night-total rule a
- * nap now applies on a night with no deadline too, once the picked total is all but used up.
+ * Rule 7, both of its triggers. The owed test needs no deadline at all: with the night-total rule a nap
+ * applies on a night with no deadline too, once the picked total is all but used up. The second trigger, a
+ * cycle no longer fitting, is a DEADLINE test and nothing else (decided 2026-09-17 with the owner): on a night
+ * with no deadline the picked total is the only thing allowed to end the night, so an earlier plan's own alarm
+ * must never cut it short.
  */
 private fun isNapEligible(
     afterAwakening: Boolean,
     owedCycles: Int,
     referenceOnset: Instant,
-    wakeBoundary: Instant?,
+    deadline: Instant?,
     config: EngineConfig
 ): Boolean {
     if (!afterAwakening) return false
     if (owedCycles == 0) return true
-    return wakeBoundary != null && referenceOnset.plus(config.cycleLength).isAfter(wakeBoundary)
+    return deadline != null && referenceOnset.plus(config.cycleLength).isAfter(deadline)
 }

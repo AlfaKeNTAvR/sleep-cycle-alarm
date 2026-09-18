@@ -127,7 +127,7 @@ class NightScreenStateTest {
     }
 
     @Test fun `state B shows the latest stretch duration and Stop night when more sleep fits`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:15", cycles = 3, wakeBoundary = "2026-09-17T08:30")
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:15", cycles = 3)
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(
             SleepState.AWAKE,
@@ -142,7 +142,7 @@ class NightScreenStateTest {
     }
 
     @Test fun `state C is nap-only and offers I'm up, end night`() {
-        val plan = testAlarmPlan(mode = AlarmMode.NAP, bandAlarm = "2026-09-17T06:48", wakeBoundary = "2026-09-17T08:30")
+        val plan = testAlarmPlan(mode = AlarmMode.NAP, bandAlarm = "2026-09-17T06:48")
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.AWAKE, totalSleep = java.time.Duration.ofMinutes(334))
         val result = state(nightState = night, engineView = view, screen = Screen.Night)

@@ -9,8 +9,7 @@ class NextSyncDelayTest {
     private val config = EngineConfig()
 
     private fun planOf(mode: AlarmMode, bandAlarm: String?) = AlarmPlan(
-        mode, bandAlarm?.let(::instant), null, 5, instant("2026-09-17T00:30"), false,
-        bandAlarm?.let(::instant), "r"
+        mode, bandAlarm?.let(::instant), null, 5, instant("2026-09-17T00:30"), false, "r"
     )
 
     @Test fun `FULL_CYCLES far from the band alarm uses the normal cadence`() {

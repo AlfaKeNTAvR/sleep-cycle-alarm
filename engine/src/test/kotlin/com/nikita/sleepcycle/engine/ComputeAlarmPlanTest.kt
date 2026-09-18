@@ -74,8 +74,7 @@ class ComputeAlarmPlanTest {
         // Behaviour change, rule 2 as a night total: 5 h of the picked 7.5 h are already slept, so 2.5 h are
         // still owed, which rounds to 2 cycles from the projected 03:25 onset - not a fresh 7.5 h ending 10:55.
         val previous = AlarmPlan(
-            AlarmMode.FULL_CYCLES, instant("2026-09-17T05:30"), null, 5, instant("2026-09-17T22:00"), false,
-            instant("2026-09-17T05:30"), "r"
+            AlarmMode.FULL_CYCLES, instant("2026-09-17T05:30"), null, 5, instant("2026-09-17T22:00"), false, "r"
         )
         val segments = listOf(
             segment("2026-09-16T22:00", "2026-09-17T03:00", SegmentKind.LIGHT),
@@ -87,33 +86,34 @@ class ComputeAlarmPlanTest {
         assertEquals("06:25", formatTime(result.bandAlarm!!, testZone))
     }
 
-    @Test fun `no deadline nap mode slides while awake, then fixes once asleep`() {
+    @Test fun `nap mode slides while awake, then fixes once asleep`() {
         // Each round's "now" stays before the previous round's band alarm: once state is AWAKE and now
         // reaches or passes that alarm, rule 1 (already awake at alarm time) ends the night, by design.
+        // The 08:00 deadline is what makes this a nap at all: one more cycle no longer fits before it.
+        val setting = settings(deadline = "2026-09-17T08:00", cycles = 5)
         val previous = AlarmPlan(
-            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), null, 5, instant("2026-09-17T00:30"), false,
-            instant("2026-09-17T08:00"), "r"
+            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), null, 5, instant("2026-09-17T00:30"), false, "r"
         )
         val segments = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:00", SegmentKind.LIGHT),
             segment("2026-09-17T07:00", "2026-09-17T07:05", SegmentKind.AWAKE)
         )
-        val awake = plan(segments, settings(cycles = 5), "2026-09-17T07:05", previous)
+        val awake = plan(segments, setting, "2026-09-17T07:05", previous)
         assertEquals(AlarmMode.NAP, awake.mode)
         assertEquals("07:25", formatTime(awake.bandAlarm!!, testZone))
 
-        val stillAwake = plan(segments, settings(cycles = 5), "2026-09-17T07:15", awake)
+        val stillAwake = plan(segments, setting, "2026-09-17T07:15", awake)
         assertEquals(AlarmMode.NAP, stillAwake.mode)
         assertEquals("07:35", formatTime(stillAwake.bandAlarm!!, testZone))
 
         val backAsleep = segments + segment("2026-09-17T07:16", "2026-09-17T07:20", SegmentKind.LIGHT)
-        val asleepAgain = plan(backAsleep, settings(cycles = 5), "2026-09-17T07:20", stillAwake)
+        val asleepAgain = plan(backAsleep, setting, "2026-09-17T07:20", stillAwake)
         assertEquals(AlarmMode.NAP, asleepAgain.mode)
         assertEquals("07:36", formatTime(asleepAgain.bandAlarm!!, testZone))
 
         val stillAsleep = plan(
             backAsleep + segment("2026-09-17T07:20", "2026-09-17T07:30", SegmentKind.LIGHT),
-            settings(cycles = 5), "2026-09-17T07:30", asleepAgain
+            setting, "2026-09-17T07:30", asleepAgain
         )
         assertEquals(AlarmMode.NAP, stillAsleep.mode)
         assertEquals("07:36", formatTime(stillAsleep.bandAlarm!!, testZone))
@@ -121,15 +121,15 @@ class ComputeAlarmPlanTest {
 
     @Test fun `late nap detection does not keep a stale alarm from a non-overdue previous plan`() {
         val previous = AlarmPlan(
-            AlarmMode.NAP, instant("2026-09-17T01:20"), null, 0, instant("2026-09-17T00:30"), false,
-            instant("2026-09-17T01:20"), "r"
+            AlarmMode.NAP, instant("2026-09-17T01:20"), null, 0, instant("2026-09-17T00:30"), false, "r"
         )
         val segments = listOf(
             segment("2026-09-17T00:00", "2026-09-17T00:30", SegmentKind.LIGHT),
             segment("2026-09-17T00:30", "2026-09-17T00:50", SegmentKind.AWAKE),
             segment("2026-09-17T00:50", "2026-09-17T01:15", SegmentKind.LIGHT)
         )
-        val result = plan(segments, settings(cycles = 5), "2026-09-17T01:15", previous)
+        // The 01:20 deadline is what makes this a nap: no full cycle fits after the 00:50 return to sleep.
+        val result = plan(segments, settings(deadline = "2026-09-17T01:20", cycles = 5), "2026-09-17T01:15", previous)
         assertEquals(AlarmMode.OVERDUE, result.mode)
         assertEquals("01:17", formatTime(result.bandAlarm!!, testZone))
     }
@@ -149,8 +149,7 @@ class ComputeAlarmPlanTest {
 
     @Test fun `an awake mark after the previous band alarm is FINISHED`() {
         val previous = AlarmPlan(
-            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), null, 5, instant("2026-09-17T00:30"), false,
-            instant("2026-09-17T08:00"), "r"
+            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), null, 5, instant("2026-09-17T00:30"), false, "r"
         )
         val segments = listOf(
             segment("2026-09-17T00:30", "2026-09-17T08:00", SegmentKind.LIGHT),

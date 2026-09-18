@@ -181,7 +181,6 @@ private fun encodeAlarmPlan(plan: AlarmPlan): JSONObject = JSONObject().apply {
     put("cycles", plan.cycles)
     put("referenceOnset", plan.referenceOnset?.toString() ?: JSONObject.NULL)
     put("onsetIsProjected", plan.onsetIsProjected)
-    put("wakeBoundary", plan.wakeBoundary?.toString() ?: JSONObject.NULL)
     put("reason", plan.reason)
     put("overdueSince", plan.overdueSince?.toString() ?: JSONObject.NULL)
 }
@@ -193,7 +192,6 @@ private fun decodeAlarmPlan(json: JSONObject): AlarmPlan = AlarmPlan(
     cycles = json.getInt("cycles"),
     referenceOnset = json.optStringOrNull("referenceOnset")?.let(Instant::parse),
     onsetIsProjected = json.getBoolean("onsetIsProjected"),
-    wakeBoundary = json.optStringOrNull("wakeBoundary")?.let(Instant::parse),
     reason = json.getString("reason"),
     overdueSince = json.optStringOrNull("overdueSince")?.let(Instant::parse)
 )

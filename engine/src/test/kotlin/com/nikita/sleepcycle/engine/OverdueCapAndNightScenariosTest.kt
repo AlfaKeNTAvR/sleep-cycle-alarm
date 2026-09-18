@@ -25,7 +25,6 @@ class OverdueCapAndNightScenariosTest {
         val established = plan(night, setting, "2026-09-17T07:00", null)
         assertEquals(AlarmMode.FULL_CYCLES, established.mode)
         assertEquals("08:00", formatTime(established.bandAlarm!!, testZone))
-        assertEquals("08:00", formatTime(established.wakeBoundary!!, testZone))
         assertEquals("08:15", formatTime(established.phoneAlarm!!, testZone))
 
         // Every 5 min from 08:05: the reference onset never changes (no awake mark all night), so the raw
@@ -43,7 +42,6 @@ class OverdueCapAndNightScenariosTest {
             val result = plan(night, setting, "2026-09-17T$nowText", previous)
             assertEquals(AlarmMode.OVERDUE, result.mode, "mode at $nowText")
             assertEquals(alarmText, formatTime(result.bandAlarm!!, testZone), "bandAlarm at $nowText")
-            assertEquals("08:00", formatTime(result.wakeBoundary!!, testZone), "wakeBoundary at $nowText")
             assertEquals("08:15", formatTime(result.phoneAlarm!!, testZone), "phoneAlarm at $nowText")
             assertEquals("08:00", formatTime(result.overdueSince!!, testZone), "overdueSince at $nowText")
             previous = result
@@ -52,7 +50,6 @@ class OverdueCapAndNightScenariosTest {
         val finished = plan(night, setting, "2026-09-17T08:30", previous)
         assertEquals(AlarmMode.FINISHED, finished.mode)
         assertNull(finished.bandAlarm)
-        assertEquals("08:00", formatTime(finished.wakeBoundary!!, testZone))
         assertEquals("08:15", formatTime(finished.phoneAlarm!!, testZone))
         assertNull(finished.overdueSince)
         assertNull(nextSyncDelay(finished, instant("2026-09-17T08:30"), EngineConfig()))
@@ -65,19 +62,16 @@ class OverdueCapAndNightScenariosTest {
         val awake1 = plan(emptyList(), setting, "2026-09-16T22:00", null)
         assertEquals(AlarmMode.FULL_CYCLES, awake1.mode)
         assertEquals("07:15", formatTime(awake1.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(awake1.wakeBoundary!!, testZone))
         assertTrue(awake1.onsetIsProjected)
 
         val awake2 = plan(emptyList(), setting, "2026-09-16T23:00", awake1)
         assertEquals(AlarmMode.FULL_CYCLES, awake2.mode)
         assertEquals("08:15", formatTime(awake2.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(awake2.wakeBoundary!!, testZone))
         assertTrue(awake2.onsetIsProjected)
 
         val awake3 = plan(emptyList(), setting, "2026-09-16T23:30", awake2)
         assertEquals(AlarmMode.FULL_CYCLES, awake3.mode)
         assertEquals("07:15", formatTime(awake3.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(awake3.wakeBoundary!!, testZone))
         assertTrue(awake3.onsetIsProjected)
 
         // Real sleep appears, onset 00:05: the projected plan is replaced by the real one.
@@ -85,24 +79,21 @@ class OverdueCapAndNightScenariosTest {
         val fallsAsleep = plan(realSleep, setting, "2026-09-17T00:10", awake3)
         assertEquals(AlarmMode.FULL_CYCLES, fallsAsleep.mode)
         assertEquals("07:35", formatTime(fallsAsleep.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(fallsAsleep.wakeBoundary!!, testZone))
         assertFalse(fallsAsleep.onsetIsProjected)
 
         // No flapping: once asleep, the reference onset is the real mark, not a moving projection.
         val noFlap1 = plan(realSleep, setting, "2026-09-17T00:20", fallsAsleep)
         assertEquals(AlarmMode.FULL_CYCLES, noFlap1.mode)
         assertEquals("07:35", formatTime(noFlap1.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(noFlap1.wakeBoundary!!, testZone))
 
         val noFlap2 = plan(realSleep, setting, "2026-09-17T00:30", noFlap1)
         assertEquals(AlarmMode.FULL_CYCLES, noFlap2.mode)
         assertEquals("07:35", formatTime(noFlap2.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(noFlap2.wakeBoundary!!, testZone))
     }
 
-    @Test fun `a nap survives a second awakening, tracking the latest onset while capped by the wake boundary`() {
+    @Test fun `a nap survives a second awakening, tracking the latest onset while capped by the deadline`() {
         val establishNight = listOf(segment("2026-09-17T00:30", "2026-09-18T00:00", SegmentKind.LIGHT))
-        val setting = settings(cycles = 5, backup = false)
+        val setting = settings(deadline = "2026-09-17T08:00", cycles = 5, backup = false)
         val established = plan(establishNight, setting, "2026-09-17T07:00", null)
         assertEquals(AlarmMode.FULL_CYCLES, established.mode)
         assertEquals("08:00", formatTime(established.bandAlarm!!, testZone))
@@ -114,7 +105,6 @@ class OverdueCapAndNightScenariosTest {
         val firstNap = plan(wakesAt0710, setting, "2026-09-17T07:11", established)
         assertEquals(AlarmMode.NAP, firstNap.mode)
         assertEquals("07:31", formatTime(firstNap.bandAlarm!!, testZone))
-        assertEquals("08:00", formatTime(firstNap.wakeBoundary!!, testZone))
 
         val backAsleep0720 = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:10", SegmentKind.LIGHT),
@@ -124,7 +114,6 @@ class OverdueCapAndNightScenariosTest {
         val secondNap = plan(backAsleep0720, setting, "2026-09-17T07:21", firstNap)
         assertEquals(AlarmMode.NAP, secondNap.mode)
         assertEquals("07:40", formatTime(secondNap.bandAlarm!!, testZone))
-        assertEquals("08:00", formatTime(secondNap.wakeBoundary!!, testZone))
 
         val wakesAgain0730 = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:10", SegmentKind.LIGHT),
@@ -135,7 +124,6 @@ class OverdueCapAndNightScenariosTest {
         val thirdNap = plan(wakesAgain0730, setting, "2026-09-17T07:31", secondNap)
         assertEquals(AlarmMode.NAP, thirdNap.mode)
         assertEquals("07:51", formatTime(thirdNap.bandAlarm!!, testZone))
-        assertEquals("08:00", formatTime(thirdNap.wakeBoundary!!, testZone))
 
         val backAsleep0735 = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:10", SegmentKind.LIGHT),
@@ -147,10 +135,9 @@ class OverdueCapAndNightScenariosTest {
         val fourthNap = plan(backAsleep0735, setting, "2026-09-17T07:36", thirdNap)
         assertEquals(AlarmMode.NAP, fourthNap.mode)
         assertEquals("07:55", formatTime(fourthNap.bandAlarm!!, testZone))
-        assertEquals("08:00", formatTime(fourthNap.wakeBoundary!!, testZone))
 
         // Documented behavior: each return to sleep resets the nap window to onset + napLength, so the final
-        // alarm tracks the LATEST onset, always capped at the wake boundary carried from the last full-cycle plan.
+        // alarm tracks the LATEST onset, always capped at the deadline.
         assertFalse(fourthNap.bandAlarm.isAfter(instant("2026-09-17T08:00")))
         assertFalse(fourthNap.bandAlarm.isAfter(instant("2026-09-17T07:35").plus(Duration.ofMinutes(20))))
     }
@@ -172,7 +159,6 @@ class OverdueCapAndNightScenariosTest {
         assertEquals(AlarmMode.FULL_CYCLES, awake1.mode)
         assertEquals(4, awake1.cycles)
         assertEquals("08:00", formatTime(awake1.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(awake1.wakeBoundary!!, testZone))
 
         // Back asleep 01:50: onset 01:50, still 4 cycles fit, alarm 01:50 + 4*90m = 07:50.
         val sleep1 = listOf(
@@ -184,7 +170,6 @@ class OverdueCapAndNightScenariosTest {
         assertEquals(AlarmMode.FULL_CYCLES, asleep1.mode)
         assertEquals(4, asleep1.cycles)
         assertEquals("07:50", formatTime(asleep1.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(asleep1.wakeBoundary!!, testZone))
 
         // Awake 02:29-02:33: onset projects to 02:30+15=02:45, only 3 cycles fit before 08:30.
         val wake2 = listOf(
@@ -197,7 +182,6 @@ class OverdueCapAndNightScenariosTest {
         assertEquals(AlarmMode.FULL_CYCLES, awake2.mode)
         assertEquals(3, awake2.cycles)
         assertEquals("07:15", formatTime(awake2.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(awake2.wakeBoundary!!, testZone))
 
         // Back asleep 02:33: onset 02:33, 3 cycles fit, alarm 02:33 + 4:30 = 07:03.
         val sleep2 = listOf(
@@ -211,7 +195,6 @@ class OverdueCapAndNightScenariosTest {
         assertEquals(AlarmMode.FULL_CYCLES, asleep2.mode)
         assertEquals(3, asleep2.cycles)
         assertEquals("07:03", formatTime(asleep2.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(asleep2.wakeBoundary!!, testZone))
 
         // Awake 04:47-04:49: onset projects to 04:48+15=05:03, only 2 cycles fit before 08:30.
         val wake3 = listOf(
@@ -226,7 +209,6 @@ class OverdueCapAndNightScenariosTest {
         assertEquals(AlarmMode.FULL_CYCLES, awake3.mode)
         assertEquals(2, awake3.cycles)
         assertEquals("08:03", formatTime(awake3.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(awake3.wakeBoundary!!, testZone))
 
         // Back asleep 04:49: onset 04:49, 2 cycles fit, alarm 04:49 + 3:00 = 07:49.
         val sleep3 = listOf(
@@ -242,7 +224,6 @@ class OverdueCapAndNightScenariosTest {
         assertEquals(AlarmMode.FULL_CYCLES, asleep3.mode)
         assertEquals(2, asleep3.cycles)
         assertEquals("07:49", formatTime(asleep3.bandAlarm!!, testZone))
-        assertEquals("08:30", formatTime(asleep3.wakeBoundary!!, testZone))
     }
 
     // Known limitation, fixed in the detector/field calibration, not here: the band tags reading-in-bed time as

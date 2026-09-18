@@ -22,7 +22,6 @@ class NightStateTest {
             cycles = 5,
             referenceOnset = Instant.parse("2026-09-16T21:30:00Z"),
             onsetIsProjected = false,
-            wakeBoundary = Instant.parse("2026-09-17T05:00:00Z"),
             reason = "Asleep since 00:30, 5 of 5 picked cycles fit, band alarm 05:00",
             overdueSince = null
         )
@@ -64,7 +63,6 @@ class NightStateTest {
             cycles = 5,
             referenceOnset = Instant.parse("2026-09-17T00:30:00Z"),
             onsetIsProjected = false,
-            wakeBoundary = Instant.parse("2026-09-17T08:00:00Z"),
             reason = "Still asleep past the planned alarm",
             overdueSince = Instant.parse("2026-09-17T08:05:00Z")
         )
@@ -98,7 +96,6 @@ class NightStateTest {
             cycles = 0,
             referenceOnset = null,
             onsetIsProjected = false,
-            wakeBoundary = Instant.parse("2026-09-17T05:30:00Z"),
             reason = "Deadline passed",
             overdueSince = null
         )
@@ -292,7 +289,6 @@ class NightStateTest {
             cycles = 5,
             referenceOnset = Instant.parse("2026-09-16T21:30:00Z"),
             onsetIsProjected = false,
-            wakeBoundary = Instant.parse("2026-09-17T05:00:00Z"),
             reason = "reason",
             overdueSince = null
         )

@@ -57,7 +57,6 @@ internal fun testAlarmPlan(
     cycles: Int = 0,
     referenceOnset: String? = null,
     onsetIsProjected: Boolean = false,
-    wakeBoundary: String? = null,
     reason: String = "test reason",
 ): AlarmPlan = AlarmPlan(
     mode = mode,
@@ -66,7 +65,6 @@ internal fun testAlarmPlan(
     cycles = cycles,
     referenceOnset = referenceOnset?.let(::instant),
     onsetIsProjected = onsetIsProjected,
-    wakeBoundary = wakeBoundary?.let(::instant),
     reason = reason,
 )
 

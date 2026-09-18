@@ -29,7 +29,6 @@ fun computeBandAlarm(
     rule: PlanRule,
     state: SleepState,
     referenceOnset: Instant,
-    wakeBoundary: Instant?,
     deadline: Instant?,
     cycles: Int,
     now: Instant,
@@ -39,8 +38,8 @@ fun computeBandAlarm(
     val raw = when (rule) {
         // Rule 1: the night is already over, there is no alarm to schedule.
         PlanRule.FINISHED -> return BandAlarmResult.Finished()
-        // Rule 7: 20 min after falling back asleep (or after now, while still awake), never past the boundary.
-        PlanRule.NAP -> RawAlarm(AlarmMode.NAP, napAlarm(state, referenceOnset, wakeBoundary, now, config))
+        // Rule 7: 20 min after falling back asleep (or after now, while still awake), never past the deadline.
+        PlanRule.NAP -> RawAlarm(AlarmMode.NAP, napAlarm(state, referenceOnset, deadline, now, config))
         // Rule 5: the band vibrates exactly at the deadline.
         PlanRule.DEADLINE_ONLY -> RawAlarm(AlarmMode.DEADLINE_ONLY, deadline ?: now.plus(config.minAlarmLead))
         // Rules 3, 4, 6: the reference onset plus the whole cycles that fit.
@@ -54,14 +53,13 @@ fun computeBandAlarm(
 
 /**
  * Rule 7's nap alarm: slides forward while still awake, fixed [EngineConfig.napLength] after sleep once it
- * resumes, and never later than the wake boundary. Since the night-total rule, `chooseMode` also selects NAP
- * with no wake boundary at all (nothing owed on a night with no deadline), and then nothing caps the nap -
- * the nap length itself is the whole of it.
+ * resumes, and never later than the deadline. On a night with no deadline nothing caps the nap - the nap
+ * length itself is the whole of it, and no earlier plan's alarm is allowed to shorten it.
  */
 private fun napAlarm(
     state: SleepState,
     referenceOnset: Instant,
-    wakeBoundary: Instant?,
+    deadline: Instant?,
     now: Instant,
     config: EngineConfig
 ): Instant {
@@ -69,7 +67,7 @@ private fun napAlarm(
         SleepState.AWAKE -> now.plus(config.napLength)
         else -> referenceOnset.plus(config.napLength)
     }
-    return if (wakeBoundary == null) napEnd else minOf(napEnd, wakeBoundary)
+    return if (deadline == null) napEnd else minOf(napEnd, deadline)
 }
 
 private fun applyOverdueRule(
