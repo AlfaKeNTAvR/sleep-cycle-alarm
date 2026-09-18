@@ -104,7 +104,38 @@ fun applyBandAlarmDecision(
     if (slots != null) {
         appendNightLog(context, state.startedAt, NightLogEvent(now, "band_alarm_table", mapOf("rows" to encodeBandAlarmSlotsForLog(slots))), debugNight)
     }
+    // Which protocol this tick ran (BandAlarmSlotMode.kt), logged every tick: in single-slot mode the band is
+    // briefly without an alarm on every move, so the log must say plainly which mode produced each command.
+    appendNightLog(
+        context, state.startedAt,
+        NightLogEvent(
+            now, "band_alarm_mode",
+            mapOf(
+                "mode" to decision.slotMode.name.lowercase(),
+                "resendsUsed" to decision.singleSlotResendsUsed.toString(),
+                "resendLimit" to MAX_SINGLE_SLOT_RESENDS_PER_NIGHT.toString()
+            )
+        ),
+        debugNight
+    )
     outcomeLogEvent(decision, now)?.let { appendNightLog(context, state.startedAt, it, debugNight) }
+    // Item [smart-wakeup]: logged every tick this is still true (BandAlarmDecision.kt never fixes it, only
+    // reports it), regardless of decision.outcome, since another transition (e.g. RESENT) can be this tick's
+    // headline while the smart flag remains a live problem underneath it.
+    decision.smartWakeupWarning?.let { warning ->
+        val windowClause = warning.windowMinutes?.let { "a $it minute window" } ?: "an unknown window"
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                now, "error",
+                mapOf(
+                    "step" to "band_alarm",
+                    "cause" to "slot ${warning.position} holding \"${warning.title}\" still has the band's own smart-wakeup flag set, with $windowClause"
+                )
+            ),
+            debugNight
+        )
+    }
 }
 
 /**
@@ -126,13 +157,41 @@ internal fun outcomeLogEvent(decision: BandAlarmDecision, now: Instant): NightLo
         )
     }
     BandAlarmOutcome.CONFIRMED_LOST -> NightLogEvent(now, "band_alarm_missing", mapOf("cause" to "a previously confirmed band alarm is no longer present in the table"))
-    BandAlarmOutcome.BOTH_SLOTS_OCCUPIED -> NightLogEvent(now, "error", mapOf("step" to "band_alarm", "cause" to "both band alarm titles are occupied in the table; withholding a new SET"))
+    // Single-slot self-healing: the SET we are still waiting on is not in the table, so it never landed.
+    // Re-sent on this same tick rather than waiting for the wake time to move again.
+    BandAlarmOutcome.MISSING_RESENT -> NightLogEvent(
+        now, "band_alarm_missing",
+        mapOf(
+            "cause" to "the pending band alarm is not in the table; re-sending it now",
+            "title" to (decision.requestedBandAlarm?.title ?: ""),
+            "resendsUsed" to decision.singleSlotResendsUsed.toString()
+        )
+    )
+    BandAlarmOutcome.RESEND_LIMIT_REACHED -> NightLogEvent(
+        now, "error",
+        mapOf(
+            "step" to "band_alarm",
+            "cause" to "tonight's single-slot re-send limit ($MAX_SINGLE_SLOT_RESENDS_PER_NIGHT) is spent; " +
+                "not re-sending again, the phone alarm is the safety net"
+        )
+    )
+    // The one place a dismissal precedes a confirmed replacement: with a single usable slot there is nowhere
+    // else to put the new time, so the band has no alarm between these two commands.
+    BandAlarmOutcome.MOVED_IN_ONE_SLOT -> NightLogEvent(
+        now, "band_alarm_single_slot_move",
+        mapOf(
+            "title" to (decision.requestedBandAlarm?.title ?: ""),
+            "time" to (decision.requestedBandAlarm?.let { "%02d:%02d".format(it.hour, it.minute) } ?: "")
+        )
+    )
+    BandAlarmOutcome.NO_FREE_SLOT -> NightLogEvent(now, "error", mapOf("step" to "band_alarm", "cause" to "no band alarm slot in the table can take one of our titles; withholding a new SET"))
     BandAlarmOutcome.DISMISSED -> NightLogEvent(now, "band_alarm_dismissed", mapOf("remainingPending" to decision.pendingDismissTitles.size.toString()))
     BandAlarmOutcome.DISMISS_PENDING -> NightLogEvent(now, "band_alarm_waiting", mapOf("pending" to decision.pendingDismissTitles.joinToString(",")))
     // C1: TOO_SOON is logged separately in NightOrchestrator.resolveBandAlarmState, at info with both times -
     // that call site is the only one with the target AND the refreshed clock both on hand. BLIND_FROZEN is
     // logged there too (band_alarm_frozen, with the held time and the desired target), for the same reason.
-    BandAlarmOutcome.REQUESTED, BandAlarmOutcome.RESENT, BandAlarmOutcome.BLIND, BandAlarmOutcome.UNCHANGED, BandAlarmOutcome.TOO_SOON, BandAlarmOutcome.BLIND_FROZEN -> null
+    BandAlarmOutcome.REQUESTED, BandAlarmOutcome.RESENT, BandAlarmOutcome.BLIND, BandAlarmOutcome.UNCHANGED,
+    BandAlarmOutcome.TOO_SOON, BandAlarmOutcome.BLIND_FROZEN -> null
 }
 
 private fun encodeBandAlarmSlotsForLog(slots: List<BandAlarmSlot>): String {

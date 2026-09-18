@@ -117,7 +117,7 @@ private fun readRawActivitySamples(database: SQLiteDatabase, deviceId: Int, sinc
 
 private fun readRawBandAlarmRows(database: SQLiteDatabase, deviceId: Int): List<RawBandAlarmRow> {
     val query = """
-        SELECT DEVICE_ID, POSITION, ENABLED, HOUR, MINUTE, TITLE, SMART_WAKEUP, REPETITION
+        SELECT DEVICE_ID, POSITION, ENABLED, HOUR, MINUTE, TITLE, SMART_WAKEUP, REPETITION, SMART_WAKEUP_INTERVAL
         FROM $TABLE_ALARM
         WHERE DEVICE_ID = ?
     """.trimIndent()
@@ -132,7 +132,8 @@ private fun readRawBandAlarmRows(database: SQLiteDatabase, deviceId: Int): List<
                 minute = cursor.getInt(4),
                 title = if (cursor.isNull(5)) null else cursor.getString(5),
                 smartWakeup = cursor.getInt(6) != 0,
-                repetition = cursor.getInt(7)
+                repetition = cursor.getInt(7),
+                smartWakeupWindowMinutes = if (cursor.isNull(8)) null else cursor.getInt(8)
             )
         }
         return rows

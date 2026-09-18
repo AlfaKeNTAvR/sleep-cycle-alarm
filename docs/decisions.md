@@ -21,12 +21,12 @@ Why: the phone is already connected and tested there; no IDE needed. Install not
 ## Alarm rules
 
 1. **Always wake at the end of a cycle.** Never mid-cycle. Cycle length is 90 min for now, to be calibrated from exported data.
-2. **Sleep length picker: 4.5 h, 6 h, 7.5 h, 9 h.** Default 7.5 h.
+2. **Sleep length picker: 4.5 h, 6 h, 7.5 h, 9 h.** Default 7.5 h. **This is a total for the whole night** (decided 2026-09-17): sleep already had is subtracted, so waking after 3 h of a 7.5 h night leaves 4.5 h, and the band alarm is set 4.5 h after you fall back asleep. A remainder that is not a whole number of cycles rounds to the nearest cycle, so the total can land up to 45 min over.
 3. **No deadline:** band alarm = latest sleep onset + picked length.
 4. **With a deadline:** band alarm = latest onset + the largest whole number of cycles that ends by the deadline, never more than the picked length.
 5. **No full cycle fits before the deadline:** the band vibrates at the deadline.
-6. **Restart after every awakening** the band marks. The count starts again from when you fall back asleep.
-7. **Nap mode:** if you wake up and less than one full cycle fits before the planned alarm, the band wakes you 20 min after you fall back asleep (or at the deadline, if sooner). 20 min is before deep sleep usually starts.
+6. **Recount after every awakening** the band marks. The alarm is measured from when you fall back asleep, but for what is still owed of the night's total (rule 2), not a fresh full count.
+7. **Nap mode:** if you wake up and less than one full cycle is still owed of the night's total, or less than one fits before the planned alarm, the band wakes you 20 min after you fall back asleep (or at the deadline, if sooner). 20 min is before deep sleep usually starts. This now applies with or without a deadline, because the total gives nap a meaning that does not need one.
    While awake in nap mode, the band alarm is kept 20 min ahead and slid forward each sync, then locked when sleep is detected, so sync delay cannot make the nap too long.
 8. **Already awake when the band vibrates:** acceptable, no special handling.
 

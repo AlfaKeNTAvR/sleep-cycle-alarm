@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.night.BandAlarmSlotMode
 import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
@@ -26,6 +27,7 @@ import com.nikita.sleepcycle.ui.state.BandAlarmStatusUi
 import com.nikita.sleepcycle.ui.state.EndNightAction
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
+import com.nikita.sleepcycle.ui.state.SmartWakeupWarningUi
 import com.nikita.sleepcycle.ui.theme.ScreenBottomPadding
 
 /** The night screen: always-visible sync status, the state-specific content, and the end-night action. */
@@ -57,6 +59,15 @@ fun NightScreen(
         }
         if (state.noPhoneAlarmWarning) {
             AmberWarningLine(text = stringResource(R.string.warning_no_phone_alarm))
+        }
+        state.smartWakeupWarning?.let { warning ->
+            AmberWarningLine(text = smartWakeupWarningText(warning))
+        }
+        state.bandAlarmSlotMode?.let { mode ->
+            StatusLine(text = bandAlarmSlotModeText(mode), ok = mode != BandAlarmSlotMode.BLIND)
+            if (mode == BandAlarmSlotMode.SINGLE_SLOT) {
+                AmberWarningLine(text = stringResource(R.string.warning_band_single_slot))
+            }
         }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
@@ -110,6 +121,19 @@ private fun statusLineText(state: NightUiState): String = when {
     state.lastSyncOk == false -> stringResource(R.string.night_status_data_stale, state.lastSyncTimeLabel.orEmpty())
     else -> stringResource(R.string.night_status_synced_ok, state.lastSyncTimeLabel.orEmpty())
 }
+
+/** Names the band alarm protocol in use, so the owner can always tell from the screen which one produced tonight's commands. */
+@Composable
+private fun bandAlarmSlotModeText(mode: BandAlarmSlotMode): String = when (mode) {
+    BandAlarmSlotMode.ALTERNATING_TITLES -> stringResource(R.string.night_band_alarm_mode_two_slots)
+    BandAlarmSlotMode.SINGLE_SLOT -> stringResource(R.string.night_band_alarm_mode_single_slot)
+    BandAlarmSlotMode.BLIND -> stringResource(R.string.night_band_alarm_mode_blind)
+}
+
+@Composable
+private fun smartWakeupWarningText(warning: SmartWakeupWarningUi): String =
+    warning.windowMinutes?.let { stringResource(R.string.warning_band_smart_wakeup, it, warning.displaySlotNumber) }
+        ?: stringResource(R.string.warning_band_smart_wakeup_unknown_window, warning.displaySlotNumber)
 
 @Composable
 private fun bandAlarmStatusLineText(status: BandAlarmStatusUi): String =

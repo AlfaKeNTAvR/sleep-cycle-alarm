@@ -137,6 +137,18 @@
     <!-- Item 4: no phone alarm at all tonight (deadline off AND phone backup off) -->
     <string name="warning_no_phone_alarm">Nothing on the phone will ring tonight, only the band.</string>
 
+    <!-- Band alarm protocol in use tonight, decided from the band's own alarm table (BandAlarmSlotMode.kt) -->
+    <string name="night_band_alarm_mode_two_slots">Band alarm mode: two slots, no gap when the time moves</string>
+    <string name="night_band_alarm_mode_single_slot">Band alarm mode: one slot</string>
+    <string name="night_band_alarm_mode_blind">Band alarm mode: no alarm table yet, holding the last alarm</string>
+
+    <!-- Single-slot mode: the band has no alarm between the clear and the re-set on every move -->
+    <string name="warning_band_single_slot">Only one band alarm slot: the band alarm is briefly cleared each time the wake time moves. The phone alarm is the safety net.</string>
+
+    <!-- Smart-wakeup: the slot backing our confirmed or requested band alarm still carries the band's own smart-wakeup flag -->
+    <string name="warning_band_smart_wakeup">Band may wake you up to %1$d min early: slot %2$d is a smart alarm</string>
+    <string name="warning_band_smart_wakeup_unknown_window">Band may wake you up early: slot %1$d is a smart alarm</string>
+
     <!-- Night screen: state A, DEADLINE_ONLY -->
     <string name="night_a_deadline_only_note">Band vibrates at the deadline</string>
 
@@ -184,4 +196,44 @@
 
     <!-- Logs screen: simulated tag -->
     <string name="logs_simulated_tag">simulated</string>
+
+    <!-- Setup wizard: one page per requirement, reached on a fresh install or "Run setup again" -->
+    <string name="setup_wizard_step_label">Step %1$d of %2$d</string>
+    <string name="setup_wizard_next_button">Next</string>
+    <string name="setup_wizard_back_button">Back</string>
+    <string name="setup_run_wizard_again_button">Run setup again</string>
+
+    <string name="setup_wizard_what_you_need_title">What you need</string>
+    <string name="setup_wizard_what_you_need_body">A Honor Band (or compatible) paired to this phone, and Gadgetbridge installed to talk to it.</string>
+    <string name="setup_wizard_gadgetbridge_found">Gadgetbridge found on this phone.</string>
+    <string name="setup_wizard_gadgetbridge_not_found">Gadgetbridge not found. Install it before continuing.</string>
+
+    <string name="setup_wizard_band_address_title">Band address</string>
+    <string name="setup_wizard_band_address_body">The band\'s Bluetooth MAC address, prefilled with the owner\'s band. Change it only if you are pairing a different one.</string>
+
+    <string name="setup_wizard_gadgetbridge_intents_title">Gadgetbridge: Intent API</string>
+    <string name="setup_wizard_gadgetbridge_intents_body">In Gadgetbridge, under Developer options, turn these four on:</string>
+    <string-array name="setup_wizard_gadgetbridge_intents_lines">
+        <item>Allow activity sync trigger</item>
+        <item>Broadcast on activity sync finish</item>
+        <item>Allow database export trigger</item>
+        <item>Broadcast on export</item>
+    </string-array>
+
+    <string name="setup_wizard_gadgetbridge_auto_export_title">Gadgetbridge: auto export</string>
+    <string name="setup_wizard_gadgetbridge_auto_export_body">Still in Gadgetbridge, under Automations › Auto export database:</string>
+    <string name="setup_wizard_gadgetbridge_auto_export_enable_line">Turn on \"Auto export enabled\"</string>
+    <string name="setup_wizard_gadgetbridge_auto_export_location_line">Set \"Export location\" to a folder such as Documents - required, or exports write nothing</string>
+    <string name="setup_wizard_gadgetbridge_auto_export_warning">Do NOT use Data management › Export Data - that folder belongs to Gadgetbridge and our app cannot read it.</string>
+
+    <string name="setup_wizard_export_file_title">Export file</string>
+
+    <string name="setup_wizard_phone_permissions_title">Phone permissions</string>
+
+    <string name="setup_wizard_band_alarms_title">Band alarms</string>
+    <string name="setup_wizard_band_alarms_allow_third_party_line">Band gear › Developer options: \"Allow 3rd party apps to set alarms\"</string>
+    <string name="setup_wizard_band_alarms_smart_slot_note">One of the band\'s alarm slots may be a fixed smart-wakeup slot that can never become a normal alarm. If Test connection flags one, give it a title (for example \"Smart\") and leave it switched off.</string>
+    <string name="setup_wizard_band_alarms_free_slot_note">If Test connection reports too few free slots, open the band\'s alarms in Gadgetbridge and clear the title of a disabled one.</string>
+
+    <string name="setup_wizard_test_connection_title">Test connection</string>
 </resources>

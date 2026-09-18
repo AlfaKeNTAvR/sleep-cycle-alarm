@@ -1,5 +1,6 @@
 package com.nikita.sleepcycle.engine
 
+import java.time.Duration
 import java.time.Instant
 
 /** The onset [computeAlarmPlan] measures cycles from, and whether it is an actual mark or a projection from `now`. */
@@ -32,6 +33,31 @@ fun findReferenceOnset(
  */
 fun findWakeBoundary(deadline: Instant?, previousPlan: AlarmPlan?): Instant? = deadline ?: previousPlan?.wakeBoundary
 
+/**
+ * The sleep already had tonight that rule 2's night-total budget is measured against (spec step 2, "Cycles
+ * still owed"): the summed length of every [SleepStretch], EXCLUDING the one currently in progress while
+ * [state] is [SleepState.ASLEEP]. The current stretch is the one the new alarm is measured from, so counting
+ * it here would subtract it twice. Zero before any sleep at all, and zero on the first stretch of the night,
+ * which is what keeps that first stretch behaving exactly as it did before the total rule existed.
+ */
+fun sumSleepAlreadyHad(stretches: List<SleepStretch>, state: SleepState): Duration {
+    val completed = if (state == SleepState.ASLEEP) stretches.dropLast(1) else stretches
+    return completed.fold(Duration.ZERO) { total, stretch -> total.plus(Duration.between(stretch.onset, stretch.end)) }
+}
+
+/**
+ * Whole cycles still owed of the night's total (spec step 2, "Cycles still owed"): the picked budget
+ * (`pickedCycles * cycleLength`) minus [sleptSoFar], never below zero, divided by one cycle and rounded to the
+ * NEAREST whole number - so a remainder that does not divide evenly lands as close to the picked total as
+ * whole cycles allow, rather than always cutting one short. Exactly half a cycle rounds up.
+ */
+fun countOwedCycles(sleptSoFar: Duration, settings: NightSettings, config: EngineConfig): Int {
+    val budget = config.cycleLength.multipliedBy(settings.pickedCycles.toLong())
+    val remaining = budget.minus(sleptSoFar)
+    if (remaining.isNegative || remaining.isZero) return 0
+    return Math.round(remaining.toNanos().toDouble() / config.cycleLength.toNanos().toDouble()).toInt()
+}
+
 /** Which of rules 1, 7, 5, or 3/4/6 [chooseMode] matched, before the overdue amendment in `computeBandAlarm`. */
 enum class PlanRule { FINISHED, NAP, DEADLINE_ONLY, FULL_CYCLES }
 
@@ -45,6 +71,7 @@ fun chooseMode(
     afterAwakening: Boolean,
     deadline: Instant?,
     cycles: Int,
+    owedCycles: Int,
     referenceOnset: Instant,
     wakeBoundary: Instant?,
     now: Instant,
@@ -53,8 +80,9 @@ fun chooseMode(
 ): PlanRule = when {
     // Rule 1: the deadline has passed, or the band shows AWAKE at or after the previous band alarm.
     isPastDeadline(deadline, now) || isAwokenAtAlarm(state, previousPlan, now) -> PlanRule.FINISHED
-    // Rule 7: returning to sleep (or still lying awake) with less than one cycle left before the wake boundary.
-    isNapEligible(afterAwakening, referenceOnset, wakeBoundary, config) -> PlanRule.NAP
+    // Rule 7: returning to sleep (or still lying awake) with less than one cycle still owed of the night's
+    // total, or less than one cycle left before the wake boundary.
+    isNapEligible(afterAwakening, owedCycles, referenceOnset, wakeBoundary, config) -> PlanRule.NAP
     // Rule 5: a deadline exists, no whole cycle fits before it, and this is not a return to sleep.
     deadline != null && cycles == 0 && !afterAwakening -> PlanRule.DEADLINE_ONLY
     // Rules 3, 4, 6: the normal case, whole cycles counted from the reference onset.
@@ -66,9 +94,18 @@ private fun isPastDeadline(deadline: Instant?, now: Instant): Boolean = deadline
 private fun isAwokenAtAlarm(state: SleepState, previousPlan: AlarmPlan?, now: Instant): Boolean =
     state == SleepState.AWAKE && previousPlan?.bandAlarm?.let { !it.isAfter(now) } == true
 
+/**
+ * Rule 7, both of its triggers. The owed test needs no wake boundary at all, so with the night-total rule a
+ * nap now applies on a night with no deadline too, once the picked total is all but used up.
+ */
 private fun isNapEligible(
     afterAwakening: Boolean,
+    owedCycles: Int,
     referenceOnset: Instant,
     wakeBoundary: Instant?,
     config: EngineConfig
-): Boolean = afterAwakening && wakeBoundary != null && referenceOnset.plus(config.cycleLength).isAfter(wakeBoundary)
+): Boolean {
+    if (!afterAwakening) return false
+    if (owedCycles == 0) return true
+    return wakeBoundary != null && referenceOnset.plus(config.cycleLength).isAfter(wakeBoundary)
+}

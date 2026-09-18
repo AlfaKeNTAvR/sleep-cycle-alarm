@@ -50,16 +50,25 @@ Write it as named steps, one small function each: `findReferenceOnset`, `findWak
 
 **Wake boundary** (what "the planned alarm" in rule 7 means): the deadline when there is one. Without a deadline: the band alarm of the latest `FULL_CYCLES` plan, carried forward through `previousPlan.wakeBoundary` while in other modes; null on the very first plan.
 
-**Whole cycles that fit.** With a deadline: `fit = floor((deadline - referenceOnset) / cycleLength)`, never below 0, `cycles = min(pickedCycles, fit)`. Without a deadline: `cycles = pickedCycles`. A cycle ending exactly at the deadline fits.
+**Cycles still owed** (rule 2 as a total for the night, decided 2026-09-17 with the owner). `pickedCycles` is the whole night's budget, not a fresh count per stretch. Sleep already had tonight is subtracted:
+
+- `sleptSoFar` = total length of all sleep stretches, EXCLUDING the current one when the state is `ASLEEP` (the current stretch is the one the new alarm is being measured from, so counting it would subtract it twice).
+- `remaining` = `pickedCycles * cycleLength - sleptSoFar`, never below 0.
+- `owedCycles` = `remaining / cycleLength` rounded to the NEAREST whole number (`Math.round`), so a remainder that does not divide evenly lands closest to the picked total rather than cutting a cycle short. A remainder of exactly half a cycle rounds up.
+- With a deadline: `fit = floor((deadline - referenceOnset) / cycleLength)`, never below 0, and `cycles = min(owedCycles, fit)`. Without a deadline: `cycles = owedCycles`. A cycle ending exactly at the deadline fits.
+
+Worked example, the owner's: picked 7.5 h (5 cycles). Asleep 23:00, alarm 06:30. Wake 02:00 having slept 3 h (2 cycles), back asleep 02:10: remaining 4.5 h, 3 cycles, alarm 06:40, total 7.5 h. (Corrected 2026-09-17 during implementation: the owner's note said 05:40, which is 3.5 h after the 02:10 onset and would make the night 6.5 h, contradicting the same sentence's "remaining 4.5 h" and "total 7.5 h". 02:10 + 4.5 h = 06:40 is the value all three other numbers agree on.) Second example: slept 2 h, remaining 5.5 h, 3.67 cycles rounds to 4, alarm is 6 h after the new onset, total 8 h.
+
+**Wake boundary** now also covers the total: nap applies when less than one cycle is still owed (`owedCycles == 0`), as well as when less than one cycle fits before the boundary.
 
 **Is this a return to sleep after an awakening?** `afterAwakening` is true when the state is `AWAKE` and at least one stretch exists, or the state is `ASLEEP` and the latest stretch has `followsAwakening`.
 
 **Modes, first match wins:**
 
 1. `FINISHED`: the deadline is at or before `now`; or the state is `AWAKE` and `previousPlan.bandAlarm` is at or before `now` (woke up at or after the alarm). `bandAlarm = null`. The night is over for the engine; the phone alarm is untouched (with a deadline it still equals the deadline).
-2. `NAP` (rule 7): `afterAwakening`, and less than one cycle fits before the wake boundary: `referenceOnset + cycleLength > wakeBoundary`. With no wake boundary (no deadline, no earlier full plan) nap never applies.
-   - While `AWAKE`: `bandAlarm = min(now + napLength, wakeBoundary)`. It slides forward on every sync.
-   - Once `ASLEEP`: `bandAlarm = min(onset + napLength, wakeBoundary)`. Never later than that, whatever the previous plan said: sync delay can never lengthen the nap. If that time is closer than `minAlarmLead` or already past, the overdue rule below applies.
+2. `NAP` (rule 7): `afterAwakening`, and either less than one cycle is still owed (`owedCycles == 0`, the night's total is nearly reached) or less than one cycle fits before the wake boundary (`referenceOnset + cycleLength > wakeBoundary`). The first test needs no wake boundary, so with the total rule nap now also applies on a night with no deadline.
+   - While `AWAKE`: `bandAlarm = now + napLength`, capped by the wake boundary when there is one. It slides forward on every sync.
+   - Once `ASLEEP`: `bandAlarm = onset + napLength`, capped by the wake boundary when there is one. Never later than that, whatever the previous plan said: sync delay can never lengthen the nap. If that time is closer than `minAlarmLead` or already past, the overdue rule below applies.
 3. `DEADLINE_ONLY` (rule 5): there is a deadline, `cycles == 0`, and this is not after an awakening (first sleep of the night starts too close to the deadline, or not asleep yet). `bandAlarm = deadline`.
 4. `FULL_CYCLES` (rules 3, 4, 6): `bandAlarm = referenceOnset + cycles * cycleLength`.
 

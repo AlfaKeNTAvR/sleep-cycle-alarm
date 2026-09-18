@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
 private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val setupWizardPage by viewModel.setupWizardPage.collectAsState()
 
     LifecycleResumeEffect(Unit) {
         viewModel.setScreenVisible(true)
@@ -67,9 +68,13 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                 when (uiState.screen) {
                     is Screen.Setup -> SetupScreen(
                         state = uiState.setup,
+                        wizardPage = setupWizardPage,
                         onDeviceMacChange = viewModel::setDeviceMac,
                         onExportUriPicked = viewModel::setExportUri,
                         onRunConnectionTest = viewModel::runSetupCheckAction,
+                        onWizardNext = viewModel::setupWizardNext,
+                        onWizardBack = viewModel::setupWizardBack,
+                        onRunSetupAgain = viewModel::runSetupWizardAgain,
                         onBack = viewModel::closeSetupOrLogs,
                         onOpenDebug = viewModel::openDebug,
                     )

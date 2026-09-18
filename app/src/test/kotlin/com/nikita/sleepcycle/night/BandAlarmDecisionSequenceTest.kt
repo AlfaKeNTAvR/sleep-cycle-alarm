@@ -24,19 +24,19 @@ class BandAlarmDecisionSequenceTest {
 
     @Test
     fun `moving pre-sleep plan every tick still confirms and never leaves the band at zero alarms`() {
-        // Tick 1: nothing yet, table present but empty -> request A for 08:00.
+        // Tick 1: nothing of ours yet, two genuinely free slots -> the alternating protocol, request A for 08:00.
         var requested: BandAlarmCommitment? = null
         var confirmed: BandAlarmCommitment? = null
         var pendingDismiss: Set<String> = emptySet()
 
-        val tick1 = decideBandAlarmCommands(instantAt(8, 0), requested, confirmed, pendingDismiss, slots = emptyList(), now = NOW, zone = ZONE_UTC)
+        val tick1 = decideBandAlarmCommands(instantAt(8, 0), requested, confirmed, pendingDismiss, slots = freeSlots(), now = NOW, zone = ZONE_UTC)
         assertEquals(BandAlarmOutcome.REQUESTED, tick1.outcome)
         requested = tick1.requestedBandAlarm; confirmed = tick1.confirmedBandAlarm; pendingDismiss = tick1.pendingDismissTitles
 
         // Tick 2: the export now shows A present (the previous request landed) AND the plan moved to 08:15
         // in the same tick. Confirmation must still happen, and a replacement for the new target must start
         // without ever dismissing A before its replacement is confirmed.
-        val tableWithA = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A))
+        val tableWithA = listOf(slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A)) + freeSlots()
         val tick2 = decideBandAlarmCommands(instantAt(8, 15), requested, confirmed, pendingDismiss, slots = tableWithA, now = NOW.plusSeconds(300), zone = ZONE_UTC)
         assertEquals(BAND_ALARM_TITLE_A, tick2.confirmedBandAlarm?.title, "A must be confirmed this tick even though the target already moved on")
         assertEquals(BAND_ALARM_TITLE_B, tick2.requestedBandAlarm?.title, "the replacement goes out under the other title")
@@ -68,11 +68,12 @@ class BandAlarmDecisionSequenceTest {
     fun `silent SET failure keeps re-sending the pending request every tick and never dismisses the confirmed alarm`() {
         val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(1800))
         var requested: BandAlarmCommitment? = BandAlarmCommitment(BAND_ALARM_TITLE_B, 8, 30, NOW.minusSeconds(600))
-        // B never claims a slot: no free slot, or the band silently rejected it.
+        // A free slot is there for B to claim, so this is the alternating protocol; B still never appears,
+        // which is exactly the silent SET failure Gadgetbridge never reports.
         val slotsWithoutB = listOf(
             slot(0, enabled = true, hour = 8, minute = 0, title = BAND_ALARM_TITLE_A),
             slot(1, enabled = false, hour = 7, minute = 0, title = "Alarm"),
-        )
+        ) + freeSlots()
 
         val tick1 = decideBandAlarmCommands(instantAt(8, 30), requested, confirmed, emptySet(), slotsWithoutB, NOW, ZONE_UTC)
         assertEquals(BandAlarmOutcome.RESENT, tick1.outcome)
@@ -137,7 +138,7 @@ class BandAlarmDecisionSequenceTest {
 
         val decision = decideBandAlarmCommands(instantAt(8, 0), requested = null, confirmed = null, pendingDismissTitles = emptySet(), slots = bothPresentDisabled, now = NOW, zone = ZONE_UTC)
 
-        assertEquals(BandAlarmOutcome.BOTH_SLOTS_OCCUPIED, decision.outcome)
+        assertEquals(BandAlarmOutcome.NO_FREE_SLOT, decision.outcome)
         assertTrue(decision.commands.isEmpty())
         assertNull(decision.requestedBandAlarm)
     }
@@ -371,7 +372,7 @@ class BandAlarmDecisionSequenceTest {
     fun `table returns showing the blind SET absent - resent now that it can be verified for real`() {
         val blindRequest = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 0, NOW.minusSeconds(600))
 
-        val decision = decideBandAlarmCommands(instantAt(8, 0), blindRequest, confirmed = null, pendingDismissTitles = emptySet(), slots = emptyList(), now = NOW, zone = ZONE_UTC)
+        val decision = decideBandAlarmCommands(instantAt(8, 0), blindRequest, confirmed = null, pendingDismissTitles = emptySet(), slots = freeSlots(), now = NOW, zone = ZONE_UTC)
 
         assertEquals(listOf(BandAlarmCommand.Set(BAND_ALARM_TITLE_A, 8, 0)), decision.commands)
         assertEquals(BandAlarmOutcome.RESENT, decision.outcome)
@@ -459,4 +460,13 @@ class BandAlarmDecisionSequenceTest {
 
     private fun slot(position: Int, enabled: Boolean, hour: Int, minute: Int, title: String?): BandAlarmSlot =
         BandAlarmSlot(position = position, enabled = enabled, hour = hour, minute = minute, title = title, smartWakeup = false, repetition = 0)
+
+    /**
+     * Two slots Gadgetbridge's own picker would claim (disabled, untitled, not smart). The slot mode is read
+     * off the table (BandAlarmSlotMode.kt), so a table needs real room in it for the alternating protocol to
+     * apply - a table listing only our own alarms is a one-slot band, and that is what
+     * BandAlarmSingleSlotModeTest covers.
+     */
+    private fun freeSlots(): List<BandAlarmSlot> =
+        listOf(slot(8, enabled = false, hour = 0, minute = 0, title = null), slot(9, enabled = false, hour = 0, minute = 0, title = null))
 }

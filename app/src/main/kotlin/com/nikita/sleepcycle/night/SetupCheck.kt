@@ -9,6 +9,7 @@ import android.net.Uri
 import com.nikita.sleepcycle.alarm.AlarmNotificationReadiness
 import com.nikita.sleepcycle.alarm.readAlarmNotificationReadiness
 import com.nikita.sleepcycle.bridge.BAND_DATA_FRESHNESS_THRESHOLD
+import com.nikita.sleepcycle.bridge.BandAlarmSlot
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
 import com.nikita.sleepcycle.bridge.countFreeBandAlarmSlots
@@ -16,12 +17,22 @@ import com.nikita.sleepcycle.bridge.countFreeOrOwnedBandAlarmSlots
 import com.nikita.sleepcycle.bridge.describeOtherBandAlarm
 import com.nikita.sleepcycle.bridge.findTitlesConflictingWithOurs
 import com.nikita.sleepcycle.bridge.listOtherEnabledBandAlarms
+import com.nikita.sleepcycle.bridge.listPoachableSmartWakeupBandAlarmSlots
 import com.nikita.sleepcycle.bridge.syncAndReadBandData
 import java.time.Duration
 import java.time.Instant
 
 private val CONNECTION_TEST_LOOKBACK: Duration = Duration.ofDays(1)
-private const val MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS = 2
+
+/**
+ * One usable slot is enough to run a night: with exactly one, moving the wake time means clearing our own
+ * band alarm and setting it again in the same tick (BandAlarmSingleSlotMode.kt). Below this, nothing can be
+ * set at all, which is the only slot situation that still blocks "Start night".
+ */
+private const val MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS = 1
+
+/** With this many, the app can set the replacement before clearing the old alarm, so the band is never briefly without one. */
+private const val GAPLESS_FREE_OR_OWNED_BAND_ALARM_SLOTS = 2
 private val OUR_BAND_ALARM_TITLES: Set<String> = setOf(BAND_ALARM_TITLE_A, BAND_ALARM_TITLE_B)
 
 /** How urgently one setup check line needs the owner's attention, so the UI can style it without parsing English. */
@@ -82,11 +93,12 @@ private fun buildReport(context: Context, result: BandDataResult, now: Instant):
     }
 }
 
-private fun buildSuccessReport(result: BandDataResult.Success, now: Instant, phoneLines: List<SetupCheckLine>): SetupCheckReport {
+internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, phoneLines: List<SetupCheckLine>): SetupCheckReport {
     val freshness = checkDataFreshness(result.newestSampleAt, now, result.exportFileModifiedAt, previousExportFileModifiedAt = null, threshold = BAND_DATA_FRESHNESS_THRESHOLD)
     val freeSlots = countFreeBandAlarmSlots(result.bandAlarms)
     val freeOrOwned = countFreeOrOwnedBandAlarmSlots(result.bandAlarms, OUR_BAND_ALARM_TITLES)
     val otherAlarms = listOtherEnabledBandAlarms(result.bandAlarms, OUR_BAND_ALARM_TITLES).map(::describeOtherBandAlarm)
+    val poachableSmartSlots = listPoachableSmartWakeupBandAlarmSlots(result.bandAlarms)
     val slotsShort = freeOrOwned < MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS
 
     val lines = mutableListOf(
@@ -99,6 +111,9 @@ private fun buildSuccessReport(result: BandDataResult.Success, now: Instant, pho
             if (slotsShort) SetupCheckLineSeverity.ACTION_NEEDED else SetupCheckLineSeverity.INFO
         )
     )
+    if (freeOrOwned in MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS until GAPLESS_FREE_OR_OWNED_BAND_ALARM_SLOTS) {
+        lines += SetupCheckLine(singleSlotAdviceLine(), SetupCheckLineSeverity.INFO)
+    }
     if (otherAlarms.isNotEmpty()) {
         lines += SetupCheckLine(
             "Other band alarms will still ring regardless: ${otherAlarms.joinToString(", ")}.",
@@ -112,14 +127,34 @@ private fun buildSuccessReport(result: BandDataResult.Success, now: Instant, pho
             SetupCheckLineSeverity.ACTION_NEEDED
         )
     }
+    poachableSmartSlots.forEach { slot ->
+        lines += SetupCheckLine(describeSmartWakeupActionNeeded(slot), SetupCheckLineSeverity.ACTION_NEEDED)
+    }
     lines += phoneLines
 
     return SetupCheckReport(
-        isReady = freshness.isFresh && !slotsShort && conflictingTitles.isEmpty(),
+        isReady = freshness.isFresh && !slotsShort && conflictingTitles.isEmpty() && poachableSmartSlots.isEmpty(),
         lines = lines,
         freeBandAlarmSlots = freeSlots,
         otherEnabledBandAlarms = otherAlarms
     )
+}
+
+/**
+ * Plain-English ACTION_NEEDED line for one band alarm slot that is still a poachable smart-wakeup slot
+ * (disabled, untitled - see [listPoachableSmartWakeupBandAlarmSlots]). [slot]'s own [BandAlarmSlot.position]
+ * is 0-indexed in the exported table; Gadgetbridge's alarm list shows no number of its own, so this uses
+ * position + 1 to name the slot the way the owner counts it from the top of that list. The fix is never
+ * "turn off smart wakeup" - on the owner's Honor Band 5 that checkbox is forced on for this slot and cannot be
+ * unchecked (verified against Gadgetbridge's own HuaweiCoordinator.forcedSmartWakeup) - so the only safe move
+ * is to park the slot with a title and leave it disabled, so Gadgetbridge's own picker (first disabled AND
+ * untitled) skips over it for good.
+ */
+private fun describeSmartWakeupActionNeeded(slot: BandAlarmSlot): String {
+    val displayNumber = slot.position + 1
+    return "Band alarm $displayNumber in Gadgetbridge is the band's own smart alarm and cannot be made a " +
+        "normal one. Give it any title (for example \"Smart\") and leave it switched off, so it is never used " +
+        "for your wake-up. Then clear the title of another, switched-off alarm instead."
 }
 
 private fun freshnessLine(newestSampleAt: Instant?, isFresh: Boolean): String = when {
@@ -135,6 +170,16 @@ private fun slotAvailabilityLine(freeSlots: Int, freeOrOwned: Int): String =
         val short = MIN_FREE_OR_OWNED_BAND_ALARM_SLOTS - freeOrOwned
         "In Gadgetbridge open the band's alarms and clear the title of $short more disabled alarm(s)."
     }
+
+/**
+ * Non-blocking advice for the one-usable-slot case: the night runs fine, but every move of the wake time
+ * clears our band alarm and sets it again in the same tick (BandAlarmSingleSlotMode.kt), so the band is
+ * briefly without one. A second free alarm removes that gap entirely.
+ */
+private fun singleSlotAdviceLine(): String =
+    "Only one usable band alarm. The night will run, but the band alarm is briefly cleared each time the " +
+        "wake time moves. Freeing a second one (in Gadgetbridge, switch another alarm off and clear its " +
+        "title) lets the app set the new alarm before clearing the old one."
 
 /** Full-screen intent and notifications block the alarm outright, so a problem there is prominent too; the phone alarm still has the exact-alarm safety net either way, so neither blocks [SetupCheckReport.isReady]. */
 private fun phoneAlarmReadinessLines(readiness: AlarmNotificationReadiness): List<SetupCheckLine> = buildList {

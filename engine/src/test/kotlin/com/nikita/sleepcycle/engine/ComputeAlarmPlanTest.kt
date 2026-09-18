@@ -70,7 +70,9 @@ class ComputeAlarmPlanTest {
         assertEquals("08:15", formatTime(result.bandAlarm!!, testZone))
     }
 
-    @Test fun `no deadline, an awakening with an established plan restarts the full count`() {
+    @Test fun `no deadline, an awakening counts what is still owed of the night's total, never a fresh full count`() {
+        // Behaviour change, rule 2 as a night total: 5 h of the picked 7.5 h are already slept, so 2.5 h are
+        // still owed, which rounds to 2 cycles from the projected 03:25 onset - not a fresh 7.5 h ending 10:55.
         val previous = AlarmPlan(
             AlarmMode.FULL_CYCLES, instant("2026-09-17T05:30"), null, 5, instant("2026-09-17T22:00"), false,
             instant("2026-09-17T05:30"), "r"
@@ -81,7 +83,8 @@ class ComputeAlarmPlanTest {
         )
         val result = plan(segments, settings(cycles = 5), "2026-09-17T03:10", previous)
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
-        assertEquals("10:55", formatTime(result.bandAlarm!!, testZone))
+        assertEquals(2, result.cycles)
+        assertEquals("06:25", formatTime(result.bandAlarm!!, testZone))
     }
 
     @Test fun `no deadline nap mode slides while awake, then fixes once asleep`() {

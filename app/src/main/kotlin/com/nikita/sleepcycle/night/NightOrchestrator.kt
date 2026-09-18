@@ -112,7 +112,10 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         lastSyncFailureCause = outcome.failureCause,
         pendingDismissTitles = bandAlarmResolution.pendingDismissTitles,
         phoneAlarmFiredFor = state.phoneAlarmFiredFor,
-        finishedCleanupTicksUsed = cleanupTicksUsed
+        finishedCleanupTicksUsed = cleanupTicksUsed,
+        smartWakeupWarning = bandAlarmResolution.smartWakeupWarning,
+        bandAlarmSlotMode = bandAlarmResolution.slotMode,
+        singleSlotResendsUsed = bandAlarmResolution.singleSlotResendsUsed
     )
     if (!saveNightState(context, newState)) {
         appendNightLog(context, state.startedAt, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist state after this tick")), debugNight)
@@ -180,8 +183,15 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
         }
     }
 
-/** Everything the band alarm decision produced, to persist into NightState. */
-private data class BandAlarmResolution(val requested: BandAlarmCommitment?, val confirmed: BandAlarmCommitment?, val pendingDismissTitles: Set<String>)
+/** Everything the band alarm decision produced, to persist into NightState. [smartWakeupWarning] is held across a blind tick (no table this tick) rather than cleared, mirroring how [requested]/[confirmed] are held blind - see [resolveBandAlarmState]. */
+private data class BandAlarmResolution(
+    val requested: BandAlarmCommitment?,
+    val confirmed: BandAlarmCommitment?,
+    val pendingDismissTitles: Set<String>,
+    val smartWakeupWarning: BandAlarmSmartWakeupWarning?,
+    val slotMode: BandAlarmSlotMode?,
+    val singleSlotResendsUsed: Int
+)
 
 /**
  * Runs the band alarm decision every tick (BandAlarmDecision.kt owns the "no table" case itself - rule 4 -
@@ -199,7 +209,10 @@ private fun resolveBandAlarmState(
     now: Instant
 ): BandAlarmResolution {
     val deviceMac = appSettings.deviceMac
-        ?: return BandAlarmResolution(state.requestedBandAlarm, state.confirmedBandAlarm, state.pendingDismissTitles)
+        ?: return BandAlarmResolution(
+            state.requestedBandAlarm, state.confirmedBandAlarm, state.pendingDismissTitles, state.smartWakeupWarning,
+            state.bandAlarmSlotMode, state.singleSlotResendsUsed
+        )
 
     // outcome.bandAlarms is already null exactly when there is no table to trust this tick (real sync failed
     // or was stale, or - in debug dry-run mode - the simulated table, which is always available; see
@@ -207,7 +220,7 @@ private fun resolveBandAlarmState(
     val slots = outcome.bandAlarms
     val decision = decideBandAlarmCommands(
         plan.bandAlarm, state.requestedBandAlarm, state.confirmedBandAlarm, state.pendingDismissTitles,
-        slots, now, currentZone()
+        slots, now, currentZone(), singleSlotResendsUsed = state.singleSlotResendsUsed
     )
     // C1: skipped for physical send-margin reasons (BandAlarmOutcome.TOO_SOON) is expected and routine, not a
     // planning failure - the engine itself already guarantees a real minAlarmLead cushion - so it is logged
@@ -242,7 +255,15 @@ private fun resolveBandAlarmState(
     // asked. A no-op (no extra disk write) when this tick has nothing to send.
     persistBandAlarmCommitmentWriteAhead(context, state, decision)
     applyBandAlarmDecision(context, state, deviceMac, decision, slots, now)
-    return BandAlarmResolution(decision.requestedBandAlarm, decision.confirmedBandAlarm, decision.pendingDismissTitles)
+    // Held across a blind tick rather than cleared: [slots] null means this tick could not resolve it fresh,
+    // and the underlying condition does not stop being true just because we cannot observe it right now - the
+    // same reasoning [decision.requestedBandAlarm]/[decision.confirmedBandAlarm] already follow while blind
+    // (see BandAlarmBlindMode.kt).
+    val smartWakeupWarning = if (slots != null) decision.smartWakeupWarning else state.smartWakeupWarning
+    return BandAlarmResolution(
+        decision.requestedBandAlarm, decision.confirmedBandAlarm, decision.pendingDismissTitles, smartWakeupWarning,
+        decision.slotMode, decision.singleSlotResendsUsed
+    )
 }
 
 private fun persistBandAlarmCommitmentWriteAhead(context: Context, state: NightState, decision: BandAlarmDecision) {
@@ -250,7 +271,8 @@ private fun persistBandAlarmCommitmentWriteAhead(context: Context, state: NightS
     val writeAheadState = state.copy(
         requestedBandAlarm = decision.requestedBandAlarm,
         confirmedBandAlarm = decision.confirmedBandAlarm,
-        pendingDismissTitles = decision.pendingDismissTitles
+        pendingDismissTitles = decision.pendingDismissTitles,
+        singleSlotResendsUsed = decision.singleSlotResendsUsed
     )
     if (!saveNightState(context, writeAheadState)) {
         appendNightLog(

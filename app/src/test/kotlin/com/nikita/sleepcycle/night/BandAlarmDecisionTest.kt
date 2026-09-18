@@ -54,7 +54,8 @@ class BandAlarmDecisionTest {
     @Test
     fun `a pending request is confirmed even when the target already moved on in the same tick, and a replacement starts under the other title`() {
         val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 15, NOW.minusSeconds(300))
-        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 15, title = BAND_ALARM_TITLE_A))
+        // A free slot alongside ours: two usable slots, so this tick runs the alternating protocol.
+        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 15, title = BAND_ALARM_TITLE_A), freeSlot(3))
 
         val decision = decideBandAlarmCommands(Instant.parse("2026-09-17T08:45:00Z"), requested, confirmed = null, pendingDismissTitles = emptySet(), slots = slots, now = NOW, zone = ZONE_UTC)
 
@@ -108,7 +109,9 @@ class BandAlarmDecisionTest {
     @Test
     fun `a foreign alarm titled Backup SCA-A is never mistaken for our own title by exact-equality reconciliation`() {
         val requested = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(300))
-        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 30, title = "Backup $BAND_ALARM_TITLE_A"))
+        // Two free slots alongside the foreign alarm, so this runs the alternating protocol and the outcome
+        // is the plain re-send rather than single-slot self-healing.
+        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 30, title = "Backup $BAND_ALARM_TITLE_A"), freeSlot(3), freeSlot(4))
 
         val decision = decideBandAlarmCommands(instantAt(8, 30), requested, confirmed = null, pendingDismissTitles = emptySet(), slots = slots, now = NOW, zone = ZONE_UTC)
 
@@ -180,7 +183,8 @@ class BandAlarmDecisionTest {
         val earlierNow = Instant.parse("2026-09-16T12:00:00Z")
         val desired = Instant.parse("2026-09-16T23:30:00Z")
         val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, hour = 8, minute = 30, at = earlierNow.minusSeconds(900))
-        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_A))
+        // A free slot alongside ours: two usable slots, so this tick runs the alternating protocol.
+        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_A), freeSlot(3))
 
         val decision = decideBandAlarmCommands(desired, requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(), slots = slots, now = earlierNow, zone = ZoneOffset.UTC)
 
@@ -188,9 +192,64 @@ class BandAlarmDecisionTest {
         assertEquals(BandAlarmCommand.Set(BAND_ALARM_TITLE_B, 23, 30), decision.commands.last())
     }
 
+    // ---- Smart-wakeup warning: reported, never fixed, whenever OUR slot still carries the band's own flag ---
+
+    @Test
+    fun `a smart-wakeup flag on the slot holding our confirmed title is reported with its position and window`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(900))
+        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_A, smartWakeup = true, smartWakeupWindowMinutes = 60))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(), slots = slots, now = NOW, zone = ZONE_UTC)
+
+        assertEquals(BandAlarmSmartWakeupWarning(BAND_ALARM_TITLE_A, position = 0, windowMinutes = 60), decision.smartWakeupWarning)
+    }
+
+    @Test
+    fun `a smart-wakeup flag on a slot under a foreign title is not reported - only our own titles are checked`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(900))
+        val slots = listOf(
+            slot(0, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_A),
+            slot(1, enabled = true, hour = 6, minute = 0, title = "Alarm", smartWakeup = true)
+        )
+
+        val decision = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(), slots = slots, now = NOW, zone = ZONE_UTC)
+
+        assertNull(decision.smartWakeupWarning)
+    }
+
+    @Test
+    fun `no smart-wakeup flag anywhere among our titles reports null`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(900))
+        val slots = listOf(slot(0, enabled = true, hour = 8, minute = 30, title = BAND_ALARM_TITLE_A))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(), slots = slots, now = NOW, zone = ZONE_UTC)
+
+        assertNull(decision.smartWakeupWarning)
+    }
+
+    @Test
+    fun `blind mode never reports a smart-wakeup warning - there is no table to check`() {
+        val confirmed = BandAlarmCommitment(BAND_ALARM_TITLE_A, 8, 30, NOW.minusSeconds(900))
+
+        val decision = decideBandAlarmCommands(instantAt(8, 30), requested = null, confirmed = confirmed, pendingDismissTitles = emptySet(), slots = null, now = NOW, zone = ZONE_UTC)
+
+        assertNull(decision.smartWakeupWarning)
+    }
+
     private fun instantAt(hour: Int, minute: Int): Instant =
         Instant.parse("2026-09-17T%02d:%02d:00Z".format(hour, minute))
 
-    private fun slot(position: Int, enabled: Boolean, hour: Int, minute: Int, title: String?): BandAlarmSlot =
-        BandAlarmSlot(position = position, enabled = enabled, hour = hour, minute = minute, title = title, smartWakeup = false, repetition = 0)
+    /** A slot Gadgetbridge's own picker would claim (disabled, untitled, not smart): what makes a table count as having room to alternate titles. */
+    private fun freeSlot(position: Int): BandAlarmSlot = slot(position, enabled = false, hour = 0, minute = 0, title = null)
+
+    private fun slot(
+        position: Int,
+        enabled: Boolean,
+        hour: Int,
+        minute: Int,
+        title: String?,
+        smartWakeup: Boolean = false,
+        smartWakeupWindowMinutes: Int? = null
+    ): BandAlarmSlot =
+        BandAlarmSlot(position = position, enabled = enabled, hour = hour, minute = minute, title = title, smartWakeup = smartWakeup, repetition = 0, smartWakeupWindowMinutes = smartWakeupWindowMinutes)
 }

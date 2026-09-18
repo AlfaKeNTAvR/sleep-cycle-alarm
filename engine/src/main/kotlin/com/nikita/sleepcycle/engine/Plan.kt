@@ -31,10 +31,16 @@ fun computeAlarmPlan(
     // Step 2: the plan.
     val reference = findReferenceOnset(state, stretches, now, config)
     val wakeBoundaryBefore = findWakeBoundary(settings.deadline, previousPlan)
-    val cycles = countFittingCycles(reference.onset, settings, config)
+    // Rule 2 as a night total: what is still owed once the sleep already had is subtracted, then capped by
+    // what still fits before the deadline. `sleptSoFar` deliberately excludes the stretch the new alarm is
+    // measured from, so that stretch is never subtracted twice.
+    val sleptSoFar = sumSleepAlreadyHad(stretches, state)
+    val owedCycles = countOwedCycles(sleptSoFar, settings, config)
+    val cycles = capCyclesByDeadline(owedCycles, reference.onset, settings, config)
 
     val rule = chooseMode(
-        state, afterAwakening, settings.deadline, cycles, reference.onset, wakeBoundaryBefore, now, previousPlan, config
+        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, wakeBoundaryBefore, now,
+        previousPlan, config
     )
     val outcome = computeBandAlarm(
         rule, state, reference.onset, wakeBoundaryBefore, settings.deadline, cycles, now, previousPlan, config
@@ -57,7 +63,8 @@ fun computeAlarmPlan(
         !now.isBefore(outcomeOverdueSince.plus(config.maxOverdueDuration))
 
     val reason = describePlan(
-        mode, reference, settings, cycles, bandAlarm, wakeBoundary, zone, outcomeOverdueSince, overdueCapReached
+        mode, reference, settings, cycles, bandAlarm, wakeBoundary, zone, outcomeOverdueSince, overdueCapReached,
+        sleptSoFar
     )
     return AlarmPlan(
         mode, bandAlarm, phoneAlarm, cycles, referenceOnset, onsetIsProjected, wakeBoundary, reason, overdueSince
@@ -102,12 +109,21 @@ private fun isAfterAwakening(state: SleepState, stretches: List<SleepStretch>): 
     SleepState.NOT_YET_ASLEEP -> false
 }
 
-/** Whole cycles fitting before the deadline from [referenceOnset], capped by the picker (spec step 2). */
-private fun countFittingCycles(referenceOnset: Instant, settings: NightSettings, config: EngineConfig): Int {
-    val deadline = settings.deadline ?: return settings.pickedCycles
+/**
+ * [owedCycles] capped by what still fits before the deadline (spec step 2): `min(owedCycles, fit)`, where
+ * `fit` is the whole cycles between [referenceOnset] and the deadline. A cycle ending exactly at the deadline
+ * fits. Without a deadline nothing caps the owed count, so it is returned unchanged.
+ */
+private fun capCyclesByDeadline(
+    owedCycles: Int,
+    referenceOnset: Instant,
+    settings: NightSettings,
+    config: EngineConfig
+): Int {
+    val deadline = settings.deadline ?: return owedCycles
     val available = Duration.between(referenceOnset, deadline)
     val fit = if (available.isNegative) 0 else (available.toNanos() / config.cycleLength.toNanos()).toInt()
-    return minOf(settings.pickedCycles, fit)
+    return minOf(owedCycles, fit)
 }
 
 /** One plain-English sentence for the night log, naming the numbers that produced [mode] (spec step 2). */
@@ -120,7 +136,8 @@ internal fun describePlan(
     wakeBoundary: Instant?,
     zone: ZoneId,
     overdueSince: Instant? = null,
-    overdueCapReached: Boolean = false
+    overdueCapReached: Boolean = false,
+    sleptSoFar: Duration = Duration.ZERO
 ): String {
     val alarmText = bandAlarm?.let { formatTime(it, zone) } ?: "none"
     val onsetLabel = if (reference.projected) "Estimated asleep at" else "Asleep since"
@@ -135,23 +152,33 @@ internal fun describePlan(
                 "Night finished$deadlineText."
             }
         }
-        // Rules 3, 4, 6: onset plus the whole cycles that fit.
+        // Rules 3, 4, 6: onset plus the whole cycles still owed of the night's total that also fit.
         AlarmMode.FULL_CYCLES -> {
             val onsetText = "$onsetLabel ${formatTime(reference.onset, zone)}"
             val deadlineText = settings.deadline?.let { " before ${formatTime(it, zone)}" } ?: ""
-            "$onsetText, $cycles of ${settings.pickedCycles} picked cycles fit$deadlineText, band alarm $alarmText."
+            if (sleptSoFar.isZero) {
+                "$onsetText, $cycles of ${settings.pickedCycles} picked cycles fit$deadlineText, band alarm $alarmText."
+            } else {
+                val fittingText = settings.deadline?.let { ", fitting before ${formatTime(it, zone)}" } ?: ""
+                "$onsetText, $cycles of ${settings.pickedCycles} picked cycles still owed after " +
+                    "${formatSleepDuration(sleptSoFar)} slept tonight$fittingText, band alarm $alarmText."
+            }
         }
         // Rule 5: no whole cycle fits before the deadline, so the band vibrates at the deadline.
         AlarmMode.DEADLINE_ONLY -> "No full cycle fits before the deadline, band alarm $alarmText."
         // Rule 7: a short nap after an awakening, capped by the wake boundary.
         AlarmMode.NAP -> {
             val boundaryText = wakeBoundary?.let { ", capped at ${formatTime(it, zone)}" } ?: ""
-            "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}, band alarm $alarmText$boundaryText."
+            val sleptText = if (sleptSoFar.isZero) "" else ", ${formatSleepDuration(sleptSoFar)} slept tonight"
+            "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText, band alarm $alarmText$boundaryText."
         }
         // Overdue amendment: still asleep past the planned alarm, buzzing again shortly after this sync.
         AlarmMode.OVERDUE -> "Still asleep past the planned alarm, band alarm $alarmText."
     }
 }
+
+/** Formats a slept-so-far total as `3 h 5 min` for the night log. Whole hours and minutes only, no locale-dependent decimal separator. */
+private fun formatSleepDuration(duration: Duration): String = "${duration.toHours()} h ${duration.toMinutes() % 60} min"
 
 /** Formats an instant as `HH:mm` in [zone], for the night log and the UI. */
 internal fun formatTime(time: Instant, zone: ZoneId): String =

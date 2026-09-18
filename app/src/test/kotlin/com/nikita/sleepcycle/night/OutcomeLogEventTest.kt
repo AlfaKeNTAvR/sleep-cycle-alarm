@@ -23,8 +23,8 @@ class OutcomeLogEventTest {
     }
 
     @Test
-    fun `BOTH_SLOTS_OCCUPIED still logs as an actual error`() {
-        val event = outcomeLogEvent(decision(BandAlarmOutcome.BOTH_SLOTS_OCCUPIED), now)
+    fun `NO_FREE_SLOT still logs as an actual error`() {
+        val event = outcomeLogEvent(decision(BandAlarmOutcome.NO_FREE_SLOT), now)
 
         assertEquals("error", event?.type)
     }

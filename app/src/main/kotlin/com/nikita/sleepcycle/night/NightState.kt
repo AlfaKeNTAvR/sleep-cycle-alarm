@@ -41,7 +41,13 @@ data class NightState(
     /** The debug options this night was started with (see DebugOptions.kt), captured once at startNight so toggling the Debug screen mid-night never changes a night already in progress. Defaults to all-off so state saved before this field existed still decodes as a normal night. */
     val debugOptions: DebugOptions = DebugOptions(),
     /** C4: how many extra FINISHED ticks have been spent verifying a queued dismissal is really confirmed gone, bounded by MAX_FINISHED_CLEANUP_TICKS. Defaults to 0 so state saved before this field existed still decodes. */
-    val finishedCleanupTicksUsed: Int = 0
+    val finishedCleanupTicksUsed: Int = 0,
+    /** BandAlarmDecision.kt's smart-wakeup warning as of the last tick that had a table to check (a blind tick keeps the previous value - see NightOrchestrator.kt). Null once no our-titled slot carries the flag. Defaults to null so state saved before this field existed still decodes. */
+    val smartWakeupWarning: BandAlarmSmartWakeupWarning? = null,
+    /** Which band alarm protocol the last tick ran (BandAlarmSlotMode.kt), for the Night screen and the night log. Null before the first tick of the night, and for state saved before this field existed. */
+    val bandAlarmSlotMode: BandAlarmSlotMode? = null,
+    /** How many of the night's [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] single-slot re-sends are already spent. Defaults to 0 so state saved before this field existed still decodes. */
+    val singleSlotResendsUsed: Int = 0
 )
 
 /** Turns a night state into its JSON text form, the inverse of [decodeNightState]. */
@@ -61,6 +67,9 @@ fun encodeNightState(state: NightState): String {
     json.put("phoneAlarmFiredFor", state.phoneAlarmFiredFor?.toString() ?: JSONObject.NULL)
     json.put("debugOptions", encodeDebugOptions(state.debugOptions))
     json.put("finishedCleanupTicksUsed", state.finishedCleanupTicksUsed)
+    json.put("smartWakeupWarning", state.smartWakeupWarning?.let(::encodeSmartWakeupWarning) ?: JSONObject.NULL)
+    json.put("bandAlarmSlotMode", state.bandAlarmSlotMode?.name ?: JSONObject.NULL)
+    json.put("singleSlotResendsUsed", state.singleSlotResendsUsed)
     return json.toString()
 }
 
@@ -86,8 +95,39 @@ fun decodeNightState(text: String): NightState {
         pendingDismissTitles = decodePendingDismissTitlesTolerant(json.optJSONArray("pendingDismissTitles")),
         phoneAlarmFiredFor = json.optStringOrNull("phoneAlarmFiredFor")?.let(Instant::parse),
         debugOptions = decodeDebugOptionsTolerant(json.optJSONObject("debugOptions")),
-        finishedCleanupTicksUsed = if (json.has("finishedCleanupTicksUsed")) json.getInt("finishedCleanupTicksUsed") else 0
+        finishedCleanupTicksUsed = if (json.has("finishedCleanupTicksUsed")) json.getInt("finishedCleanupTicksUsed") else 0,
+        smartWakeupWarning = decodeSmartWakeupWarningTolerant(json.optJSONObject("smartWakeupWarning")),
+        bandAlarmSlotMode = decodeBandAlarmSlotModeTolerant(json.optStringOrNull("bandAlarmSlotMode")),
+        singleSlotResendsUsed = if (json.has("singleSlotResendsUsed")) json.getInt("singleSlotResendsUsed") else 0
     )
+}
+
+/** Absent, null, or an unknown mode name (a newer app version wrote it) decodes as null: the screen simply does not name a mode until the next tick resolves one. */
+private fun decodeBandAlarmSlotModeTolerant(name: String?): BandAlarmSlotMode? {
+    if (name == null) return null
+    return BandAlarmSlotMode.values().firstOrNull { it.name == name }
+}
+
+private fun encodeSmartWakeupWarning(warning: BandAlarmSmartWakeupWarning): JSONObject = JSONObject().apply {
+    put("title", warning.title)
+    put("position", warning.position)
+    put("windowMinutes", warning.windowMinutes ?: JSONObject.NULL)
+}
+
+private fun decodeSmartWakeupWarning(json: JSONObject): BandAlarmSmartWakeupWarning = BandAlarmSmartWakeupWarning(
+    title = json.getString("title"),
+    position = json.getInt("position"),
+    windowMinutes = if (json.isNull("windowMinutes")) null else json.getInt("windowMinutes")
+)
+
+/** Absent, null, or malformed (an older field shape) decodes as null - one bad piece of state degrades gracefully, same as every other tolerant decode in this file. */
+private fun decodeSmartWakeupWarningTolerant(json: JSONObject?): BandAlarmSmartWakeupWarning? {
+    if (json == null) return null
+    return try {
+        decodeSmartWakeupWarning(json)
+    } catch (error: Exception) {
+        null
+    }
 }
 
 /** Absent (state saved before this field existed) or malformed: decodes as all-off, same as a normal night. */

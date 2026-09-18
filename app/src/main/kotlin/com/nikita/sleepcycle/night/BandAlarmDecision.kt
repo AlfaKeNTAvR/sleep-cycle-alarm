@@ -8,7 +8,10 @@ package com.nikita.sleepcycle.night
 // vanished is demoted rather than trusted. Dismissals are tracked as pending until the table shows the title
 // gone (rule 2), so a lost DISMISS_ALARM is retried instead of silently leaving a stale slot occupied. A
 // replacement never dismisses the alarm it is replacing until the new one is confirmed (rule 3): the band is
-// never left with zero alarms because a target moved. With no table at all, the very first alarm of the
+// never left with zero alarms because a target moved. The ONE exception is single-slot mode
+// (BandAlarmSingleSlotMode.kt), chosen only when this tick's own table proves there is no second usable slot
+// to alternate into - there, a move is DISMISS then SET under the same title, in that order, in one tick.
+// Which protocol runs is decided from the table alone, never from a setting (BandAlarmSlotMode.kt). With no table at all, the very first alarm of the
 // night is still sent blind so one never fails to exist (rule 4). While the export stays broken, a target
 // that moves is NEVER chased: the same export that would carry a moved target is the only source of fresh
 // sleep data too, so a moving target while blind reflects nothing new, only the projected onset sliding with
@@ -35,6 +38,12 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+
+// Item [smart-wakeup]: Gadgetbridge's DeviceAlarmReceiver.updateAlarm never touches SMART_WAKEUP (see
+// BandAlarmMapping.kt's header), so a slot can keep that flag forever even after we clear its title and reuse
+// it. If the slot currently holding one of OUR titles turns out to carry it, that is not something this file
+// can fix - only report, every tick it is true, via [BandAlarmDecision.smartWakeupWarning] - see
+// NightTickLogging.kt (the night-log error) and NightUiState.kt (the Night screen's amber line).
 
 /** C1: below this margin before the target's local minute starts, sending is physically too late to matter. */
 val MIN_SEND_MARGIN: Duration = Duration.ofSeconds(45)
@@ -83,6 +92,21 @@ enum class BandAlarmOutcome {
     BLIND,
 
     /**
+     * Single-slot mode only (BandAlarmSingleSlotMode.kt): the one confirmed title was dismissed and re-set to
+     * the new time in the same tick, because the table proved there is no second slot to alternate into.
+     */
+    MOVED_IN_ONE_SLOT,
+
+    /**
+     * Single-slot mode only: a pending SET that this tick's table does not show was re-sent at once rather
+     * than waiting for the target to move. Logged as `band_alarm_missing`, like a lost confirmation.
+     */
+    MISSING_RESENT,
+
+    /** Single-slot mode only: [MAX_SINGLE_SLOT_RESENDS_PER_NIGHT] is spent for tonight; nothing was sent. */
+    RESEND_LIMIT_REACHED,
+
+    /**
      * Blind, with a requested or confirmed commitment already on file: nothing was sent, the commitment is
      * unchanged, even if the desired minute moved. Logged by the caller as `band_alarm_frozen` (mirroring how
      * [TOO_SOON] is logged outside this file, in NightOrchestrator.kt, since only the caller has the desired
@@ -93,19 +117,29 @@ enum class BandAlarmOutcome {
     /** The target's minute is not at least the configured lead ahead of the refreshed clock; nothing was sent. */
     TOO_SOON,
 
-    /** Both of our titles are occupied in the table; a fresh SET was withheld rather than guessing which is safe. */
-    BOTH_SLOTS_OCCUPIED,
+    /** No slot the table shows could take a fresh SET under one of our titles; it was withheld rather than guessing. */
+    NO_FREE_SLOT,
 
     UNCHANGED
 }
 
-/** The commands to send this tick, plus the new pending/confirmed commitments and pending dismissals to persist. */
+/**
+ * The commands to send this tick, plus the new pending/confirmed commitments and pending dismissals to
+ * persist. [smartWakeupWarning] is null exactly when no table was available this tick (blind mode never
+ * resolves it) or no our-titled slot carries the flag; a real table read overwrites it fresh, never merges
+ * with a previous tick's. [slotMode] is which protocol this tick ran (see [chooseBandAlarmSlotMode]), for the
+ * night log and the Night screen. [singleSlotResendsUsed] is the night's running count of single-slot bounded
+ * re-sends, to persist and feed back in next tick.
+ */
 data class BandAlarmDecision(
     val commands: List<BandAlarmCommand>,
     val requestedBandAlarm: BandAlarmCommitment?,
     val confirmedBandAlarm: BandAlarmCommitment?,
     val pendingDismissTitles: Set<String>,
-    val outcome: BandAlarmOutcome
+    val outcome: BandAlarmOutcome,
+    val smartWakeupWarning: BandAlarmSmartWakeupWarning? = null,
+    val slotMode: BandAlarmSlotMode = BandAlarmSlotMode.ALTERNATING_TITLES,
+    val singleSlotResendsUsed: Int = 0
 )
 
 /**
@@ -125,54 +159,26 @@ fun decideBandAlarmCommands(
     slots: List<BandAlarmSlot>?,
     now: Instant,
     zone: ZoneId,
-    minSendMargin: Duration = MIN_SEND_MARGIN
+    minSendMargin: Duration = MIN_SEND_MARGIN,
+    singleSlotResendsUsed: Int = 0
 ): BandAlarmDecision {
     val hadRequestedBefore = requested != null
-    val commands = mutableListOf<BandAlarmCommand>()
-    var currentRequested = requested
-    var currentConfirmed = confirmed
-    var currentPendingDismiss = pendingDismissTitles
-    var outcome = BandAlarmOutcome.UNCHANGED
     val desiredLocalTime = desiredBandAlarm?.let { LocalTime.ofInstant(it, zone) }
-
-    if (slots != null) {
-        val (stillPresent, nowGone) = currentPendingDismiss.partition { title -> titlePresent(slots, title) }
-        stillPresent.forEach { title -> commands.add(BandAlarmCommand.Dismiss(title)) }
-        currentPendingDismiss = stillPresent.toSet()
-        if (nowGone.isNotEmpty()) outcome = outcome.orIfIdle(BandAlarmOutcome.DISMISSED)
-        else if (stillPresent.isNotEmpty()) outcome = outcome.orIfIdle(BandAlarmOutcome.DISMISS_PENDING)
-
-        val confirmedBeforeReconcile = currentConfirmed
-        if (confirmedBeforeReconcile != null && !titlePresent(slots, confirmedBeforeReconcile.title)) {
-            currentConfirmed = null
-            outcome = BandAlarmOutcome.CONFIRMED_LOST
-        }
-
-        val pending = currentRequested
-        val landedSlot = pending?.let { findActiveSlot(slots, it.title) }
-        if (pending != null && landedSlot != null) {
-            val promoted = pending.copy(hour = landedSlot.hour, minute = landedSlot.minute)
-            val previousConfirmed = currentConfirmed
-            if (previousConfirmed != null && previousConfirmed.title != promoted.title) {
-                commands.add(BandAlarmCommand.Dismiss(previousConfirmed.title))
-                currentPendingDismiss = currentPendingDismiss + previousConfirmed.title
-            }
-            currentConfirmed = promoted
-            currentRequested = null
-            outcome = BandAlarmOutcome.CONFIRMED
-        }
-
-        // C3: a slot under one of our titles that nothing above just accounted for is an orphan - the trace
-        // of a SET that really landed on the band just before the app was killed, before it could persist the
-        // commitment (write-ahead persistence in NightOrchestrator.kt closes the other half of this gap).
-        val orphanAdoption = adoptOrphanSlots(slots, currentRequested, currentConfirmed, currentPendingDismiss, desiredLocalTime, now)
-        if (orphanAdoption.outcome != null) {
-            commands.addAll(orphanAdoption.commands)
-            currentConfirmed = orphanAdoption.confirmedBandAlarm ?: currentConfirmed
-            currentPendingDismiss = orphanAdoption.pendingDismissTitles
-            outcome = outcome.orIfIdle(orphanAdoption.outcome)
-        }
+    val slotMode = chooseBandAlarmSlotMode(slots)
+    // Rule 1: reconciliation against the freshly read table always runs first, before any new command is
+    // decided. With no table there is nothing to reconcile against, so our own records pass through.
+    val reconciled = if (slots == null) {
+        ReconciledBandAlarm(emptyList(), requested, confirmed, pendingDismissTitles, BandAlarmOutcome.UNCHANGED, null)
+    } else {
+        reconcileAgainstTable(slots, requested, confirmed, pendingDismissTitles, desiredLocalTime, now)
     }
+
+    val commands = reconciled.commands.toMutableList()
+    var currentRequested = reconciled.requested
+    var currentConfirmed = reconciled.confirmed
+    var currentPendingDismiss = reconciled.pendingDismissTitles
+    var outcome = reconciled.outcome
+    val smartWakeupWarning = reconciled.smartWakeupWarning
 
     if (desiredBandAlarm == null) {
         listOfNotNull(currentConfirmed?.title, currentRequested?.title).distinct().forEach { title ->
@@ -182,17 +188,23 @@ fun decideBandAlarmCommands(
                 outcome = BandAlarmOutcome.DISMISS_PENDING
             }
         }
-        return BandAlarmDecision(commands, requestedBandAlarm = null, confirmedBandAlarm = null, currentPendingDismiss, outcome)
+        return BandAlarmDecision(commands, null, null, currentPendingDismiss, outcome, smartWakeupWarning, slotMode, singleSlotResendsUsed)
     }
 
     val desiredTime = requireNotNull(desiredLocalTime) { "desiredLocalTime must be set whenever desiredBandAlarm is non-null" }
     val marginUntilTargetMinute = Duration.between(now, desiredBandAlarm.truncatedTo(ChronoUnit.MINUTES))
     if (marginUntilTargetMinute < minSendMargin) {
-        return BandAlarmDecision(commands, currentRequested, currentConfirmed, currentPendingDismiss, outcome.orIfIdle(BandAlarmOutcome.TOO_SOON))
+        return BandAlarmDecision(
+            commands, currentRequested, currentConfirmed, currentPendingDismiss,
+            outcome.orIfIdle(BandAlarmOutcome.TOO_SOON), smartWakeupWarning, slotMode, singleSlotResendsUsed
+        )
     }
 
     if (slots == null) {
-        return decideBlindBandAlarmCommands(currentRequested, currentConfirmed, currentPendingDismiss, desiredTime, now)
+        return decideBlindBandAlarmCommands(currentRequested, currentConfirmed, currentPendingDismiss, desiredTime, now, singleSlotResendsUsed)
+    }
+    if (slotMode == BandAlarmSlotMode.SINGLE_SLOT) {
+        return decideSingleSlotBandAlarmCommands(reconciled, slots, desiredTime, now, singleSlotResendsUsed)
     }
 
     val confirmedNow = currentConfirmed
@@ -205,7 +217,7 @@ fun decideBandAlarmCommands(
             val otherTitle = nextBandAlarmTitle(confirmedNow.title)
             val blocked = otherTitle in currentPendingDismiss || titleOccupied(slots, otherTitle)
             if (blocked) {
-                outcome = outcome.orIfIdle(BandAlarmOutcome.BOTH_SLOTS_OCCUPIED)
+                outcome = outcome.orIfIdle(BandAlarmOutcome.NO_FREE_SLOT)
             } else {
                 commands.add(BandAlarmCommand.Set(otherTitle, desiredTime.hour, desiredTime.minute))
                 currentRequested = BandAlarmCommitment(otherTitle, desiredTime.hour, desiredTime.minute, now)
@@ -221,11 +233,11 @@ fun decideBandAlarmCommands(
         }
         else -> {
             if (ALL_BAND_ALARM_TITLES.all { titleOccupied(slots, it) }) {
-                outcome = outcome.orIfIdle(BandAlarmOutcome.BOTH_SLOTS_OCCUPIED)
+                outcome = outcome.orIfIdle(BandAlarmOutcome.NO_FREE_SLOT)
             } else {
                 val title = ALL_BAND_ALARM_TITLES.firstOrNull { !titleOccupied(slots, it) && it !in currentPendingDismiss }
                 if (title == null) {
-                    outcome = outcome.orIfIdle(BandAlarmOutcome.BOTH_SLOTS_OCCUPIED)
+                    outcome = outcome.orIfIdle(BandAlarmOutcome.NO_FREE_SLOT)
                 } else {
                     commands.add(BandAlarmCommand.Set(title, desiredTime.hour, desiredTime.minute))
                     currentRequested = BandAlarmCommitment(title, desiredTime.hour, desiredTime.minute, now)
@@ -235,63 +247,8 @@ fun decideBandAlarmCommands(
         }
     }
 
-    return BandAlarmDecision(commands, currentRequested, currentConfirmed, currentPendingDismiss, outcome)
+    return BandAlarmDecision(
+        commands, currentRequested, currentConfirmed, currentPendingDismiss, outcome, smartWakeupWarning,
+        slotMode, singleSlotResendsUsed
+    )
 }
-
-/** What [adoptOrphanSlots] found: the dismiss commands for any orphan that did not match, the (possibly newly adopted) confirmed commitment, the updated pending-dismiss set, and the outcome to report - null when nothing was orphaned. */
-private data class OrphanAdoption(
-    val commands: List<BandAlarmCommand>,
-    val confirmedBandAlarm: BandAlarmCommitment?,
-    val pendingDismissTitles: Set<String>,
-    val outcome: BandAlarmOutcome?
-)
-
-/**
- * C3: any ENABLED slot carrying exactly one of [ALL_BAND_ALARM_TITLES] that is referenced by neither
- * [currentRequested] nor [currentConfirmed] nor already tracked in [currentPendingDismiss] is an orphan -
- * nothing in this run's state accounts for it, which is exactly the trace a kill between sending a SET and
- * saving state leaves behind. A match against [desiredLocalTime] is adopted outright as confirmed; anything
- * else is dismissed and tracked pending, same as any other dismissal.
- */
-private fun adoptOrphanSlots(
-    slots: List<BandAlarmSlot>,
-    currentRequested: BandAlarmCommitment?,
-    currentConfirmed: BandAlarmCommitment?,
-    currentPendingDismiss: Set<String>,
-    desiredLocalTime: LocalTime?,
-    now: Instant
-): OrphanAdoption {
-    val referencedTitles = setOfNotNull(currentRequested?.title, currentConfirmed?.title) + currentPendingDismiss
-    val commands = mutableListOf<BandAlarmCommand>()
-    var confirmedBandAlarm: BandAlarmCommitment? = null
-    var pendingDismissTitles = currentPendingDismiss
-    var outcome: BandAlarmOutcome? = null
-    ALL_BAND_ALARM_TITLES.filter { it !in referencedTitles }.forEach { title ->
-        val orphan = slots.firstOrNull { it.enabled && it.title == title } ?: return@forEach
-        if (desiredLocalTime != null && orphan.hour == desiredLocalTime.hour && orphan.minute == desiredLocalTime.minute) {
-            confirmedBandAlarm = BandAlarmCommitment(title, orphan.hour, orphan.minute, now)
-            outcome = BandAlarmOutcome.CONFIRMED
-        } else {
-            commands.add(BandAlarmCommand.Dismiss(title))
-            pendingDismissTitles = pendingDismissTitles + title
-            if (outcome == null) outcome = BandAlarmOutcome.DISMISS_PENDING
-        }
-    }
-    return OrphanAdoption(commands, confirmedBandAlarm, pendingDismissTitles, outcome)
-}
-
-/** A slot carrying [title], exactly (never by substring - see BandAlarmMapping.kt for the substring-collision check), regardless of enabled state. */
-private fun titleOccupied(slots: List<BandAlarmSlot>, title: String): Boolean = slots.any { it.title == title }
-
-private fun titlePresent(slots: List<BandAlarmSlot>, title: String): Boolean = titleOccupied(slots, title)
-
-/** The enabled slot carrying [title], exactly - what counts as "the band really has this alarm" for confirmation. */
-private fun findActiveSlot(slots: List<BandAlarmSlot>, title: String): BandAlarmSlot? =
-    slots.firstOrNull { it.enabled && it.title == title }
-
-private fun matchesLocalTime(commitment: BandAlarmCommitment, time: LocalTime): Boolean =
-    commitment.hour == time.hour && commitment.minute == time.minute
-
-/** [candidate] only if nothing more specific has already happened this tick; keeps a reconciliation-driven transition (confirmed, lost, dismissed) as the tick's headline over a routine follow-up action. */
-private fun BandAlarmOutcome.orIfIdle(candidate: BandAlarmOutcome): BandAlarmOutcome =
-    if (this == BandAlarmOutcome.UNCHANGED) candidate else this

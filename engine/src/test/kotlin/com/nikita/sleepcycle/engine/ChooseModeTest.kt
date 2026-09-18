@@ -12,12 +12,13 @@ class ChooseModeTest {
         afterAwakening: Boolean = false,
         deadline: Instant? = null,
         cycles: Int = 5,
+        owedCycles: Int = 5,
         referenceOnset: String = "2026-09-17T00:30",
         wakeBoundary: String? = null,
         now: String = "2026-09-17T01:00",
         previousPlan: AlarmPlan? = null
     ) = chooseMode(
-        state, afterAwakening, deadline, cycles, instant(referenceOnset), wakeBoundary?.let(::instant),
+        state, afterAwakening, deadline, cycles, owedCycles, instant(referenceOnset), wakeBoundary?.let(::instant),
         instant(now), previousPlan, config
     )
 
@@ -56,10 +57,24 @@ class ChooseModeTest {
         )
     }
 
-    @Test fun `rule 7 never fires with no wake boundary`() {
+    @Test fun `rule 7 never fires on the boundary test alone with no wake boundary`() {
         assertEquals(
             PlanRule.FULL_CYCLES,
             rule(afterAwakening = true, referenceOnset = "2026-09-17T07:30", wakeBoundary = null)
+        )
+    }
+
+    @Test fun `rule 7 fires with no wake boundary when nothing is still owed of the night's total`() {
+        assertEquals(
+            PlanRule.NAP,
+            rule(afterAwakening = true, cycles = 0, owedCycles = 0, wakeBoundary = null)
+        )
+    }
+
+    @Test fun `nothing owed before the first awakening is never a nap - rule 7 always needs a return to sleep`() {
+        assertEquals(
+            PlanRule.FULL_CYCLES,
+            rule(afterAwakening = false, cycles = 0, owedCycles = 0, wakeBoundary = null)
         )
     }
 

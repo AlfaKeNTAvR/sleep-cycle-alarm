@@ -25,30 +25,44 @@ internal fun decideBlindBandAlarmCommands(
     confirmed: BandAlarmCommitment?,
     pendingDismissTitles: Set<String>,
     desiredTime: LocalTime,
-    now: Instant
+    now: Instant,
+    singleSlotResendsUsed: Int
 ): BandAlarmDecision = when {
     requested == null && confirmed == null -> {
         val title = ALL_BAND_ALARM_TITLES.firstOrNull { it !in pendingDismissTitles } ?: BAND_ALARM_TITLE_A
         val freshRequest = BandAlarmCommitment(title, desiredTime.hour, desiredTime.minute, now)
-        BandAlarmDecision(
+        blindDecision(
             listOf(BandAlarmCommand.Set(title, desiredTime.hour, desiredTime.minute)),
-            freshRequest, confirmedBandAlarm = null, pendingDismissTitles, BandAlarmOutcome.BLIND
+            freshRequest, null, pendingDismissTitles, BandAlarmOutcome.BLIND, singleSlotResendsUsed
         )
     }
     requested != null && dueForBoundedBlindResend(requested) -> {
         // C2: the one bounded re-send this blind episode ever gets - the ORIGINAL committed time, never the
         // (possibly since-moved) desired time, because a blind re-send never retargets.
         val resent = requested.copy(at = now, blindResendCount = BLIND_RESEND_EXHAUSTED)
-        BandAlarmDecision(
+        blindDecision(
             listOf(BandAlarmCommand.Set(requested.title, requested.hour, requested.minute)),
-            resent, confirmed, pendingDismissTitles, BandAlarmOutcome.BLIND
+            resent, confirmed, pendingDismissTitles, BandAlarmOutcome.BLIND, singleSlotResendsUsed
         )
     }
     else -> {
         val heldRequest = requested?.let { advanceBlindResendCount(it) }
-        BandAlarmDecision(emptyList(), heldRequest, confirmed, pendingDismissTitles, BandAlarmOutcome.BLIND_FROZEN)
+        blindDecision(emptyList(), heldRequest, confirmed, pendingDismissTitles, BandAlarmOutcome.BLIND_FROZEN, singleSlotResendsUsed)
     }
 }
+
+/** Every blind decision reports [BandAlarmSlotMode.BLIND] and carries the night's single-slot re-send count through untouched - a blind tick can neither spend nor reset it. */
+private fun blindDecision(
+    commands: List<BandAlarmCommand>,
+    requested: BandAlarmCommitment?,
+    confirmed: BandAlarmCommitment?,
+    pendingDismissTitles: Set<String>,
+    outcome: BandAlarmOutcome,
+    singleSlotResendsUsed: Int
+): BandAlarmDecision = BandAlarmDecision(
+    commands, requested, confirmed, pendingDismissTitles, outcome,
+    smartWakeupWarning = null, slotMode = BandAlarmSlotMode.BLIND, singleSlotResendsUsed = singleSlotResendsUsed
+)
 
 /** C2: only the initial, bounded re-send is ever due - once [BandAlarmCommitment.blindResendCount] is exhausted, it is never due again this blind episode. */
 private fun dueForBoundedBlindResend(requested: BandAlarmCommitment): Boolean =

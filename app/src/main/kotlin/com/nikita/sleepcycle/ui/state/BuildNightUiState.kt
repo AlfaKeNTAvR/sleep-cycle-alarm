@@ -22,6 +22,10 @@ private fun bandAlarmStatusUiFor(state: NightState): BandAlarmStatusUi? =
         null -> null
     }
 
+/** [BandAlarmSlot.position] is 0-indexed in the exported table; Gadgetbridge's alarm list shows no number of its own, so this uses position + 1, the same convention SetupCheck.kt's describeSmartWakeupActionNeeded uses. */
+private fun smartWakeupWarningUiFor(state: NightState): SmartWakeupWarningUi? =
+    state.smartWakeupWarning?.let { SmartWakeupWarningUi(displaySlotNumber = it.position + 1, windowMinutes = it.windowMinutes) }
+
 /**
  * Builds the night screen's state. While [showingMorningReport] is true, [engineView] must be the view captured
  * just before `endNight` was called (the night state is cleared by then, so it cannot be recomputed); otherwise
@@ -54,6 +58,7 @@ fun buildNightUiState(
     val syncLabel = state.lastSyncAt?.let { formatClockTime(it, zone) }
     val bandAlarmStatus = bandAlarmStatusUiFor(state)
     val noPhoneAlarmWarning = noPhoneAlarmTonight(deadlineEnabled = state.settings.deadline != null, phoneBackupEnabled = state.settings.phoneBackupEnabled)
+    val smartWakeupWarning = smartWakeupWarningUiFor(state)
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
@@ -61,6 +66,8 @@ fun buildNightUiState(
             NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight, endingNight,
             activeDebugSwitches = activeDebugSwitches(state.debugOptions),
             noPhoneAlarmWarning = noPhoneAlarmWarning,
+            smartWakeupWarning = smartWakeupWarning,
+            bandAlarmSlotMode = state.bandAlarmSlotMode,
         )
     }
 
@@ -82,5 +89,7 @@ fun buildNightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, bandAlarmStatus, content, endAction, confirmingEndNight, endingNight,
         activeDebugSwitches = activeDebugSwitches(state.debugOptions),
         noPhoneAlarmWarning = noPhoneAlarmWarning,
+        smartWakeupWarning = smartWakeupWarning,
+        bandAlarmSlotMode = state.bandAlarmSlotMode,
     )
 }

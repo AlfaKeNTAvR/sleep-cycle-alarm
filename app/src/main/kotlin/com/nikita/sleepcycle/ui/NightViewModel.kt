@@ -37,12 +37,17 @@ import com.nikita.sleepcycle.night.withDeviceMac
 import com.nikita.sleepcycle.night.withExportUri
 import com.nikita.sleepcycle.night.writeAppSettings
 import com.nikita.sleepcycle.ui.permissions.currentPermissionStatus
+import com.nikita.sleepcycle.ui.screens.setup.SetupWizardPage
+import com.nikita.sleepcycle.ui.screens.setup.firstUnsatisfiedSetupWizardPage
+import com.nikita.sleepcycle.ui.screens.setup.nextSetupWizardPage
+import com.nikita.sleepcycle.ui.screens.setup.previousSetupWizardPage
 import com.nikita.sleepcycle.ui.state.ConnectionTestState
 import com.nikita.sleepcycle.ui.state.DEFAULT_BAND_MAC
 import com.nikita.sleepcycle.ui.state.EndNightFlowState
 import com.nikita.sleepcycle.ui.state.PermissionStatus
 import com.nikita.sleepcycle.ui.state.Screen
 import com.nikita.sleepcycle.ui.state.UiState
+import com.nikita.sleepcycle.ui.state.buildSetupUiState
 import com.nikita.sleepcycle.ui.state.buildUiState
 import com.nikita.sleepcycle.ui.state.canConfirmEndNight
 import com.nikita.sleepcycle.ui.state.canRequestEndNight
@@ -54,6 +59,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
@@ -103,6 +109,12 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private fun currentZone(): ZoneId = ZoneId.systemDefault()
 
     private val screen = MutableStateFlow<Screen>(Screen.Setup)
+    // The Setup screen's wizard page: null shows the one-page checklist, non-null shows that page of the
+    // page-by-page wizard. Kept separate from `screen` (rather than folded into UiState/Screen) so the wizard
+    // stays entirely additive - see resolveInitialScreen, openSetup, runSetupWizardAgain and closeSetupOrLogs
+    // for where it changes. Surviving rotation and backgrounding falls out for free: like `screen` itself,
+    // this only needs to outlive the ViewModel, not the process.
+    private val setupWizardPageState = MutableStateFlow<SetupWizardPage?>(null)
     private val now = MutableStateFlow(Instant.now())
     private val screenVisible = MutableStateFlow(false)
     private val permissionStatus = MutableStateFlow(PermissionStatus.unknown())
@@ -120,6 +132,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appSettings: StateFlow<AppSettings?> =
         readAppSettings(context).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Which Setup wizard page (if any) is showing; null means the one-page checklist. See [setupWizardPageState]. */
+    val setupWizardPage: StateFlow<SetupWizardPage?> = setupWizardPageState.asStateFlow()
 
     val uiState: StateFlow<UiState> = combine(
         combine(appSettings, observedNightState, now, screen, gadgetbridgeInstalled, ::CoreInputs),
@@ -189,6 +204,13 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             !isSetupComplete(effective, permissionStatus.value, gadgetbridgeInstalled.value) -> Screen.Setup
             else -> Screen.BeforeBed
         }
+        // A fresh install (or any launch that still lands on Setup) opens the page-by-page wizard, on
+        // whichever page is first unsatisfied - never the one-page checklist (task spec: "the wizard is what
+        // a fresh install opens into").
+        if (screen.value == Screen.Setup) {
+            val setupState = buildSetupUiState(effective, permissionStatus.value, gadgetbridgeInstalled.value, connectionTest.value)
+            setupWizardPageState.value = firstUnsatisfiedSetupWizardPage(setupState)
+        }
     }
 
     /**
@@ -252,12 +274,30 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Navigation.
-    fun openSetup() { screen.value = Screen.Setup }
+    /** The gear icon: always opens the one-page checklist, never the wizard - re-checks stay quick. */
+    fun openSetup() { screen.value = Screen.Setup; setupWizardPageState.value = null }
     fun openLogs() { screen.value = Screen.Logs; nightLogFiles.value = listNightLogs(context) }
-    fun closeSetupOrLogs() { screen.value = if (observedNightState.value != null) Screen.Night else Screen.BeforeBed }
+    fun closeSetupOrLogs() {
+        screen.value = if (observedNightState.value != null) Screen.Night else Screen.BeforeBed
+        setupWizardPageState.value = null
+    }
     /** Reachable from Setup AND from the Night screen (a debug build shows a Debug icon there too) - the simulator's buttons need to work while a simulated night is actually running, not just before it starts. */
     fun openDebug() { screen.value = Screen.Debug }
     fun closeDebug() { screen.value = if (observedNightState.value != null) Screen.Night else Screen.Setup }
+
+    // Setup wizard navigation. The wizard is entered either by resolveInitialScreen (fresh install) or by
+    // runSetupWizardAgain (the checklist's "Run setup again"); openSetup/closeSetupOrLogs above always clear
+    // it back to null so a later gear-icon open defaults to the checklist.
+    /** The checklist's "Run setup again": re-enters the wizard on the first unsatisfied page. */
+    fun runSetupWizardAgain() { setupWizardPageState.value = firstUnsatisfiedSetupWizardPage(uiState.value.setup) }
+    fun setupWizardNext() {
+        val current = setupWizardPageState.value ?: return
+        setupWizardPageState.value = nextSetupWizardPage(current, uiState.value.setup)
+    }
+    fun setupWizardBack() {
+        val current = setupWizardPageState.value ?: return
+        setupWizardPageState.value = previousSetupWizardPage(current)
+    }
 
     // Setup screen actions.
     fun setDeviceMac(mac: String) = persistSettings { withDeviceMac(it, mac) }

@@ -52,7 +52,12 @@ fun computeBandAlarm(
     return applyOverdueRule(raw, deadline, now, previousPlan, config)
 }
 
-/** Rule 7's nap alarm: slides forward while still awake, fixed 20 min after sleep once it resumes. */
+/**
+ * Rule 7's nap alarm: slides forward while still awake, fixed [EngineConfig.napLength] after sleep once it
+ * resumes, and never later than the wake boundary. Since the night-total rule, `chooseMode` also selects NAP
+ * with no wake boundary at all (nothing owed on a night with no deadline), and then nothing caps the nap -
+ * the nap length itself is the whole of it.
+ */
 private fun napAlarm(
     state: SleepState,
     referenceOnset: Instant,
@@ -60,12 +65,11 @@ private fun napAlarm(
     now: Instant,
     config: EngineConfig
 ): Instant {
-    // chooseMode only selects NAP when wakeBoundary is non-null; this fallback only guards that invariant.
-    val boundary = wakeBoundary ?: now.plus(config.napLength)
-    return when (state) {
-        SleepState.AWAKE -> minOf(now.plus(config.napLength), boundary)
-        else -> minOf(referenceOnset.plus(config.napLength), boundary)
+    val napEnd = when (state) {
+        SleepState.AWAKE -> now.plus(config.napLength)
+        else -> referenceOnset.plus(config.napLength)
     }
+    return if (wakeBoundary == null) napEnd else minOf(napEnd, wakeBoundary)
 }
 
 private fun applyOverdueRule(

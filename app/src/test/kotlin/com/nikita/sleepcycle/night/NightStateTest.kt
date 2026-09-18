@@ -249,6 +249,28 @@ class NightStateTest {
         )
     }
 
+    @Test
+    fun `round trips the band alarm slot mode and the single-slot re-send count`() {
+        val state = baseState().copy(bandAlarmSlotMode = BandAlarmSlotMode.SINGLE_SLOT, singleSlotResendsUsed = 3)
+
+        val roundTripped = decodeNightState(encodeNightState(state))
+
+        assertEquals(BandAlarmSlotMode.SINGLE_SLOT, roundTripped.bandAlarmSlotMode)
+        assertEquals(3, roundTripped.singleSlotResendsUsed, "a restart mid-night must not hand the band another full set of re-sends")
+    }
+
+    @Test
+    fun `state saved before the slot mode existed decodes as no mode yet and no re-sends spent`() {
+        val json = fullStateJson()
+        json.remove("bandAlarmSlotMode")
+        json.remove("singleSlotResendsUsed")
+
+        val decoded = decodeNightState(json.toString())
+
+        assertNull(decoded.bandAlarmSlotMode)
+        assertEquals(0, decoded.singleSlotResendsUsed)
+    }
+
     private fun baseState(): NightState = NightState(
         startedAt = Instant.parse("2026-09-16T21:00:00Z"),
         settings = NightSettings(deadline = null, pickedCycles = 3, phoneBackupEnabled = false),

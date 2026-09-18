@@ -37,7 +37,15 @@ Before the first night, in Gadgetbridge:
 - Settings > Automations > Auto export database: turn on "Auto export enabled", then set "Export location" to a save location our app can read, e.g. Documents (the file our app's Setup screen will pick). This location must be set, or Gadgetbridge's export trigger (what our app sends every sync) writes nothing.
 - Do NOT use Settings > Data management > Export Data instead: since Android 11 that writes inside Gadgetbridge's own app-private folder, which our app cannot read and the system file picker will not even show.
 - Band gear > Developer options: turn on "Allow 3rd party apps to set alarms".
-- Open the band's alarm list and clear the title of one more disabled alarm, so at least two slots are free or already ours (SCA-A / SCA-B); the Setup screen's "Test connection" checks this and tells you exactly how many more it needs.
+- Open the band's alarm list. Band alarm 1 is the band's own smart alarm and its "smart wakeup" checkbox
+  cannot be turned off - Gadgetbridge forces it on for the device's first alarm slot and there is no way to
+  uncheck it. Give it any title (e.g. "Smart") and leave it switched off, so Gadgetbridge's own alarm picker
+  (always the first disabled AND untitled slot) can never hand it to this app - a slot like this still shows
+  SMART_WAKEUP set even after a title is cleared and reused, so the band can wake you up early without any
+  warning in the app. Then clear the title of two of the other alarms, so at least two slots are free or
+  already ours (SCA-A / SCA-B); the Setup screen's "Test connection" checks this and tells you exactly how
+  many more it needs, and separately flags a still-unparked smart alarm slot as a blocking warning naming the
+  slot.
 - Turn off the band's own smart alarm (e.g. its default 08:30 one) if it is enabled - it will still vibrate on its own schedule regardless of this app, and Setup's connection test flags any such alarm as a non-blocking warning.
 
 Then in our app's Setup screen:

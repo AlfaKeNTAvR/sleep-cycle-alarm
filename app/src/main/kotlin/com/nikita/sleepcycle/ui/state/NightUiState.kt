@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
+import com.nikita.sleepcycle.night.BandAlarmSlotMode
 
 /** One tick of the "possible wake-ups" timeline: a cycle count, its clock time and hour label, and whether it is the planned one. */
 data class WakeTimelineEntry(
@@ -85,6 +86,9 @@ sealed interface NightScreenContent {
 /** The band alarm commitment's status line, formatted for display: [confirmed] picks which sentence to show, [timeLabel] is the clock time to fill into it. */
 data class BandAlarmStatusUi(val confirmed: Boolean, val timeLabel: String)
 
+/** The Night screen's smart-wakeup amber line, formatted for display: [displaySlotNumber] is the slot the way the owner counts it in Gadgetbridge's alarm list (position + 1 - see SetupCheck.kt's describeSmartWakeupActionNeeded), [windowMinutes] is the band's own window, or null when the table did not report one. */
+data class SmartWakeupWarningUi(val displaySlotNumber: Int, val windowMinutes: Int?)
+
 /** Everything the night screen shows: the always-visible sync status, the content, and the end-night flow. */
 data class NightUiState(
     val lastSyncTimeLabel: String?,
@@ -102,4 +106,8 @@ data class NightUiState(
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
     /** Item 4: true when tonight has no deadline AND no phone backup, so nothing on the phone will ring if the band fails - shown as an amber status line. Always false while showing the morning report. */
     val noPhoneAlarmWarning: Boolean = false,
+    /** Null unless the slot backing our confirmed or requested band alarm still carries the band's own smart-wakeup flag (BandAlarmDecision.kt cannot fix this, only report it) - shown as an amber status line. Always null while showing the morning report. */
+    val smartWakeupWarning: SmartWakeupWarningUi? = null,
+    /** Which band alarm protocol the last tick ran (BandAlarmSlotMode.kt), named in a status line so the owner always knows. Null before the first tick, and while showing the morning report. [BandAlarmSlotMode.SINGLE_SLOT] also adds an amber line about the brief gap on every move. */
+    val bandAlarmSlotMode: BandAlarmSlotMode? = null,
 )
