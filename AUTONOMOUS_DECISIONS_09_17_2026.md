@@ -4,7 +4,7 @@ Run mode: Autonomous. Dispatcher: Fable. Workers: Sonnet, GPT-5.6 Terra. Reviewe
 
 ## Decisions
 
-1. **Tools live in `~\android-dev`** (approved): Temurin JDK 21.0.12, Android SDK (platform-tools 37.0.1, platform 36, build-tools 36.0.0). No PATH change, nothing system-wide. Delete the folder to undo. The project finds them through `local.properties` (not in git) and `scripts/env.sh`.
+1. **Tools live in `~/android-dev`** (approved): Temurin JDK 21.0.12, Android SDK (platform-tools 37.0.1, platform 36, build-tools 36.0.0). No PATH change, nothing system-wide. Delete the folder to undo. The project finds them through `local.properties` (not in git) and `scripts/env.sh`.
 2. **Work happens on branch `nikita/feat/app-v1`** in the project repo. Nothing is committed or pushed; that stays with you.
 3. **Two Gradle modules**: `:engine` (pure Kotlin, alarm math, fast JVM tests) and `:app` (Android). Why: the rules can be tested in seconds without a phone.
 4. **Engine takes "sleep stretches", not raw band rows.** Why: tonight's test may show the band does not release sleep marks mid-night. Then only the detector (heart-rate based) changes; the alarm math stays.

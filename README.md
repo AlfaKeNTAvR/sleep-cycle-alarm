@@ -17,7 +17,7 @@ Implemented (2026-09-17): both Gradle modules build, `:engine` and `:app` unit t
 
 ## Hardware
 
-- Band: Honor Band 5 ("Honor Band 5", MAC `AA:BB:CC:DD:EE:FF`).
+- Band: Honor Band 5.
 - Phone: Google Pixel 10.
 - Bridge: Gadgetbridge 0.94.0 from F-Droid.
 
@@ -26,7 +26,7 @@ Implemented (2026-09-17): both Gradle modules build, `:engine` and `:app` unit t
 ```
 source scripts/env.sh
 ./gradlew :app:assembleDebug
-adb -s PHONE_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## First run on the phone

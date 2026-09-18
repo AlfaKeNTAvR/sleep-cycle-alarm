@@ -17,7 +17,7 @@ fun buildSetupUiState(
         SetupChecklistItem(kind, isSetupItemComplete(kind, appSettings, permissionStatus, gadgetbridgeInstalled))
     }
     return SetupUiState(
-        deviceMacText = appSettings.deviceMac ?: DEFAULT_BAND_MAC,
+        deviceMacText = appSettings.deviceMac.orEmpty(),
         items = items,
         allComplete = items.all { it.complete },
         connectionTest = connectionTest,

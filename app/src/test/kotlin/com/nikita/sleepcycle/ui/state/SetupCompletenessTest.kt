@@ -69,7 +69,7 @@ class StartNightSetupCheckGatingTest {
     @Test
     fun `changing the device MAC after a pass blocks start night again`() {
         val passed = testAppSettings(lastSetupCheckPassedAt = now.minus(Duration.ofHours(1)))
-        val afterMacChange = com.nikita.sleepcycle.night.withDeviceMac(passed, "AA:BB:CC:DD:EE:FF")
+        val afterMacChange = com.nikita.sleepcycle.night.withDeviceMac(passed, "11:22:33:44:55:66")
         val gate = startNightGate(checklistComplete = true, lastSetupCheckPassedAt = afterMacChange.lastSetupCheckPassedAt, now = now)
 
         assertFalse(gate.enabled)

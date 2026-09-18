@@ -9,9 +9,6 @@ import com.nikita.sleepcycle.night.DebugOptions
 import java.time.Duration
 import java.time.Instant
 
-/** The band's Bluetooth MAC address, prefilled on first launch; the owner's one band. */
-const val DEFAULT_BAND_MAC = "AA:BB:CC:DD:EE:FF"
-
 /** How long a passing "Test connection" result stays good enough to start a night on. Band slots, permissions and the export file can all drift after the check, so a stale pass is not trusted forever. */
 val SETUP_CHECK_VALIDITY_WINDOW: Duration = Duration.ofHours(24)
 

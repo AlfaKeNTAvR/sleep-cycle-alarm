@@ -18,9 +18,9 @@ class AppSettingsTest {
 
     @Test
     fun `changing the device MAC clears a previously passing setup check`() {
-        val updated = withDeviceMac(settingsWithAPass, "AA:BB:CC:DD:EE:FF")
+        val updated = withDeviceMac(settingsWithAPass, "11:22:33:44:55:66")
 
-        assertEquals("AA:BB:CC:DD:EE:FF", updated.deviceMac)
+        assertEquals("11:22:33:44:55:66", updated.deviceMac)
         assertNull(updated.lastSetupCheckPassedAt)
     }
 

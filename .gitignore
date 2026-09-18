@@ -14,4 +14,20 @@ captures/
 # Personal health data: Gadgetbridge exports and night logs stay out of git
 *.db
 *.sqlite
+*.jsonl
+*.csv
 data/
+
+# Signing keys and service credentials: never in git, not even briefly
+*.jks
+*.keystore
+*.p12
+*.pfx
+google-services.json
+.env
+
+# Screenshots dropped in the repo root carry real sleep times
+/*.png
+/*.jpg
+/*.jpeg
+screenshots/

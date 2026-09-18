@@ -45,7 +45,6 @@ import com.nikita.sleepcycle.ui.screens.setup.firstUnsatisfiedSetupWizardPage
 import com.nikita.sleepcycle.ui.screens.setup.nextSetupWizardPage
 import com.nikita.sleepcycle.ui.screens.setup.previousSetupWizardPage
 import com.nikita.sleepcycle.ui.state.ConnectionTestState
-import com.nikita.sleepcycle.ui.state.DEFAULT_BAND_MAC
 import com.nikita.sleepcycle.ui.state.EndNightFlowState
 import com.nikita.sleepcycle.ui.state.NightLogSummary
 import com.nikita.sleepcycle.ui.state.PastNightUiState
@@ -209,13 +208,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun resolveInitialScreen() {
         refreshStatuses()
         val loaded = readAppSettings(context).first()
-        val effective = if (loaded.deviceMac.isNullOrBlank()) {
-            val withDefault = loaded.copy(deviceMac = DEFAULT_BAND_MAC)
-            writeAppSettings(context, withDefault)
-            withDefault
-        } else {
-            loaded
-        }
+        val effective = loaded
         val nightStateFromDisk = withContext(Dispatchers.IO) { loadNightState(context) }
         if (nightStateFromDisk != null) publishNightState(nightStateFromDisk)
         restoreMorningReportFromDiskIfAny(nightStateFromDisk)
