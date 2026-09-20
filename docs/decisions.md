@@ -10,8 +10,9 @@ Why: Gadgetbridge keeps its F-Droid updates, our code stays small, and the Inten
 **Our app owns the phone alarm** (Android alarm-clock scheduling), not Google's Clock app.
 Why: the alarm moves many times a night. Other apps can create Clock alarms but cannot reliably move or delete them, so recalculations would pile up duplicates.
 
-**Do not use the band's built-in smart alarm.** Our app computes the exact wake time and sets a normal band alarm.
+**Do not use the band's built-in smart alarm.** Our app computes the exact wake time.
 Why: the band's smart alarm (8:30 with a 60 min window) vibrated exactly at 8:30 while the user was already awake. It likely depends on TruSleep, which is off. The Intent API also cannot set the smart flag or wake window.
+(Superseded 2026-09-20: "sets a normal band alarm" no longer applies - the app does not set any band alarm at all any more. See "Phone-only alarms" below.)
 
 **Build on the Windows PC with command-line tools only**: Java 21, Android SDK command-line tools in the user folder, Google platform-tools (adb).
 Why: the phone is already connected and tested there; no IDE needed. Install not done yet, needs a go-ahead.
@@ -21,19 +22,23 @@ Why: the phone is already connected and tested there; no IDE needed. Install not
 ## Alarm rules
 
 1. **Always wake at the end of a cycle.** Never mid-cycle. Cycle length is 90 min for now, to be calibrated from exported data.
-2. **Sleep length picker: 4.5 h, 6 h, 7.5 h, 9 h.** Default 7.5 h. **This is a total for the whole night** (decided 2026-09-17): sleep already had is subtracted, so waking after 3 h of a 7.5 h night leaves 4.5 h, and the band alarm is set 4.5 h after you fall back asleep. A remainder that is not a whole number of cycles rounds to the nearest cycle, so the total can land up to 45 min over.
-3. **No deadline:** band alarm = latest sleep onset + whatever is still owed of the picked total (rule 2). On the first sleep of the night that is the full picked length.
-4. **With a deadline:** band alarm = latest onset + the largest whole number of cycles that ends by the deadline, never more than what is still owed.
-5. **No full cycle fits before the deadline:** the band vibrates at the deadline.
+2. **Sleep length picker: 4.5 h, 6 h, 7.5 h, 9 h.** Default 7.5 h. **This is a total for the whole night** (decided 2026-09-17): sleep already had is subtracted, so waking after 3 h of a 7.5 h night leaves 4.5 h, and the alarm is set 4.5 h after you fall back asleep. A remainder that is not a whole number of cycles rounds to the nearest cycle, so the total can land up to 45 min over.
+3. **No deadline:** alarm = latest sleep onset + whatever is still owed of the picked total (rule 2). On the first sleep of the night that is the full picked length.
+4. **With a deadline:** alarm = latest onset + the largest whole number of cycles that ends by the deadline, never more than what is still owed.
+5. **No full cycle fits before the deadline:** the alarm rings at the deadline.
 6. **Recount after every awakening** the band marks. The alarm is measured from when you fall back asleep, but for what is still owed of the night's total (rule 2), not a fresh full count.
-7. **Nap mode:** if you wake up and less than one full cycle is still owed of the night's total, the band wakes you 20 min after you fall back asleep - with or without a deadline. A second trigger applies only when there IS a deadline: less than one full cycle fits before it, and then the nap ends at the deadline if that comes sooner. On a night with no deadline the picked total is the only thing that ends the night, so an earlier plan's own alarm never cuts a still-owed cycle down to a nap (decided 2026-09-17). 20 min is before deep sleep usually starts.
-   While awake in nap mode, the band alarm is kept 20 min ahead and slid forward each sync, then locked when sleep is detected, so sync delay cannot make the nap too long.
-8. **Already awake when the band vibrates:** acceptable, no special handling.
+7. **Nap mode:** if you wake up and less than one full cycle is still owed of the night's total, the alarm rings 20 min after you fall back asleep - with or without a deadline. A second trigger applies only when there IS a deadline: less than one full cycle fits before it, and then the nap ends at the deadline if that comes sooner. On a night with no deadline the picked total is the only thing that ends the night, so an earlier plan's own alarm never cuts a still-owed cycle down to a nap (decided 2026-09-17). 20 min is before deep sleep usually starts.
+   While awake in nap mode, the alarm is kept 20 min ahead and slid forward each sync, then locked when sleep is detected, so sync delay cannot make the nap too long.
+   **Post-wake naps are capped at two** (D5, decided 2026-09-20): once the main wake alarm has fired, this same nap mode still applies to each further awakening, but only the first two such naps get their own alarm - a third genuinely new return to sleep finishes the night outright. This is a separate mechanism from rule 7's own mid-night nap above, which stays uncapped: the cap only ever governs naps taken after the main wake alarm has already rung. See "Phone-only alarms" below.
+   (Superseded 2026-09-20, during implementation: "finishes the night outright" only holds when there is no deadline left ahead - with one still ahead the alarm holds at the deadline instead of the night ending. Naps are also now counted when they FIRE, not when they are armed. See "Fixes during implementation" below.)
+8. **Already awake when the alarm rings:** acceptable, no special handling.
 
-## Phone alarm
+## Phone alarm (superseded 2026-09-20 - see "Phone-only alarms" below)
 
 - **With a deadline:** phone safety alarm always rings exactly at the deadline.
 - **Without a deadline:** optional phone backup alarm, default 15 min after the band alarm.
+
+The phone is no longer a backup to anything: it is the only alarm there is. See "Phone-only alarms" below.
 
 ## Syncing
 
@@ -46,23 +51,55 @@ Why: the phone is already connected and tested there; no IDE needed. Install not
 - **The app keeps a night log**: every sync (time, success, duration), every detected sleep and wake time, every alarm decision with its reason, every error. Exportable for analysis.
   Why: when a night goes wrong we must be able to answer "why" from data, including overnight sync failures. Night 1 (2026-09-18) is what that bought: the log proved both of that night's bugs from its own fields.
 
-## The band alarm (decided 2026-09-18, after night 1)
+## The band alarm (decided 2026-09-18, after night 1) - superseded 2026-09-20
+
+Kept for the record: this is why the band alarm mechanism was patched on 2026-09-18, and it is exactly the mechanism that turned out not to be fixable, which is why 2026-09-20's decision below deletes it rather than patching it again.
 
 - **A DISMISS never disarms the band.** `DISMISS_ALARM` only edits Gadgetbridge's database. The band keeps whatever was LAST WRITTEN to each slot and only a SET into that slot replaces it. Night 1's log showed slot 2 reading `enabled:false, title:""` for an hour and the band vibrating at its old 07:04 anyway.
 - **One title, one slot, for the whole night**, replacing decision 11's two alternating titles. A move is DISMISS our title then SET the new time under the same title, in that order, in one tick, so the SET reclaims the slot the DISMISS just freed. Why: the gap the alternating titles existed to avoid does not exist on this hardware, while the second slot they used really did stay armed at a stale time. On night 1 the owner was woken twice.
 - **While awake, the band keeps the time it already has.** The wake time is only moved when the band reports a real, non-projected onset. Why: every short awakening put the engine back on a projected onset that slides with the clock, which walked the band alarm 77 min across night 1. The phone alarm and the screens still follow the projected onset, which is what they are for.
 - **Nothing can switch a band alarm off from this app.** Gadgetbridge only omits an alarm from what it sends the band when that alarm is marked "unused", which is a long-press in its own alarm list and is not reachable through the Intent API. So the night ends with an alarm still armed, and the app says so: the morning report and the night log both name the time. Clearing it is the owner's: long-press it in Gadgetbridge and mark it unused, or let the next night's first alarm overwrite that slot.
-- Cycle statistics (length per stretch in cycles) live in exported data and the morning report, not on the night screens.
+
+Even with the one-title-one-slot fix above, the band alarm still fired at 10:47 on the night of 2026-09-20 - a leftover alarm the app's own DISMISS could not touch, plus three re-buzzes per dismiss from the band's own firmware. The fix below stops trying to make the band alarm trustworthy and removes it instead.
+
+## Phone-only alarms (decided 2026-09-20)
+
+Why: night of 2026-09-20 showed the band alarm cannot be controlled well enough to be the wake mechanism - see the superseded section above. The band becomes a sensor only; every alarm moves to the phone, where `AlarmManager`'s alarm-clock API already gives exact firing, Doze exemption, a full-screen ring activity, clean cancellation and reboot restore.
+
+- **D1, one alarm, and it is the phone's.** `AlarmPlan.bandAlarm` is renamed `wakeAt`; `AlarmPlan.phoneAlarm` is gone. Every tick arms the phone alarm at `plan.wakeAt`. The deadline is a planning cap only - it is never itself a second alarm.
+- **D2, the band stops receiving alarm commands.** Every band-alarm mechanism above (dismiss/set, one-title-one-slot, the awake-hold retargeting filter, the leftover-alarm report) is deleted outright, not patched again. The band keeps every sensor path: sync, export, database read.
+- **D3, the owner's own tap ends the night, not the band.** The old rule - `FINISHED` as soon as the band reports `AWAKE` and the alarm time has passed - is the bug that lost sleep: falling back asleep after the alarm got the owner nothing, because the app had already decided the night was over. Now the night ends only when the owner taps "I'm awake" (or "Stop night"), the deadline passes, or D5's nap cap is spent.
+- **D4, the out-of-bed nudge.** Ten minutes after any alarm rings, a second alarm rings - deliberately not a snooze, and not optional: the owner wants the ten minutes of lying there, then a hard nudge. This replaces the "get-out-of-bed habit reminder" that used to sit under Deferred, in a simpler, unconditional form (no step-count check).
+- **D5, post-wake naps capped at two.** If the wake alarm has fired and the owner has not confirmed awake, and the band then reports sleep again, that is a nap under rule 7 exactly as before, but now counted: two per night, then the third genuinely new return to sleep finishes the night instead. Separate from rule 7's own mid-night nap, which stays uncapped.
+  (Superseded 2026-09-20, during implementation, in two ways - see "Fixes during implementation" below: the count is taken when a nap alarm actually FIRES, not when it is armed; and "finishes the night instead" only applies when no deadline is left ahead - with one still ahead the alarm holds at the deadline.)
+- **D6, the ring screen gets two actions.** "Stop" silences the alarm only, the night keeps running. "I'm awake" silences it and ends the night, recording when.
+- **D7, the removed toggle and warning.** The "phone alarm backup" toggle on Before bed, `AppSettings.phoneBackupEnabled`, and the "no phone alarm tonight" warning are all removed - there is now always a phone alarm, so none of them can ever have meant anything again.
+- **D8, the overdue rule collapses into the sequence above.** The old `OVERDUE` mode re-armed the band every ~5 min while it still read asleep, capped at 30 min - a workaround for a wake mechanism that might not fire. The phone alarm fires exactly on time, so the catch-up loop is gone; D4 and D5 now cover "did not get up". `minAlarmLead`'s pull-forward survives unchanged.
 
 ## UI
 
-See [design.md](design.md). Screens show hours, not cycles; cycles appear only in the morning report.
+See [design.md](design.md). Screens show hours, not cycles; cycles appear only in the morning report. Cycle statistics (length per stretch in cycles) live in exported data and the morning report, not on the night screens.
 
 ## Deferred (not v1)
 
-- Get-out-of-bed habit reminder (vibrate ~15 min after actually waking, skip if steps show you are up).
 - Skipping the alarm when already awake.
 
 ## Not a concern
 
 - Sleep never detected: assume the band is always worn.
+
+## Fixes during implementation (decided 2026-09-20, after "Phone-only alarms" above)
+
+Six corrections made while implementing the "Phone-only alarms" decisions, before the first real night on the new code. Where one of these supersedes wording earlier in this file, that wording is marked in place rather than deleted; this section is the reasoning.
+
+- **Nap counting moved from arm time to fire time.** `NightState.napAlarmsUsed` is now incremented by `PhoneAlarmReceiver` the instant a nap alarm actually FIRES, never when `armPhoneAlarmIfNeeded` arms it. Supersedes D5's "two per night" wording above wherever it read as arm-time counting.
+  Why: counting at arm time let a single still-pending nap be recounted on every tick once its own alarm had fired and the owner simply stayed asleep past it - the two-nap cap was spent after only one real nap, and the night then ended with the owner still asleep and no alarm left to ring. Counting fires is also the literal reading of the owner's own words, "two nap alarms."
+- **A spent nap cap no longer ends the night outright when a deadline is still ahead.** Supersedes rule 7's and D5's "finishes the night" wording above: with a deadline still ahead, the mode becomes `DEADLINE_ONLY` (alarm at the deadline) instead of `FINISHED`. `FINISHED` by the cap now happens only when there is no deadline left to fall back on.
+  Why: the deadline is the hardest promise the app makes. The old ordering let a spent nap cap silently cancel it while time still remained.
+- **`NightState.wakeAlarmFiredAt` split out from `phoneAlarmFiredFor`.** `NightState` gained its own `wakeAlarmFiredAt` field: the MAIN wake alarm's own fired instant, never a nap's. `phoneAlarmFiredFor` stays the re-arm guard (whichever alarm - wake or nap - fired last). Supersedes any reading of the decisions above as if one field served both roles.
+  Why: with a single shared field, a mid-night rule 7 nap alarm firing could switch on the nap-cap machinery even though the main wake alarm had never fired that night.
+- **Rule 7's `AWAKE`-state safety net stops sliding once the wake alarm has fired.** Before this fix it stayed reachable indefinitely after the wake alarm rang, re-arming an alarm at `now + napLength` on every tick with nothing to ever cancel it - not even reliably self-cancelling, since Doze can stretch ticks late enough to clear the 20 min margin, letting it ring at full volume long after the owner left for the day. D4's out-of-bed nudge and D5's capped naps cover the follow-up instead.
+- **`EngineConfig.ringAutoStopAfter` added** (9 min; 20 s on a fast debug night): how long a ringing alarm rings before stopping itself if nobody acts. `validateConfig` now requires it strictly less than `outOfBedDelay`, enforced rather than left to coincidence: the two used to both default to 10 min, measured from different instants, and the out-of-bed nudge routinely fired a moment before this auto-stop tore the still-ringing service down, swallowing it.
+- **The `FINISHED` reason text now names the cause.** With no deadline, the log/UI reason for `FINISHED` reads "Night finished, the 2 nap alarms are used up" instead of a bare "Night finished" - the two ways a no-deadline night can end (this cap, or "I'm awake"/"Stop night") now read differently in the log.
+
+Also caught and fixed in the same pass, not itself a design decision: reboot recovery (`BootReceiver`) now always resumes ticking whenever a night state exists at all, rather than returning early and orphaning the night in some cases. Only the phone alarm's own (re)arming stays conditional, gated by `shouldArmPhoneAlarm` (never a null, past, or already-fired `wakeAt`).
