@@ -114,11 +114,11 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                     is Screen.Debug -> DebugScreen(
                         state = uiState.debug,
                         onSimulatedBandDataChange = viewModel::setSimulatedBandData,
-                        onFastNightChange = viewModel::setFastNight,
-                        onFellAsleep = viewModel::fellAsleepNow,
-                        onWokeUp = viewModel::wokeUpNow,
-                        onFellBackAsleep = viewModel::fellBackAsleepNow,
+                        onSpeedChange = viewModel::setSpeed,
+                        onSetSimulatedAsleep = viewModel::setSimulatedAsleep,
                         onClearSimulatedSleep = viewModel::clearSimulatedSleep,
+                        onApplyClockJump = viewModel::applyClockJump,
+                        onResetToRealTime = viewModel::resetClockToRealTime,
                         onRingTestAlarm = viewModel::ringDebugTestAlarm,
                         onBack = viewModel::closeDebug,
                     )

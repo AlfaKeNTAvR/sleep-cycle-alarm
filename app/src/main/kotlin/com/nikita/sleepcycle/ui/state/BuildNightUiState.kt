@@ -9,6 +9,7 @@ import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.activeDebugSwitches
+import com.nikita.sleepcycle.night.formatSimulatedTimeValue
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import java.time.Instant
 import java.time.ZoneId
@@ -42,12 +43,14 @@ fun buildNightUiState(
 
     val state = nightState ?: return null
     val syncLabel = state.lastSyncAt?.let { formatClockTime(it, zone) }
+    val simulatedTimeValue = state.debugOptions.warp?.let { formatSimulatedTimeValue(it, now, zone) }
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
             syncLabel, state.lastSyncOk, state.lastSyncFailureCause,
             NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight, endingNight,
             activeDebugSwitches = activeDebugSwitches(state.debugOptions),
+            simulatedTimeValue = simulatedTimeValue,
         )
     }
 
@@ -67,5 +70,6 @@ fun buildNightUiState(
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
         activeDebugSwitches = activeDebugSwitches(state.debugOptions),
+        simulatedTimeValue = simulatedTimeValue,
     )
 }

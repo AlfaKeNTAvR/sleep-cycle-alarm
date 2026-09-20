@@ -3,7 +3,6 @@ package com.nikita.sleepcycle.ui.state
 // File purpose: pure formatting of one already-parsed night log into the past-night screen's state. Reading the
 // file is disk I/O and happens in the ViewModel via night.readPastNightLog.
 
-import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.PastNightLog
 import com.nikita.sleepcycle.night.PastNightSummary
 import com.nikita.sleepcycle.night.RecordedStretch
@@ -26,7 +25,7 @@ fun buildPastNightUiState(row: NightLogSummary, log: PastNightLog, zone: ZoneId)
     isSimulated = row.isSimulated,
     report = toMorningReport(log, zone),
     deadlineTimeLabel = log.deadline?.let { formatClockTime(it, zone) },
-    pickedLengthLabel = log.pickedCycles?.let { pickedLengthLabel(it, log.fastNight) },
+    pickedLengthLabel = log.pickedCycles?.let { pickedLengthLabel(it) },
     recordedStretchCount = (log.summary as? PastNightSummary.TotalOnly)?.stretchCount,
 )
 
@@ -72,6 +71,10 @@ private fun toStretchLine(stretch: RecordedStretch, zone: ZoneId): StretchLine =
     cyclesLabel = formatCycles(stretch.cycles),
 )
 
-/** The picked length as it was labelled that night: a simulated fast night's cycles are minutes, not hours (see formatSleepLengthLabel). */
-private fun pickedLengthLabel(pickedCycles: Int, fastNight: Boolean): String =
-    formatSleepLengthLabel(sleepLengthFor(pickedCycles, DebugOptions(fastNight = fastNight)), fastNight)
+/**
+ * The picked length as an hours label. T7: no longer takes the night's own speed - [sleepLengthFor] and
+ * [formatSleepLengthLabel] are both unaffected by it now (a fast debug night comes from warping the clock,
+ * never from shrinking EngineConfig's own cycle length), so a past night's picked length always reads the
+ * same real hours it would today.
+ */
+private fun pickedLengthLabel(pickedCycles: Int): String = formatSleepLengthLabel(sleepLengthFor(pickedCycles))

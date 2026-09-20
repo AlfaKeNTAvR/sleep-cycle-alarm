@@ -78,18 +78,33 @@ fun appendToCurrentNightLog(context: Context, event: NightLogEvent) {
 
 /**
  * Appends one formatted log line directly to [file]. The shared primitive behind every log target above.
- * Stamps [NightLogEvent.at] to the moment of THIS write, discarding whatever instant the caller built the
- * event with: a call site captures `now` before doing its own I/O (a sync, a band command, a dismissal
- * read-back...) and only logs afterwards, so trusting the caller's `at` can write a line whose timestamp is
- * earlier than a line already written before it - a night log that does not read in time order is much
- * harder to diagnose. A caller that needs that earlier instant on record keeps it as its own explicit field
- * (e.g. `scheduledFor`, `plannedAt`) rather than relying on `at`.
+ *
+ * V9 REVERSES the previous behaviour: this USED to overwrite every event's [NightLogEvent.at] with
+ * `nowInstant()`, discarding whatever instant the caller built the event with. The stated reason was
+ * monotonicity - a call site captures `now` before doing its own I/O and only logs afterwards, so trusting the
+ * caller's `at` could in principle write a line whose timestamp reads earlier than one already written before
+ * it. In practice that reasoning did not hold up against what it broke: several callers pass [NightLogEvent.at]
+ * deliberately - the debug test-alarm events and `debug_test_alarm_fired` pass a REAL instant on purpose (T8:
+ * the test alarm is a daylight check, never part of a simulated night), and `clock_jumped` passes the PRE-JUMP
+ * real instant on purpose - and the blanket re-stamp overwrote every one of them with `nowInstant()`, which for
+ * `clock_jumped` is virtual time AND already past the jump (the warp is live by the time this runs), so the
+ * event ended up stamped with the time it jumped TO. That is a real, misleading defect; the "line written out
+ * of order" risk it was guarding against is at most a cosmetic display glitch (this function's own append
+ * order, not the `at` field, is what a reader actually walks - see [appendNightLog]/[appendSetupLog] above),
+ * and does not affect the one call site that actually risked it (NightOrchestrator's own `save_night_state`
+ * error line, which can log a `now` slightly earlier than the `data`/`plan` lines just before it, if that save
+ * happens to fail - a cosmetic ordering wrinkle, not a wrong fact, and out of this fix round's own scope).
+ * [NightLogEvent.at] is now honoured exactly as the caller built it.
+ *
+ * T4: every caller in this codebase that does not deliberately want a real instant already builds [event]
+ * with the virtual `nowInstant()` - see each construction site - so a night log's lines still read in virtual
+ * time, a night simulated at 03:00 still logging its own lines as happening around 03:00; that is now the
+ * CALLER's own responsibility rather than a blanket rewrite here.
  */
 fun appendLogLine(file: File, event: NightLogEvent) {
-    val stamped = event.copy(at = Instant.now())
     try {
         file.parentFile?.mkdirs()
-        file.appendText(formatNightLogLine(stamped) + "\n")
+        file.appendText(formatNightLogLine(event) + "\n")
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to append log event ${event.type} to ${file.path}", error)
     }

@@ -51,6 +51,7 @@ import com.nikita.sleepcycle.night.appendSetupLog
 import com.nikita.sleepcycle.night.clearOutOfBedNudgePendingAt
 import com.nikita.sleepcycle.night.firedAlarmIsWakeAlarm
 import com.nikita.sleepcycle.night.loadNightState
+import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.night.saveLastNapAlarmFiredAt
 import com.nikita.sleepcycle.night.saveNapAlarmsUsed
@@ -62,15 +63,19 @@ import java.time.Instant
 
 class PhoneAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val now = Instant.now()
         val isTest = intent.getBooleanExtra(EXTRA_ALARM_IS_TEST, false)
         val isOutOfBed = intent.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false)
         val state = if (isTest) null else loadNightState(context)
         val ringAutoStopAfter = resolveEngineConfig(state?.debugOptions ?: DebugOptions()).ringAutoStopAfter
         acquireAlarmWakeLock(context, ringAutoStopAfter)
         if (isTest) {
-            appendSetupLog(context, NightLogEvent(now, "debug_test_alarm_fired", emptyMap()))
+            // T8: the test alarm is a daylight check of the ring path, never part of a simulated night - real time.
+            appendSetupLog(context, NightLogEvent(Instant.now(), "debug_test_alarm_fired", emptyMap()))
         } else {
+            // T4: virtual - this firing (and everything it records) belongs to night state, which is entirely
+            // in virtual time. nowInstant() correctly recovers the intended virtual instant even when this
+            // receiver was woken by an AlarmManager alarm that fired at a T5-converted REAL instant.
+            val now = nowInstant()
             // H5: the nudge's own pending-instant record is self-consuming REGARDLESS of whether night state
             // still exists - G1's FINISHED-bookkeeping can clear the state before an already-armed nudge fires
             // (deliberately: the nudge still rings correctly either way, see startForegroundService below), and
@@ -114,7 +119,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         if (!savePhoneAlarmFiredFor(context, firedFor)) {
             appendNightLog(
                 context, state.startedAt,
-                NightLogEvent(Instant.now(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist phoneAlarmFiredFor after the alarm fired")),
+                NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist phoneAlarmFiredFor after the alarm fired")),
                 state.debugOptions.isAnyEnabled
             )
         }
@@ -148,7 +153,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             appendNightLog(
                 context, state.startedAt,
                 NightLogEvent(
-                    Instant.now(), "error",
+                    nowInstant(), "error",
                     mapOf(
                         "step" to "attribute_alarm_fired",
                         "cause" to "state.lastPlan's own wakeAt (${lastPlanWakeAt ?: "null"}) did not match the instant this alarm fired for " +
@@ -163,7 +168,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             if (!saveWakeAlarmFiredAt(context, firedFor)) {
                 appendNightLog(
                     context, state.startedAt,
-                    NightLogEvent(Instant.now(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist wakeAlarmFiredAt after the wake alarm fired")),
+                    NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist wakeAlarmFiredAt after the wake alarm fired")),
                     state.debugOptions.isAnyEnabled
                 )
             }
@@ -172,14 +177,14 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             if (!saveNapAlarmsUsed(context, newCount)) {
                 appendNightLog(
                     context, state.startedAt,
-                    NightLogEvent(Instant.now(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist napAlarmsUsed after the nap alarm fired")),
+                    NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist napAlarmsUsed after the nap alarm fired")),
                     state.debugOptions.isAnyEnabled
                 )
             }
             if (!saveLastNapAlarmFiredAt(context, firedFor)) {
                 appendNightLog(
                     context, state.startedAt,
-                    NightLogEvent(Instant.now(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist lastNapAlarmFiredAt after the nap alarm fired")),
+                    NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist lastNapAlarmFiredAt after the nap alarm fired")),
                     state.debugOptions.isAnyEnabled
                 )
             }
@@ -204,7 +209,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         if (!armed) {
             appendNightLog(
                 context, state.startedAt,
-                NightLogEvent(Instant.now(), "error", mapOf("step" to "out_of_bed_alarm", "cause" to "exact alarm permission was likely revoked")),
+                NightLogEvent(nowInstant(), "error", mapOf("step" to "out_of_bed_alarm", "cause" to "exact alarm permission was likely revoked")),
                 state.debugOptions.isAnyEnabled
             )
             return
@@ -212,14 +217,14 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         if (!saveOutOfBedNudgePendingAt(context, at)) {
             appendNightLog(
                 context, state.startedAt,
-                NightLogEvent(Instant.now(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist the pending out-of-bed nudge instant")),
+                NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist the pending out-of-bed nudge instant")),
                 state.debugOptions.isAnyEnabled
             )
         }
         if (!schedulePreNudgeCheck(context, at.minus(config.preNudgeCheckLead))) {
             appendNightLog(
                 context, state.startedAt,
-                NightLogEvent(Instant.now(), "error", mapOf("step" to "pre_nudge_check", "cause" to "exact alarm permission was likely revoked - the nudge will still ring on schedule")),
+                NightLogEvent(nowInstant(), "error", mapOf("step" to "pre_nudge_check", "cause" to "exact alarm permission was likely revoked - the nudge will still ring on schedule")),
                 state.debugOptions.isAnyEnabled
             )
         }
@@ -230,7 +235,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         if (state != null) {
             appendNightLog(
                 context, state.startedAt,
-                NightLogEvent(Instant.now(), "error", mapOf("step" to "alarm_service_start", "cause" to (error.message ?: error.toString()))),
+                NightLogEvent(nowInstant(), "error", mapOf("step" to "alarm_service_start", "cause" to (error.message ?: error.toString()))),
                 state.debugOptions.isAnyEnabled
             )
         }

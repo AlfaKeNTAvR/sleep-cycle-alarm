@@ -14,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.Instant
 
 private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -67,7 +66,8 @@ class BootReceiver : BroadcastReceiver() {
         if (!shouldResumeNightServiceOnBoot(state)) return
         val nonNullState = requireNotNull(state)
         val plan = nonNullState.lastPlan
-        val now = Instant.now()
+        // T4: virtual - compared against plan.wakeAt, which is night state.
+        val now = nowInstant()
         if (plan != null && shouldArmPhoneAlarm(plan.wakeAt, now, nonNullState.phoneAlarmFiredFor)) {
             schedulePhoneAlarm(context, requireNotNull(plan.wakeAt))
         }
@@ -76,7 +76,8 @@ class BootReceiver : BroadcastReceiver() {
 
     /** H5: re-arms a pending out-of-bed nudge that survived a reboot or app update, whether or not a night state also survived - see [handleBoot]'s own doc. */
     private fun restorePendingOutOfBedNudge(context: Context) {
-        val now = Instant.now()
+        // T4: virtual - compared against pendingNudgeAt, which was persisted as a virtual instant (T5).
+        val now = nowInstant()
         val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
         if (pendingNudgeAt != null && pendingNudgeAt.isAfter(now)) {
             scheduleOutOfBedAlarm(context, pendingNudgeAt)
@@ -90,7 +91,7 @@ class BootReceiver : BroadcastReceiver() {
         } catch (error: Exception) {
             appendNightLog(
                 context, state.startedAt,
-                NightLogEvent(Instant.now(), "error", mapOf("step" to "boot_service_start", "cause" to (error.message ?: error.toString()))),
+                NightLogEvent(nowInstant(), "error", mapOf("step" to "boot_service_start", "cause" to (error.message ?: error.toString()))),
                 state.debugOptions.isAnyEnabled
             )
         }
@@ -98,7 +99,7 @@ class BootReceiver : BroadcastReceiver() {
 
     private suspend fun handleClockChange(context: Context, action: String?) {
         val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return
-        appendNightLog(context, state.startedAt, NightLogEvent(Instant.now(), "clock_changed", mapOf("action" to (action ?: "unknown"))), state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.startedAt, NightLogEvent(nowInstant(), "clock_changed", mapOf("action" to (action ?: "unknown"))), state.debugOptions.isAnyEnabled)
         requestImmediateTick(context)
     }
 }

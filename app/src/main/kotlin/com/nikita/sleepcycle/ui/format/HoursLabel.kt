@@ -15,10 +15,12 @@ fun formatHoursLabel(duration: Duration): String {
 }
 
 /**
- * The sleep-length label to show for [duration]: the usual decimal-hour label ("4.5 h"), or - in a fast
- * debug night, where a "cycle" can be a few minutes long - the honest minutes-and-hours form ("9 min") from
- * [formatDuration], since a decimal-hour label would round a real number of minutes down to "0 h" and
- * mislead the person reading it.
+ * The sleep-length label to show for [duration]: the usual decimal-hour label ("4.5 h").
+ *
+ * T7: used to switch to the honest minutes-and-hours form ("9 min", [formatDuration]) for a fast debug night,
+ * where a "cycle" used to be shrunk to a few real minutes and a decimal-hour label would have rounded that
+ * down to a misleading "0 h". A fast debug night no longer shrinks EngineConfig's own durations (see
+ * EngineConfigResolution.kt) - it warps the clock instead - so a cycle is always a real number of hours again,
+ * and this always uses the hours label now.
  */
-fun formatSleepLengthLabel(duration: Duration, fastNight: Boolean): String =
-    if (fastNight) formatDuration(duration) else formatHoursLabel(duration)
+fun formatSleepLengthLabel(duration: Duration): String = formatHoursLabel(duration)

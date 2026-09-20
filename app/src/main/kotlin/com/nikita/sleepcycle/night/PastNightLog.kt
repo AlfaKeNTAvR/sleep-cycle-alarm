@@ -25,7 +25,7 @@ private const val TOTAL_SLEEP_FIELD = "totalSleep"
 private const val STRETCHES_FIELD = "stretches"
 private const val DEADLINE_FIELD = "deadline"
 private const val PICKED_CYCLES_FIELD = "pickedCycles"
-private const val FAST_NIGHT_FIELD = "fastNight"
+private const val SPEED_FIELD = "speed"
 
 private const val STRETCH_ONSET_KEY = "onset"
 private const val STRETCH_END_KEY = "end"
@@ -56,7 +56,7 @@ sealed interface PastNightSummary {
 /**
  * One saved night log read back. [deadline] and [pickedCycles] come from night_end when it carries them (every
  * night logged since this file existed) and from night_start otherwise - which is what lets an older log still
- * show the deadline and picked length it ran under. [fastNight] only ever appears on night_start.
+ * show the deadline and picked length it ran under. [speed] only ever appears on night_start.
  */
 data class PastNightLog(
     val summary: PastNightSummary,
@@ -64,7 +64,8 @@ data class PastNightLog(
     val endedAt: Instant?,
     val deadline: Instant?,
     val pickedCycles: Int?,
-    val fastNight: Boolean,
+    /** T7: the simulated-clock speed that night ran at (1 = real time), read from night_start's `speed` field. A log written before T7 (or one that still carries the old `fastNight` boolean) has no such field and reads as speed 1 - the least surprising default, and per T7's own instruction there is no fastNight-to-speed fallback to keep. */
+    val speed: Int,
 )
 
 /**
@@ -130,9 +131,12 @@ fun parsePastNightLog(lines: List<String>): PastNightLog {
         endedAt = endEvent?.at,
         deadline = readDeadline(endFields) ?: readDeadline(startFields),
         pickedCycles = endFields[PICKED_CYCLES_FIELD]?.toIntOrNull() ?: startFields[PICKED_CYCLES_FIELD]?.toIntOrNull(),
-        fastNight = startFields[FAST_NIGHT_FIELD].toBoolean(),
+        speed = readSpeed(startFields),
     )
 }
+
+/** T7: night_start's own `speed` field; absent (an older log, or one written before T7) reads as speed 1. */
+private fun readSpeed(startFields: Map<String, String>): Int = startFields[SPEED_FIELD]?.toIntOrNull() ?: 1
 
 /** Structured fields first; a night_end that has only the old text line falls back to what that line says. */
 private fun readSummary(endFields: Map<String, String>?): PastNightSummary {

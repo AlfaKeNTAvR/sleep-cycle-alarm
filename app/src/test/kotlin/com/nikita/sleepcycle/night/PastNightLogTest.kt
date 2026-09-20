@@ -25,14 +25,14 @@ class PastNightLogTest {
     private fun nightEndLine(summary: NightSummary, settings: NightSettings, at: Instant): String =
         formatNightLogLine(NightLogEvent(at, "night_end", encodeNightEndFields(summary, settings)))
 
-    private fun nightStartLine(settings: NightSettings, at: Instant, fastNight: Boolean = false): String =
+    private fun nightStartLine(settings: NightSettings, at: Instant, speed: Int = 1): String =
         formatNightLogLine(
             NightLogEvent(
                 at, "night_start",
                 mapOf(
                     "pickedCycles" to settings.pickedCycles.toString(),
                     "deadline" to (settings.deadline?.toString() ?: "none"),
-                    "fastNight" to fastNight.toString()
+                    "speed" to speed.toString()
                 )
             )
         )
@@ -125,7 +125,8 @@ class PastNightLogTest {
         assertEquals(5, parsed.pickedCycles)
         assertEquals(Instant.parse("2026-09-18T04:11:05.057916Z"), parsed.startedAt)
         assertEquals(Instant.parse("2026-09-18T12:17:31.710887Z"), parsed.endedAt)
-        assertEquals(false, parsed.fastNight)
+        // T7: this real historical line carries the old `fastNight` field, not `speed` - never read, degrades to 1.
+        assertEquals(1, parsed.speed)
     }
 
     @Test
@@ -168,12 +169,12 @@ class PastNightLogTest {
     }
 
     @Test
-    fun `a fast simulated night is read back as a fast night`() {
+    fun `T7 a simulated-time night is read back at its own speed`() {
         val settings = NightSettings(deadline = null, pickedCycles = 3)
 
-        val parsed = parsePastNightLog(listOf(nightStartLine(settings, Instant.parse("2026-09-18T04:11:05Z"), fastNight = true)))
+        val parsed = parsePastNightLog(listOf(nightStartLine(settings, Instant.parse("2026-09-18T04:11:05Z"), speed = 60)))
 
-        assertEquals(true, parsed.fastNight)
+        assertEquals(60, parsed.speed)
     }
 
     @Test
@@ -185,6 +186,6 @@ class PastNightLogTest {
         assertNull(parsed.endedAt)
         assertNull(parsed.deadline)
         assertNull(parsed.pickedCycles)
-        assertEquals(false, parsed.fastNight)
+        assertEquals(1, parsed.speed)
     }
 }

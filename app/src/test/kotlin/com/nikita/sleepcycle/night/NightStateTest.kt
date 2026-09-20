@@ -83,7 +83,8 @@ class NightStateTest {
 
     @Test
     fun `round trips debug options`() {
-        val state = baseState().copy(debugOptions = DebugOptions(simulatedBandData = true, fastNight = true))
+        val warp = ClockWarp(60, Instant.parse("2026-09-17T20:00:00Z"), Instant.parse("2026-09-17T20:00:00Z"))
+        val state = baseState().copy(debugOptions = DebugOptions(simulatedBandData = true, warp = warp))
 
         val roundTripped = decodeNightState(encodeNightState(state))
 
@@ -108,6 +109,71 @@ class NightStateTest {
         val state = decodeNightState(json.toString())
 
         assertEquals(DebugOptions(), state.debugOptions)
+    }
+
+    /** T7 (required test): a state persisted by the old build carries `fastNight` (a boolean), not `speed` - that key is simply never read (same as every other deleted-field case this decoder handles), so it degrades to speed 1 rather than crashing, with no fastNight-to-speed fallback. */
+    @Test
+    fun `T7 an old debugOptions block carrying fastNight instead of speed decodes with speed 1`() {
+        val json = fullStateJson()
+        json.put("debugOptions", JSONObject().apply { put("simulatedBandData", false); put("fastNight", true) })
+
+        val state = decodeNightState(json.toString())
+
+        assertEquals(DebugOptions(simulatedBandData = false), state.debugOptions)
+        assertEquals(1, state.debugOptions.speed)
+    }
+
+    /** T7: a state persisted before `speed` existed at all (but after `simulatedBandData` did) also degrades to speed 1. */
+    @Test
+    fun `T7 a debugOptions block with simulatedBandData but no speed field decodes with speed 1`() {
+        val json = fullStateJson()
+        json.put("debugOptions", JSONObject().apply { put("simulatedBandData", true) })
+
+        val state = decodeNightState(json.toString())
+
+        assertEquals(DebugOptions(simulatedBandData = true), state.debugOptions)
+        assertEquals(1, state.debugOptions.speed)
+    }
+
+    /** U3: [NightState.debugOptions] is a frozen snapshot, so the warp active at night start must round trip through it exactly like speed/simulatedBandData already do. */
+    @Test
+    fun `round trips an active clock warp inside debug options`() {
+        val warp = ClockWarp(60, Instant.parse("2026-09-17T20:00:00Z"), Instant.parse("2026-09-18T03:00:00Z"))
+        val state = baseState().copy(debugOptions = DebugOptions(simulatedBandData = true, warp = warp))
+
+        val roundTripped = decodeNightState(encodeNightState(state))
+
+        assertEquals(state.debugOptions, roundTripped.debugOptions)
+        assertEquals(warp, roundTripped.debugOptions.warp)
+    }
+
+    /** U3: a state saved before `warp` existed (or with no warp active at night start) decodes with warp null, same as every other absent-field case here. */
+    @Test
+    fun `a debugOptions block with no warp field decodes with warp null`() {
+        val json = fullStateJson()
+        json.put("debugOptions", JSONObject().apply { put("simulatedBandData", false); put("speed", 1) })
+
+        val state = decodeNightState(json.toString())
+
+        assertNull(state.debugOptions.warp)
+    }
+
+    /** U3: a malformed warp block degrades to null rather than failing the whole state, same tolerant-decode style as every other optional field here. */
+    @Test
+    fun `a malformed warp block decodes with warp null rather than failing the whole state`() {
+        val json = fullStateJson()
+        json.put(
+            "debugOptions",
+            JSONObject().apply {
+                put("simulatedBandData", true)
+                put("speed", 60)
+                put("warp", JSONObject().apply { put("speed", "not-a-number") })
+            }
+        )
+
+        val state = decodeNightState(json.toString())
+
+        assertNull(state.debugOptions.warp)
     }
 
     @Test

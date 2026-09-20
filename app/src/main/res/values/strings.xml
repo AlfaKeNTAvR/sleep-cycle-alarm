@@ -153,24 +153,27 @@
     <string name="debug_subtitle">Simulate a whole night at your desk. Only available in a debug build.</string>
     <string name="debug_simulated_band_data_title">Simulated band data</string>
     <string name="debug_simulated_band_data_description">Sleep segments come from the buttons below instead of a real Gadgetbridge sync.</string>
-    <string name="debug_fast_night_title">Fast night</string>
-    <string name="debug_fast_night_description">Runs the engine on a shortened schedule: 5 min cycles, so a whole night finishes in minutes.</string>
+    <string name="debug_speed_title">Simulated clock speed</string>
+    <string name="debug_speed_description">Runs the app\'s own clock faster than real time, so a whole night passes in minutes.</string>
+    <string name="debug_speed_multiplier_label">%1$dx</string>
+    <string name="debug_requires_simulated_band_data_reason">Requires simulated band data.</string>
     <string name="debug_simulator_controls_title">Simulator</string>
-    <string name="debug_fell_asleep_button">I fell asleep now</string>
-    <string name="debug_woke_up_button">I woke up now</string>
-    <string name="debug_fell_back_asleep_button">Fell back asleep now</string>
+    <string name="debug_asleep_toggle_title">Asleep</string>
     <string name="debug_clear_simulated_sleep_button">Clear simulated sleep</string>
     <string name="debug_timeline_title">Simulated timeline</string>
     <string name="debug_timeline_empty">No simulated events yet.</string>
     <string name="debug_timeline_entry">%1$s  %2$s → %3$s</string>
+    <string name="debug_jump_section_title">Set simulated time</string>
+    <string name="debug_reset_to_real_time_button">Reset to real time</string>
+    <string name="debug_jump_night_active_reason">Not available while a night is active.</string>
     <string name="debug_test_alarm_title">Alarm screen test</string>
-    <string name="debug_ring_test_alarm_button">Ring phone alarm in 1 min</string>
+    <string name="debug_ring_test_alarm_button">Ring phone alarm</string>
     <string name="debug_ring_test_alarm_description">Uses its own alarm, separate from a real night\'s, so you can check the alarm screen, sound and Stop button in daylight. Logged to setup.jsonl, not a night log.</string>
     <string name="debug_ring_test_alarm_disabled_reason">Disabled while a night is active.</string>
 
-    <!-- Debug warning banner (Before bed and Night screens): names every switch that is currently live -->
+    <!-- Debug warning banner (Before bed and Night screens): names every switch that is currently live. SIMULATED_TIME carries the live "HH:mm[, Nx]" reading (T12 amendment) - see com.nikita.sleepcycle.night.formatSimulatedTimeValue. -->
     <string name="debug_switch_simulated_sleep_data">SIMULATED SLEEP DATA</string>
-    <string name="debug_switch_fast_night">FAST NIGHT</string>
+    <string name="debug_switch_simulated_time">SIMULATED %1$s</string>
 
     <!-- Simulated-night start confirmation -->
     <string name="debug_confirm_start_title">This is a simulated night</string>

@@ -4,6 +4,7 @@ package com.nikita.sleepcycle.ui.state
 // relaxes the band/Gadgetbridge setup items (D2: no real sync happens then, so there is nothing for a real
 // setup check to have verified), but never the phone-side setup items.
 
+import com.nikita.sleepcycle.night.ClockWarp
 import com.nikita.sleepcycle.night.DebugOptions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -14,6 +15,7 @@ import java.time.Instant
 class DebugGatingTest {
     private val now = Instant.parse("2026-09-17T00:00:00Z")
     private val simulatedData = DebugOptions(simulatedBandData = true)
+    private val simulatedTime = DebugOptions(warp = ClockWarp(60, now, now))
 
     @Test
     fun `debug options off relaxes nothing`() {
@@ -21,8 +23,8 @@ class DebugGatingTest {
     }
 
     @Test
-    fun `fast night alone does not relax setup`() {
-        assertFalse(debugOptionsRelaxSetup(DebugOptions(fastNight = true)))
+    fun `simulated time alone does not relax setup`() {
+        assertFalse(debugOptionsRelaxSetup(simulatedTime))
     }
 
     @Test
@@ -61,7 +63,7 @@ class DebugGatingTest {
     @Test
     fun `isSetupComplete is unaffected by debug options when not relaxed`() {
         val settings = testAppSettings(deviceMac = null)
-        assertFalse(isSetupComplete(settings, testPermissionStatus(), gadgetbridgeInstalled = false, debugOptions = DebugOptions(fastNight = true)))
+        assertFalse(isSetupComplete(settings, testPermissionStatus(), gadgetbridgeInstalled = false, debugOptions = simulatedTime))
     }
 
     @Test
@@ -72,10 +74,10 @@ class DebugGatingTest {
     }
 
     @Test
-    fun `startNightGate still requires a recent setup check when only fast night is on`() {
+    fun `startNightGate still requires a recent setup check when only simulated time is on`() {
         val gate = startNightGate(
             checklistComplete = true, lastSetupCheckPassedAt = null, now = now,
-            debugOptions = DebugOptions(fastNight = true)
+            debugOptions = simulatedTime
         )
         assertFalse(gate.enabled)
         assertTrue(gate.blockedBySetupCheck)

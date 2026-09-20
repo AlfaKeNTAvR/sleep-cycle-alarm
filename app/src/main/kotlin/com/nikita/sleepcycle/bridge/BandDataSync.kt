@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.bridge
 import android.content.Context
 import android.net.Uri
 import com.nikita.sleepcycle.night.NightLogEvent
+import com.nikita.sleepcycle.night.nowInstant
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.Duration
@@ -81,5 +82,7 @@ private fun syncEvent(ok: Boolean, durationMs: Long, failedStep: String?, cause:
     val fields = mutableMapOf("ok" to ok.toString(), "durationMs" to durationMs.toString())
     failedStep?.let { fields["step"] = it }
     cause?.let { fields["cause"] = it }
-    return NightLogEvent(at = Instant.now(), type = "sync", fields = fields)
+    // T4: virtual - this is a night-log event's own `at`, unlike startedAt/durationMs above (T4's named
+    // real-time exception), which measure how long the real sync work itself took.
+    return NightLogEvent(at = nowInstant(), type = "sync", fields = fields)
 }

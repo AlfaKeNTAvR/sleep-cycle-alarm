@@ -15,7 +15,7 @@ package com.nikita.sleepcycle.night
 //         "pickedCycles" to settings.pickedCycles.toString(),
 //         "deadline" to (settings.deadline?.toString() ?: "none"),
 //         "simulatedBandData" to debugOptions.simulatedBandData.toString(),
-//         "fastNight" to debugOptions.fastNight.toString()
+//         "speed" to debugOptions.speed.toString()
 //     ) + nightStartTimezoneFields(now, zone)
 //
 //   One call, same `now` and `zone` already in scope at that call site.

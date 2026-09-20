@@ -1,43 +1,49 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: pure functions turning the Debug screen's button presses into a sleep segment timeline, so
+// File purpose: pure functions turning the Debug screen's "Asleep" toggle into a sleep segment timeline, so
 // the rest of the app (the engine, the night log) can treat a simulated night exactly like a real one.
-// Mirrors the button set: "I fell asleep now" opens a LIGHT segment, "I woke up now" closes it and opens an
-// AWAKE one, "Fell back asleep now" closes that and opens LIGHT again. The most recent segment has no end of
-// its own yet - [buildSimulatedSegments] extends it to `now` on every call, so it grows tick by tick exactly
-// like a real open-ended sleep mark would.
+// T9 SUPERSEDES the original three-button design (FELL_ASLEEP/WOKE_UP/FELL_BACK_ASLEEP): one toggle, two
+// states - ASLEEP opens a LIGHT segment, AWAKE closes it and opens an AWAKE one. The most recent segment has
+// no end of its own yet - [buildSimulatedSegments] extends it to `now` on every call, so it grows tick by tick
+// exactly like a real open-ended sleep mark would.
 
 import com.nikita.sleepcycle.engine.SegmentKind
 import com.nikita.sleepcycle.engine.SleepSegment
 import java.time.Instant
 
-/** Which of the three simulator buttons was pressed. */
-enum class SimulatedSleepEventKind { FELL_ASLEEP, WOKE_UP, FELL_BACK_ASLEEP }
+/** T9: the Debug screen's "Asleep" toggle has exactly two states - no more three-button FELL_ASLEEP/WOKE_UP/FELL_BACK_ASLEEP distinction, since "asleep again after waking" behaves identically to "asleep for the first time" from the engine's point of view. */
+enum class SimulatedSleepEventKind { ASLEEP, AWAKE }
 
-/** One simulated button press, in the order it happened. */
+/** One simulated toggle flip, in the order it happened. */
 data class SimulatedSleepEvent(val kind: SimulatedSleepEventKind, val at: Instant)
 
-/** The segment kind that starts at a given event: sleep for both "fell asleep" events, awake for "woke up". */
+/** The segment kind that starts at a given event: sleep for ASLEEP, awake for AWAKE. */
 private fun segmentKindStartedBy(kind: SimulatedSleepEventKind): SegmentKind = when (kind) {
-    SimulatedSleepEventKind.WOKE_UP -> SegmentKind.AWAKE
-    SimulatedSleepEventKind.FELL_ASLEEP, SimulatedSleepEventKind.FELL_BACK_ASLEEP -> SegmentKind.LIGHT
+    SimulatedSleepEventKind.ASLEEP -> SegmentKind.LIGHT
+    SimulatedSleepEventKind.AWAKE -> SegmentKind.AWAKE
 }
 
 /**
- * Whether pressing [kind] next is a meaningful transition given [events] so far: "fell asleep" only as the
- * very first event, "woke up" only while a sleep segment is open, "fell back asleep" only while the awake
- * segment is open. A press that would not be a meaningful transition (e.g. a repeated press of the same
- * button) is not allowed - both the Debug screen's button enablement and [appendSimulatedSleepEvent] use
- * this same predicate, so the two can never disagree about which button does something right now.
+ * T9: whether flipping the toggle to [kind] next is a meaningful transition given [events] so far - allowed
+ * exactly when [kind] differs from the CURRENT state, where the current state is the last event's own kind, or
+ * AWAKE when there is no event yet (a night starts awake). So ASLEEP is allowed first (there is nothing to be
+ * awake FROM yet, but the state is already AWAKE by this null-counts-as-AWAKE convention), and AWAKE is not
+ * allowed first (there is nothing to wake from). Both the Debug screen's toggle enablement and
+ * [appendSimulatedSleepEvent] use this same predicate, so the two can never disagree about what the toggle
+ * does right now.
  */
 fun isSimulatedSleepEventAllowed(events: List<SimulatedSleepEvent>, kind: SimulatedSleepEventKind): Boolean {
-    val last = events.lastOrNull()
-    return when (kind) {
-        SimulatedSleepEventKind.FELL_ASLEEP -> last == null
-        SimulatedSleepEventKind.WOKE_UP -> last != null && last.kind != SimulatedSleepEventKind.WOKE_UP
-        SimulatedSleepEventKind.FELL_BACK_ASLEEP -> last?.kind == SimulatedSleepEventKind.WOKE_UP
-    }
+    val current = events.lastOrNull()?.kind ?: SimulatedSleepEventKind.AWAKE
+    return kind != current
 }
+
+/**
+ * T10: the sleep toggle and the "Clear simulated sleep" button both require simulated band data -
+ * [readBandDataForTick] only reads the simulated timeline when it is on, so pressing either while it is off
+ * changes nothing (the bug the owner actually hit). Pure so the Debug screen's enablement and
+ * [com.nikita.sleepcycle.ui.DebugScreenController]'s own second guard can never disagree.
+ */
+fun isSimulatedSleepControlAllowed(simulatedBandData: Boolean): Boolean = simulatedBandData
 
 /**
  * Appends one simulated event at [at], or returns [events] unchanged when [kind] is not a meaningful

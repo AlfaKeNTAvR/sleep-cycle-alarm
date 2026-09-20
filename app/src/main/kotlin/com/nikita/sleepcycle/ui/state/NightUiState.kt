@@ -104,4 +104,6 @@ data class NightUiState(
     val endingNight: Boolean = false,
     /** A1: every debug switch this night was started with that is still live - the screen shows the amber warning banner naming all of them when non-empty. Empty while showing the morning report - the banner's job is done once the night is over. */
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
+    /** T12 (amended): the live simulated-clock reading, e.g. "03:15" or "03:15, 60x" - null when not warped or while showing the morning report. See [com.nikita.sleepcycle.night.formatSimulatedTimeValue]. */
+    val simulatedTimeValue: String? = null,
 )

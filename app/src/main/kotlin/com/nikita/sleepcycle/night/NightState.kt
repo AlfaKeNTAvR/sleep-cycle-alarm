@@ -169,22 +169,50 @@ private fun decodeAwakeConfirmedAtTolerant(json: JSONObject): Instant? {
     }
 }
 
-/** Absent (state saved before this field existed) or malformed: decodes as all-off, same as a normal night. */
+/**
+ * Absent (state saved before this field existed) or malformed: decodes as all-off/speed 1/no warp, same as a
+ * normal night. T7: a state persisted by the old build carries `fastNight` (a boolean), not `speed` - that key
+ * is simply never read (same as every other deleted-field case this decoder handles), so it degrades to speed
+ * 1 rather than crashing, per T7's own instruction not to keep a fastNight fallback. U3: `warp` is newer still
+ * (absent on every state saved before this task) and degrades to null the same way. V7: a persisted `speed`
+ * key (written by a build before V7, or a fallback copy [encodeDebugOptions] still writes for readability - see
+ * its own doc) is likewise never read here - [DebugOptions.speed] is derived from [warp] alone, so a stale or
+ * disagreeing `speed` value on disk can never win over the warp that was actually live.
+ */
 private fun decodeDebugOptionsTolerant(json: JSONObject?): DebugOptions {
     if (json == null) return DebugOptions()
     return try {
         DebugOptions(
             simulatedBandData = json.getBoolean("simulatedBandData"),
-            fastNight = json.getBoolean("fastNight")
+            warp = decodeClockWarpTolerant(json.optJSONObject("warp"))
         )
     } catch (error: Exception) {
         DebugOptions()
     }
 }
 
+/** V7: `speed` is written here for a human reading night_state.json on disk, but it is DERIVED (see [DebugOptions.speed]) and [decodeDebugOptionsTolerant] never reads it back - `warp` alone is authoritative on the way in. */
 private fun encodeDebugOptions(options: DebugOptions): JSONObject = JSONObject().apply {
     put("simulatedBandData", options.simulatedBandData)
-    put("fastNight", options.fastNight)
+    put("speed", options.speed)
+    put("warp", options.warp?.let(::encodeClockWarp) ?: JSONObject.NULL)
+}
+
+/** U3: [NightState.debugOptions] is a frozen snapshot (see its own doc), so the [ClockWarp] active at night start must round-trip through this blob exactly like every other field here - it is never re-read from DebugSettingsStore.kt's live DataStore once a night is running. */
+private fun encodeClockWarp(warp: ClockWarp): JSONObject = JSONObject().apply {
+    put("speed", warp.speed)
+    put("anchorReal", warp.anchorReal.toString())
+    put("anchorVirtual", warp.anchorVirtual.toString())
+}
+
+/** Absent (no warp active at night start) or malformed decodes as null, the same "not warped" default a state with no `warp` field at all gets. */
+private fun decodeClockWarpTolerant(json: JSONObject?): ClockWarp? {
+    if (json == null) return null
+    return try {
+        ClockWarp(json.getInt("speed"), Instant.parse(json.getString("anchorReal")), Instant.parse(json.getString("anchorVirtual")))
+    } catch (error: Exception) {
+        null
+    }
 }
 
 private fun encodeNightSettings(settings: NightSettings): JSONObject = JSONObject().apply {
@@ -301,6 +329,8 @@ private fun loadBackupNightState(context: Context): NightState? {
 }
 
 private fun quarantineCorruptStateFile(context: Context, file: File, cause: Exception) {
+    // T4: named real-time exception - a quarantined file's own name only needs to be unique and sortable by
+    // when the quarantine actually happened on disk, never a fact about a simulated night.
     val quarantined = File(context.filesDir, "$NIGHT_STATE_FILE_NAME.corrupt-${Instant.now().toEpochMilli()}")
     if (!file.renameTo(quarantined)) {
         Log.e(LOG_TAG, "failed to quarantine corrupt state file ${file.path}")
@@ -310,9 +340,11 @@ private fun quarantineCorruptStateFile(context: Context, file: File, cause: Exce
 
 private fun logCorruptStateToNewestNightLog(context: Context, cause: Exception) {
     val newestLog = listNightLogs(context).firstOrNull() ?: return
+    // T4/V9: virtual - appendLogLine now honours this `at` exactly as built here (V9 reversed its own blanket
+    // re-stamp), so this must already be the right instant, not a placeholder.
     appendLogLine(
         newestLog,
-        NightLogEvent(Instant.now(), "error", mapOf("step" to "load_night_state", "cause" to (cause.message ?: cause.toString())))
+        NightLogEvent(nowInstant(), "error", mapOf("step" to "load_night_state", "cause" to (cause.message ?: cause.toString())))
     )
 }
 

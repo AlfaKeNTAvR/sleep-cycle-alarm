@@ -70,7 +70,9 @@ suspend fun runNightTick(context: Context, now: Instant, scheduledFor: Instant? 
     withNightTransactionLock { runNightTickLocked(context, now, scheduledFor, receivedAt) }
 
 private suspend fun runNightTickLocked(context: Context, now: Instant, scheduledFor: Instant?, receivedAt: Instant?): NightState? {
-    val startedAt = Instant.now()
+    // T4: virtual, like scheduledFor/receivedAt (both already virtual - see TickScheduling.kt/TickReceiver.kt)
+    // - all three must be apples-to-apples for the "tick" log line's own lateness diagnosis to mean anything.
+    val startedAt = nowInstant()
     val state = withContext(Dispatchers.IO) { loadNightState(context) }
     if (state == null) {
         Log.w(LOG_TAG, "runNightTick called with no night in progress")
@@ -98,8 +100,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // C1: the clock is re-read here, after the (up to ~2 min) Gadgetbridge I/O above, and used for the plan
     // itself - `now` at entry can already be stale by the time the I/O finishes. `now` (the tick's entry time)
     // still drives only this tick's own scheduledFor/receivedAt/startedAt log fields above, for diagnosing
-    // tick lateness.
-    val decisionNow = Instant.now()
+    // tick lateness. T4: virtual - this is the instant the plan itself is computed against.
+    val decisionNow = nowInstant()
     val plan = computeAlarmPlan(
         outcome.segments, state.settings, decisionNow, state.morningAlarmAt, currentZone(), config,
         state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt
@@ -130,7 +132,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         lastNapAlarmFiredAt = state.lastNapAlarmFiredAt
     )
     if (!saveNightState(context, newState)) {
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist state after this tick")), debugNight)
+        // V9: decisionNow, not the tick's stale entry-time `now` - this line is appended after the data/plan/
+        // phone_alarm_set lines above, which are all stamped with decisionNow; appendLogLine no longer
+        // re-stamps every event to nowInstant() on write (V9), so this one must already carry an `at` at least
+        // as late as what came before it, or a reader would see a "later" line with an earlier timestamp.
+        appendNightLog(context, state.startedAt, NightLogEvent(decisionNow, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist state after this tick")), debugNight)
     }
     scheduleNextTick(context, plan, now, config)
     return newState
@@ -181,7 +187,7 @@ private fun cancelNudgeIfSupersededByNap(context: Context, state: NightState, pl
     )
 }
 
-/** `internal`, not `private`: DebugBandDataSource.kt's readBandDataForTick also calls this for every case that needs a real sync. */
+/** `internal`, not `private`: DebugBandDataSource.kt's readBandDataForTick also calls this for every case that needs a real sync, and OutOfBedPreNudgeCheck.kt's own re-sync (unconditionally, see its own U4 audit note). */
 internal suspend fun syncOrFail(context: Context, appSettings: AppSettings, state: NightState, now: Instant): BandDataResult {
     val deviceMac = appSettings.deviceMac
     val exportUri = appSettings.exportUri
@@ -215,6 +221,12 @@ data class SyncOutcome(
  * only set for an actual sync failure, so the UI can tell that case apart from merely-stale data. `internal`,
  * not `private`: also called from DebugBandDataSource.kt.
  */
+// U4 audit flag: [now] here (and syncOrFail's own [now]) is virtual (T4), compared inside against
+// [checkDataFreshness] with the real band's own newestSampleAt/exportFileModifiedAt. Safe only because this
+// path is reached exclusively from readBandDataForTick's `!debugOptions.simulatedBandData` branch
+// (DebugBandDataSource.kt) - real band data is being read, never simulated - and U1 guarantees a warp can only
+// be live while simulatedBandData is ON, so whenever this runs the clock is guaranteed unwarped (nowInstant()
+// == Instant.now()). Contrast OutOfBedPreNudgeCheck.kt's own re-sync, which is NOT similarly guarded.
 internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult: BandDataResult, now: Instant): SyncOutcome =
     when (syncResult) {
         is BandDataResult.Failure -> {

@@ -25,9 +25,8 @@ const val MISSING_TIME_LABEL = "--:--"
 /**
  * State A: going to bed, or still/again asleep with no completed awakening yet in this stretch. Sleep length
  * is [AlarmPlan.cycles] - what the plan actually landed on (e.g. capped by a deadline) - not the raw picked
- * length. [debugOptions] is the night's own captured options (see NightState.debugOptions): a fast debug
- * night's durations are labelled honestly in minutes rather than as a decimal-hour label (see
- * [formatSleepLengthLabel]).
+ * length. [debugOptions] is the night's own captured options (see NightState.debugOptions), passed through to
+ * [sleepLengthFor]/[napLengthFor].
  */
 fun buildGoingToBedContent(settings: NightSettings, plan: AlarmPlan, view: NightEngineView, zone: ZoneId, debugOptions: DebugOptions): NightScreenContent.GoingToBedOrAsleep {
     val onset = checkNotNull(plan.referenceOnset) { "referenceOnset is only null once the night is FINISHED" }
@@ -36,9 +35,9 @@ fun buildGoingToBedContent(settings: NightSettings, plan: AlarmPlan, view: Night
         onsetPhase = if (plan.onsetIsProjected) OnsetPhase.PROJECTED else OnsetPhase.ACTUAL,
         onsetTimeLabel = formatClockTime(onset, zone),
         alarmTimeLabel = plan.wakeAt?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
-        sleepLengthHoursLabel = formatSleepLengthLabel(sleepLengthFor(plan.cycles, debugOptions), debugOptions.fastNight),
+        sleepLengthHoursLabel = formatSleepLengthLabel(sleepLengthFor(plan.cycles, debugOptions)),
         isDeadlineOnly = isDeadlineOnly,
-        timeline = view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone, debugOptions) },
+        timeline = view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone) },
         deadlineTimeLabel = settings.deadline?.let { formatClockTime(it, zone) },
     )
 }
@@ -66,7 +65,7 @@ fun buildWokeUpContent(plan: AlarmPlan, deadline: Instant?, view: NightEngineVie
         napOnly = napOnly,
         sleptDurationLabel = formatDuration(latestStretchDuration),
         headerTimeLabel = headerTime?.let { formatClockTime(it, zone) },
-        timeline = if (napOnly) emptyList() else view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone, debugOptions) },
+        timeline = if (napOnly) emptyList() else view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone) },
         napLengthLabel = if (napOnly) formatDuration(napLengthFor(debugOptions)) else null,
         tonightSoFarLabel = if (napOnly) formatDuration(view.summary.totalSleep) else null,
         alarmTimeLabel = if (napOnly) null else plan.wakeAt?.let { formatClockTime(it, zone) },
@@ -100,9 +99,9 @@ fun buildMorningReportContent(
     )
 }
 
-private fun toTimelineEntry(option: WakeOption, plannedCycles: Int, zone: ZoneId, debugOptions: DebugOptions): WakeTimelineEntry = WakeTimelineEntry(
+private fun toTimelineEntry(option: WakeOption, plannedCycles: Int, zone: ZoneId): WakeTimelineEntry = WakeTimelineEntry(
     cycles = option.cycles,
     timeLabel = formatClockTime(option.wakeTime, zone),
-    hoursLabel = formatSleepLengthLabel(option.sleepDuration, debugOptions.fastNight),
+    hoursLabel = formatSleepLengthLabel(option.sleepDuration),
     isPlanned = option.cycles == plannedCycles,
 )

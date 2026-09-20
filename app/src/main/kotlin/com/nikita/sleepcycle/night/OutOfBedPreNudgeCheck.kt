@@ -16,6 +16,23 @@ package com.nikita.sleepcycle.night
 // never itself delay or block the nudge - the fail-open rule above already covers exactly this case.
 // [shouldCancelNudgeForPreCheck] is the one pure decision seam, so the whole "when does this cancel the
 // nudge" logic is JVM-testable without Android.
+//
+// U6: "re-syncs the band" above means the real band only on a real night. On a simulated night the check
+// reads the Debug screen's simulated timeline instead - see [readFreshSleepStateOrNull] for why the real
+// sync cannot work there.
+//
+// V2: [schedulePreNudgeCheck] shares T6/V3's own two-path shape ([shouldScheduleTickInProcess]) with
+// TickScheduling.kt. It used to always go through AlarmManager's `setExactAndAllowWhileIdle` - the Doze-
+// THROTTLED call - while the nudge it races arms through the Doze-EXEMPT `setAlarmClock`. At 600x that leaves
+// it 1.3 REAL seconds to be delivered, start a foreground service, read night state off disk and read two
+// DataStore flows: it systematically loses that race, so it always rings, and U6's whole point - making the
+// cancel path exercisable in debug mode - was unmet. While the clock is warped, the check instead runs from an
+// in-process coroutine timer that calls [runPreNudgeCheck] directly - no foreground service, no wake lock: a
+// warped night is by definition being watched with the app open (see this file's own T6-derived reasoning), and
+// U1 guarantees [readFreshSleepStateOrNull] can only take its simulated-timeline branch while warped (a
+// DataStore read, not a real sync), so there is no slow I/O here to bound with a timeout the way the
+// AlarmManager path's own foreground service bounds a real sync. Real (unwarped) nights keep the exact
+// AlarmManager-plus-foreground-service path they always had.
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
@@ -35,12 +52,15 @@ import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.alarm.cancelOutOfBedAlarm
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
+import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.engine.detectSleepState
 import com.nikita.sleepcycle.engine.normalizeSegments
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,12 +76,32 @@ private val PRE_NUDGE_CHECK_TIMEOUT: Duration = Duration.ofSeconds(90)
 private val WAKE_LOCK_TIMEOUT: Duration = Duration.ofMinutes(2)
 private const val WAKE_LOCK_TAG = "SleepCycleAlarm:PreNudgeCheck"
 
-/** Arms the silent pre-nudge check for [at]. Returns whether scheduling succeeded - a failure here is not fatal, see this file's own header: the nudge still rings on schedule either way. */
+/** V2: process-scoped, same lifetime rule as TickScheduling.kt's own in-process job - dies with the process, which is fine, this only ever runs while warped (a debug feature, see this file's own header). */
+private val preNudgeCheckScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+/** V2: guards every read AND write of [inProcessPreNudgeCheckJob] - same reasoning as TickScheduling.kt's own [inProcessTickLock]. */
+private val inProcessPreNudgeCheckLock = Any()
+
+/** V2: at most one pending in-process pre-nudge check at a time, cancel-and-replace - only ever read or written under [inProcessPreNudgeCheckLock]. */
+private var inProcessPreNudgeCheckJob: Job? = null
+
+/**
+ * Arms the silent pre-nudge check for the virtual instant [at] - through AlarmManager on a real night, or (V2)
+ * an in-process coroutine timer while the clock is warped, per [shouldScheduleTickInProcess] (shared with
+ * TickScheduling.kt, see this file's own header). Returns whether scheduling succeeded - a failure here is not
+ * fatal, see this file's own header: the nudge still rings on schedule either way. T5: AlarmManager only ever
+ * fires in real time, so [at] is converted through [AppClock.toRealInstant] on that path - one of T5's three
+ * named conversion points.
+ */
 @SuppressLint("MissingPermission")
 fun schedulePreNudgeCheck(context: Context, at: Instant): Boolean {
+    if (shouldScheduleTickInProcess(AppClock.warp() != null)) {
+        scheduleInProcessPreNudgeCheck(context, at)
+        return true
+    }
     val alarmManager = context.getSystemService<AlarmManager>() ?: return false
     return try {
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.toEpochMilli(), preNudgeCheckPendingIntent(context))
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, AppClock.toRealInstant(at).toEpochMilli(), preNudgeCheckPendingIntent(context))
         true
     } catch (error: SecurityException) {
         Log.e(LOG_TAG, "cannot schedule the pre-nudge check: exact alarm permission was likely revoked", error)
@@ -69,10 +109,27 @@ fun schedulePreNudgeCheck(context: Context, at: Instant): Boolean {
     }
 }
 
-/** Cancels a pending pre-nudge check, if any - called everywhere the nudge itself is cancelled (H7.2's nap supersession, endNight, startNight's own leftover-nudge cleanup). */
+/** V2: cancel-and-replace, same pattern as TickScheduling.scheduleTickInProcess - calls [runPreNudgeCheck] directly once the delay elapses, no foreground service or wake lock (see this file's own header for why neither is needed here). */
+private fun scheduleInProcessPreNudgeCheck(context: Context, at: Instant) {
+    val delayMillis = inProcessTickDelay(Duration.between(Instant.now(), AppClock.toRealInstant(at))).toMillis()
+    synchronized(inProcessPreNudgeCheckLock) {
+        inProcessPreNudgeCheckJob?.cancel()
+        inProcessPreNudgeCheckJob = preNudgeCheckScope.launch {
+            delay(delayMillis)
+            runPreNudgeCheck(context)
+        }
+    }
+}
+
+/** Cancels a pending pre-nudge check, if any - both the AlarmManager alarm and V2's in-process job, called everywhere the nudge itself is cancelled (H7.2's nap supersession, endNight, startNight's own leftover-nudge cleanup). */
 fun cancelPreNudgeCheck(context: Context) {
-    val alarmManager = context.getSystemService<AlarmManager>() ?: return
-    alarmManager.cancel(preNudgeCheckPendingIntent(context))
+    // An unavailable AlarmManager must not skip the in-process cancel below, so this is a safe call rather
+    // than an early return - the same shape cancelTick already uses, and for the same reason.
+    context.getSystemService<AlarmManager>()?.cancel(preNudgeCheckPendingIntent(context))
+    synchronized(inProcessPreNudgeCheckLock) {
+        inProcessPreNudgeCheckJob?.cancel()
+        inProcessPreNudgeCheckJob = null
+    }
 }
 
 private fun preNudgeCheckPendingIntent(context: Context): PendingIntent =
@@ -139,7 +196,9 @@ class OutOfBedPreNudgeCheckService : Service() {
  * [shouldCancelNudgeForPreCheck] below is the pure decision seam tests use instead.
  */
 private suspend fun runPreNudgeCheck(context: Context) {
-    val now = Instant.now()
+    // T4: virtual - nowInstant() correctly recovers the intended virtual instant even though the exact alarm
+    // that triggered this check fired at a T5-converted REAL instant.
+    val now = nowInstant()
     val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return
     val appSettings = readAppSettings(context).first()
     val sleepState = readFreshSleepStateOrNull(context, appSettings, state, now)
@@ -160,8 +219,23 @@ private suspend fun runPreNudgeCheck(context: Context) {
     )
 }
 
-/** A fresh sleep state from a real re-sync, or null when the sync failed or its result is stale - the caller treats null exactly like AWAKE (let the nudge ring). */
+/**
+ * A fresh sleep state from a re-sync, or null when the sync failed or its result is stale - the caller treats
+ * null exactly like AWAKE (let the nudge ring).
+ *
+ * U6: on a simulated night this reads the Debug screen's own timeline rather than re-syncing the band. H7.3
+ * originally made this check deliberately real, as a second line of defence against stale tick data, but a
+ * simulated night has no real band data behind it at all: `now` is virtual while the band's samples carry
+ * real timestamps, so [checkDataFreshness] would always read stale, [readFreshSleepStateOrNull] would always
+ * return null, and the nudge would ring every time. That is safe (fail-open) but it makes the pre-nudge
+ * cancel path - the very behaviour the owner asked for - impossible to exercise in debug mode. The simulated
+ * timeline needs no freshness check of its own: [buildSimulatedSegments] always extends its last segment to
+ * [now], so it is fresh by construction.
+ */
 private suspend fun readFreshSleepStateOrNull(context: Context, appSettings: AppSettings, state: NightState, now: Instant): SleepState? {
+    if (state.debugOptions.simulatedBandData) {
+        return simulatedSleepStateAt(readSimulatedSleepEvents(context).first(), now, resolveEngineConfig(state.debugOptions))
+    }
     val syncResult = syncOrFail(context, appSettings, state, now)
     val segments = when (syncResult) {
         is BandDataResult.Failure -> return null
@@ -172,6 +246,17 @@ private suspend fun readFreshSleepStateOrNull(context: Context, appSettings: App
         }
     }
     val config = resolveEngineConfig(state.debugOptions)
+    return detectSleepState(normalizeSegments(segments, now, config))
+}
+
+/**
+ * U6's pure seam: the sleep state the Debug screen's simulated timeline implies at [now], or null when the
+ * timeline is still empty - which the caller treats exactly like AWAKE, so an untouched simulator never
+ * cancels a nudge.
+ */
+internal fun simulatedSleepStateAt(events: List<SimulatedSleepEvent>, now: Instant, config: EngineConfig): SleepState? {
+    val segments = buildSimulatedSegments(events, now)
+    if (segments.isEmpty()) return null
     return detectSleepState(normalizeSegments(segments, now, config))
 }
 

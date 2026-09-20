@@ -1,5 +1,6 @@
 package com.nikita.sleepcycle.ui.state
 
+import com.nikita.sleepcycle.night.SIMULATION_SPEEDS
 import java.time.LocalTime
 
 /** The one immutable state the whole UI renders from. Every composable is a pure function of this plus callbacks. */
@@ -36,13 +37,18 @@ data class UiState(
             logs = LogsUiState(emptyList()),
             debug = DebugUiState(
                 simulatedBandData = false,
-                fastNight = false,
+                simulatedBandDataControlEnabled = true,
+                speed = 1,
+                availableSpeeds = SIMULATION_SPEEDS,
+                simulatedTimeControlEnabled = false,
                 simulatedTimeline = emptyList(),
-                canFallAsleep = true,
-                canWakeUp = false,
-                canFallBackAsleep = false,
+                simulatedAsleep = false,
+                sleepControlEnabled = false,
                 canClearSimulatedSleep = false,
                 canRingTestAlarm = true,
+                jumpAllowedNow = false,
+                resetToRealTimeAllowedNow = true,
+                currentVirtualTime = LocalTime.MIDNIGHT,
             ),
             errorMessage = null,
         )

@@ -13,8 +13,10 @@ import com.nikita.sleepcycle.alarm.cancelOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.cancelPhoneAlarm
 import com.nikita.sleepcycle.alarm.readAlarmNotificationReadiness
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
+import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.stopAlarmRinging
 import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.computeAlarmPlan
 import kotlinx.coroutines.CoroutineScope
@@ -116,7 +118,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
                         "pickedCycles" to settings.pickedCycles.toString(),
                         "deadline" to (settings.deadline?.toString() ?: "none"),
                         "simulatedBandData" to debugOptions.simulatedBandData.toString(),
-                        "fastNight" to debugOptions.fastNight.toString()
+                        "speed" to debugOptions.speed.toString()
                     ) + nightStartTimezoneFields(now, zone)
                 ),
                 debugOptions.isAnyEnabled
@@ -199,16 +201,62 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
     clearNightState(context)
     stopNightService(context)
     nightStateFlow.value = null
-    // A1: every debug switch resets to off when a night ends, so a simulated night can never leak into the
-    // next one just because the Debug screen was left as it was.
-    writeDebugOptions(context, DebugOptions(), now)
+    // A1/T7: every debug switch (and any active clock warp) resets when a night ends, so a simulated night can
+    // never leak into the next one just because the Debug screen was left as it was. T4: `changedAt` feeds the
+    // REAL-world idle-reset guard (shouldAutoResetDebugOptions), so this is Instant.now() on purpose, not the
+    // virtual `now` this function's every other write uses.
+    resetDebugOptionsAndClock(context, Instant.now())
     state?.let { EndNightReport(it, now) }
+}
+
+/**
+ * V5: whether a pending out-of-bed nudge, armed under the OLD [ClockWarp] mapping, should be re-armed after a
+ * speed change - true exactly when one is pending AND its own virtual instant is still ahead of [now] (which
+ * must already be recomputed under the NEW warp - see [rearmAfterSpeedChange]'s own doc on ordering). Mirrors
+ * [BootReceiver]'s own `restorePendingOutOfBedNudge` convention for a reboot: an already-overdue pending nudge
+ * is left alone rather than force-armed at whatever stale real instant AlarmManager still holds for it - the
+ * same accepted trade-off, now applied to a speed change instead of a reboot. `internal`, not `private`: the
+ * one pure decision seam, JVM-testable directly without a Context.
+ */
+internal fun shouldRearmPendingNudge(pendingNudgeAt: Instant?, now: Instant): Boolean =
+    pendingNudgeAt != null && pendingNudgeAt.isAfter(now)
+
+/**
+ * V5: after a mid-night speed change has re-anchored [AppClock]'s own warp
+ * ([com.nikita.sleepcycle.ui.DebugScreenController.setSpeed]), re-arms every outstanding virtual-time event that
+ * was armed under the OLD mapping and does not self-heal on its own:
+ *
+ * - The wake alarm and the next tick DO self-heal, but only once the NEXT tick actually runs - which is itself
+ *   armed on the stale mapping. [cancelTick] then [requestImmediateTick] forces that tick to happen right now,
+ *   under the new mapping, replanning and re-arming both.
+ * - The out-of-bed nudge and its own pre-nudge check are armed ONCE, when the alarm that started them fires
+ *   (PhoneAlarmReceiver.armOutOfBedNudge), and never recomputed after that on their own - re-armed here from
+ *   the nudge's own stored virtual instant ([readOutOfBedNudgePendingAt]) via [shouldRearmPendingNudge].
+ *   AlarmManager replaces by request code, so re-arming an already-armed alarm is idempotent (see
+ *   PhoneAlarmScheduler.kt).
+ *
+ * Order matters (the caller's own responsibility): [AppClock]'s warp must already be live before this runs, so
+ * every `nowInstant()`/`AppClock.toRealInstant` call below sees the NEW mapping, never the one this speed
+ * change just replaced.
+ */
+suspend fun rearmAfterSpeedChange(context: Context) {
+    val now = nowInstant()
+    val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
+    if (shouldRearmPendingNudge(pendingNudgeAt, now)) {
+        val at = requireNotNull(pendingNudgeAt)
+        scheduleOutOfBedAlarm(context, at)
+        // resolveEngineConfig always returns the real EngineConfig regardless of debug options (T7), so reading
+        // it plain here is equivalent and avoids a night-state load just for one duration.
+        schedulePreNudgeCheck(context, at.minus(EngineConfig().preNudgeCheckLead))
+    }
+    cancelTick(context)
+    requestImmediateTick(context)
 }
 
 /** Asks the tracking service to run one sync-plan cycle right away, e.g. when the user opens the Night screen. Goes through the same transaction lock as every other tick. */
 fun requestImmediateTick(context: Context) {
     controllerScope.launch {
-        val newState = runNightTick(context, Instant.now())
+        val newState = runNightTick(context, nowInstant())
         if (newState != null) {
             nightStateFlow.value = newState
             finishNightIfNeeded(context, newState)
@@ -256,7 +304,8 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
     if (state.lastPlan?.mode != AlarmMode.FINISHED) return
     withNightTransactionLock {
         val loaded = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock
-        val now = Instant.now()
+        // T4: virtual - see nightEndFields/logNightClosingSummary/MorningReportSnapshot's own doc.
+        val now = nowInstant()
         appendNightLog(context, loaded.startedAt, NightLogEvent(now, "night_end", nightEndFields(loaded, now)), loaded.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, loaded, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(loaded, now)) }
@@ -268,7 +317,8 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
         cancelTick(context)
         clearNightState(context)
         nightStateFlow.value = null
-        writeDebugOptions(context, DebugOptions(), now)
+        // A1/T7: see endNightLocked's own comment on resetDebugOptionsAndClock - same reasoning applies here.
+        resetDebugOptionsAndClock(context, Instant.now())
         // H3: last on purpose - see this function's own doc.
         stopNightService(context)
     }

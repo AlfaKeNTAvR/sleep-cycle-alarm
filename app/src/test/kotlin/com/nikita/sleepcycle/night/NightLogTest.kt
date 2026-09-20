@@ -2,8 +2,6 @@ package com.nikita.sleepcycle.night
 
 import org.json.JSONObject
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.File
 import java.nio.file.Files
@@ -80,30 +78,45 @@ class NightLogTest {
     }
 
     /**
-     * Reproduces the defect from night-20260917-2143.jsonl: a call site captures `now` early, does some I/O,
-     * then appends afterwards, so the event's own `at` is earlier than lines already on disk. [appendLogLine]
-     * must stamp the moment of the write itself, so file order and `at` order always agree regardless of what
-     * instant the caller happened to build the event with.
+     * V9 REVERSES this file's own older test here ("appendLogLine stamps the moment of the write, not the
+     * event's own possibly-stale at"): [appendLogLine] used to overwrite every event's `at` with `nowInstant()`
+     * at write time, which the old test modelled as fixing an out-of-order write. That blanket re-stamp broke
+     * something worse than it fixed: the debug test-alarm events and `clock_jumped` deliberately pass a REAL or
+     * pre-jump instant (T8, DebugScreenController.applyClockJump), and the re-stamp silently overwrote both
+     * with a virtual `nowInstant()` - for `clock_jumped`, one that was already past the jump, so the event
+     * ended up stamped with the time it jumped TO instead of the time it happened. See appendLogLine's own doc
+     * for the full reasoning, including why the "out of order" risk this used to guard against was, in
+     * practice, at most cosmetic. [appendLogLine] now honours [NightLogEvent.at] exactly as the caller built it.
      */
     @Test
-    fun `appendLogLine stamps the moment of the write, not the event's own possibly-stale at`() {
-        val file = File.createTempFile("night-log-order-test", ".jsonl")
+    fun `appendLogLine honours the caller's own at exactly, never re-stamping it`() {
+        val file = File.createTempFile("night-log-at-test", ".jsonl")
         file.deleteOnExit()
 
-        // Simulates night_end: built with an instant captured BEFORE some intervening I/O, but appended after.
-        val staleAt = Instant.parse("2026-09-17T01:44:10Z")
-        val earlierEvent = NightLogEvent(staleAt, "band_alarm_table", emptyMap())
-        appendLogLine(file, earlierEvent)
-        val laterEvent = NightLogEvent(staleAt.minusSeconds(5), "night_end", emptyMap())
-        appendLogLine(file, laterEvent)
+        // A deliberately real, pre-jump instant - exactly what DebugScreenController.applyClockJump passes for
+        // a clock_jumped event (V9's own named case).
+        val deliberateAt = Instant.parse("2026-09-17T01:44:10Z")
+        val event = NightLogEvent(deliberateAt, "clock_jumped", mapOf("to" to "2026-09-18T03:00:00Z"))
+
+        appendLogLine(file, event)
+
+        val line = Files.readAllLines(file.toPath()).single()
+        assertEquals(deliberateAt, Instant.parse(JSONObject(line).getString("at")), "appendLogLine must not overwrite the caller's own deliberately-chosen at")
+        assertEquals(event, parseNightLogLine(line))
+    }
+
+    @Test
+    fun `two events appended in sequence each keep their own distinct caller-supplied at`() {
+        val file = File.createTempFile("night-log-at-sequence-test", ".jsonl")
+        file.deleteOnExit()
+
+        val firstAt = Instant.parse("2026-09-17T01:44:10Z")
+        val secondAt = Instant.parse("2026-09-17T01:44:15Z")
+        appendLogLine(file, NightLogEvent(firstAt, "sync", emptyMap()))
+        appendLogLine(file, NightLogEvent(secondAt, "data", emptyMap()))
 
         val lines = Files.readAllLines(file.toPath())
-        assertEquals(2, lines.size)
-        val firstAt = Instant.parse(JSONObject(lines[0]).getString("at"))
-        val secondAt = Instant.parse(JSONObject(lines[1]).getString("at"))
-
-        assertFalse(secondAt.isBefore(firstAt), "the second line written must never read as earlier than the first")
-        assertTrue(firstAt != staleAt, "the write-time stamp must not just echo the caller's own possibly-stale at")
-        assertTrue(secondAt != staleAt.minusSeconds(5), "the write-time stamp must not just echo the caller's own possibly-stale at")
+        assertEquals(firstAt, Instant.parse(JSONObject(lines[0]).getString("at")))
+        assertEquals(secondAt, Instant.parse(JSONObject(lines[1]).getString("at")))
     }
 }

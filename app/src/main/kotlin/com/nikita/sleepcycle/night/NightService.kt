@@ -72,7 +72,9 @@ class NightService : Service() {
         val wakeLock = acquireWakeLock(this)
         serviceScope.launch {
             try {
-                val newState = runNightTick(this@NightService, Instant.now(), scheduledFor, receivedAt)
+                // T4: virtual - this is the tick's own entry time (see NightOrchestrator.runNightTickLocked's
+                // `now` param), not a real-time measurement.
+                val newState = runNightTick(this@NightService, nowInstant(), scheduledFor, receivedAt)
                 handleTickResult(newState, startId)
             } catch (error: CancellationException) {
                 // H3: a FINISHED tick's own bookkeeping (finishNightIfNeeded) stops this very service, which
@@ -113,9 +115,10 @@ class NightService : Service() {
         val state = loadNightState(this)
         val debugOptions = state?.debugOptions ?: DebugOptions()
         state?.let {
-            appendNightLog(this, it.startedAt, NightLogEvent(Instant.now(), "error", mapOf("step" to "tick", "cause" to (error.message ?: error.toString()))), debugOptions.isAnyEnabled)
+            appendNightLog(this, it.startedAt, NightLogEvent(nowInstant(), "error", mapOf("step" to "tick", "cause" to (error.message ?: error.toString()))), debugOptions.isAnyEnabled)
         }
-        scheduleTick(this, Instant.now().plus(resolveEngineConfig(debugOptions).normalSyncDelay))
+        // T4/T6: virtual - scheduleTick converts to the real AlarmManager/in-process instant itself.
+        scheduleTick(this, nowInstant().plus(resolveEngineConfig(debugOptions).normalSyncDelay))
     }
 
     private fun stopTracking(startId: Int) {
@@ -205,11 +208,16 @@ private fun buildNotification(
         .build()
 }
 
+/** T12 (amended): SIMULATED_TIME's own notification label carries the live "HH:mm[, Nx]" reading - [debugOptions.warp] is this night's own FROZEN warp (see NightState.debugOptions's own doc), and [nowInstant] recovers the matching virtual instant to format it against. */
 private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): String {
+    val zone = ZoneId.systemDefault()
     val labels = activeDebugSwitches(debugOptions).map { switch ->
         when (switch) {
             ActiveDebugSwitch.SIMULATED_SLEEP_DATA -> context.getString(R.string.debug_switch_simulated_sleep_data)
-            ActiveDebugSwitch.FAST_NIGHT -> context.getString(R.string.debug_switch_fast_night)
+            ActiveDebugSwitch.SIMULATED_TIME -> {
+                val value = debugOptions.warp?.let { formatSimulatedTimeValue(it, nowInstant(), zone) } ?: ""
+                context.getString(R.string.debug_switch_simulated_time, value)
+            }
         }
     }
     return if (labels.isEmpty()) "" else "[${labels.joinToString(" · ")}] "

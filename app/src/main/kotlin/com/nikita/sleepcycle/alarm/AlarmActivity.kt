@@ -42,9 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.nikita.sleepcycle.night.endNight
+import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import kotlinx.coroutines.launch
-import java.time.Instant
 
 class AlarmActivity : ComponentActivity() {
     private var isOutOfBed by mutableStateOf(false)
@@ -97,7 +97,8 @@ class AlarmActivity : ComponentActivity() {
      */
     private fun confirmAwakeAndFinish() {
         stopAlarmRinging(this)
-        val now = Instant.now()
+        // T4: virtual - awakeConfirmedAt is recorded into night state, which is entirely in virtual time.
+        val now = nowInstant()
         lifecycleScope.launch { endNight(applicationContext, now, awakeConfirmedAt = now) }
         finish()
     }

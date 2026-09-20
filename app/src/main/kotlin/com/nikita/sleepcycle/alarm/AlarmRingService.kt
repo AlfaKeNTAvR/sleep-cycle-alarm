@@ -15,6 +15,18 @@ package com.nikita.sleepcycle.alarm
 // was actually true on THIS instance, which is only ever the case when the service was already running and
 // ringing; a reason distinguishes the ringing alarm's own Stop button/notification action from endNight
 // stopping a (possibly non-ringing) alarm because the night itself ended.
+//
+// V1: [startRinging]'s own auto-stop used to post its Handler at a REAL millis delay taken straight from
+// EngineConfig.ringAutoStopAfter, while outOfBedDelay and preNudgeCheckLead reach AlarmManager through
+// AppClock.toRealInstant and so compress with the simulated-clock speed - meaning validateConfig's own
+// `outOfBedDelay > ringAutoStopAfter` invariant was comparing quantities on two DIFFERENT clocks above 1x, and
+// was false in practice (ringAutoStopAfter stayed a full 9 REAL minutes while the nudge's own 15 virtual
+// minutes compressed to seconds). The nudge would then fire into a ring that had not auto-stopped yet, and F1's
+// own non-idempotent restart would keep the phone ringing continuously through a simulated morning. Fixed by
+// computing the auto-stop as a VIRTUAL instant (`nowInstant() + autoStopAfter`) and converting THAT through
+// [AppClock.toRealInstant] before posting the handler - the same T5 conversion point every other duration in
+// this trio already uses, so all three compress together and validateConfig's invariant means what it says
+// again.
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -37,8 +49,10 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.engine.EngineConfig
+import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendToCurrentNightLog
+import com.nikita.sleepcycle.night.nowInstant
 import java.time.Duration
 import java.time.Instant
 
@@ -110,19 +124,32 @@ class AlarmRingService : Service() {
         isRinging = true
         appendToCurrentNightLog(
             this,
-            NightLogEvent(Instant.now(), "alarm_ring_started", mapOf("fullScreenIntentAllowed" to canUseFullScreenIntent(this).toString()))
+            NightLogEvent(nowInstant(), "alarm_ring_started", mapOf("fullScreenIntentAllowed" to canUseFullScreenIntent(this).toString()))
         )
         val chosen = startAlarmSound(this)
         mediaPlayer = chosen.player
         appendToCurrentNightLog(
             this,
             NightLogEvent(
-                Instant.now(), "alarm_sound_chosen",
+                nowInstant(), "alarm_sound_chosen",
                 mapOf("source" to chosen.source, "failedSources" to chosen.failedSources.joinToString(","))
             )
         )
         vibrate(this)
-        stopHandler.postDelayed(stopRunnable, autoStopAfter.toMillis())
+        stopHandler.postDelayed(stopRunnable, realAutoStopDelayMillis(autoStopAfter))
+    }
+
+    /**
+     * V1: [autoStopAfter] is a VIRTUAL duration (EngineConfig.ringAutoStopAfter) - converts `nowInstant() +
+     * autoStopAfter` (the virtual instant the ring must stop by) through [AppClock.toRealInstant] and returns
+     * the REAL delay from here to there, floored at zero (a conversion landing at or before now, e.g. from
+     * clock arithmetic at the moment a speed change lands, must never produce a negative Handler delay). See
+     * this file's own header for why this must compress with speed exactly like outOfBedDelay/preNudgeCheckLead do.
+     */
+    private fun realAutoStopDelayMillis(autoStopAfter: Duration): Long {
+        val virtualStopAt = nowInstant().plus(autoStopAfter)
+        val realStopAt = AppClock.toRealInstant(virtualStopAt)
+        return Duration.between(Instant.now(), realStopAt).toMillis().coerceAtLeast(0)
     }
 
     /** Stops the sound, vibration and the pending auto-stop only - never the service, the notification or the wake lock. Shared by [startRinging]'s restart path (F1) and as the first step of [stopRinging] itself. */
@@ -140,7 +167,7 @@ class AlarmRingService : Service() {
      */
     private fun stopRinging(reason: String) {
         if (isRinging) {
-            appendToCurrentNightLog(this, NightLogEvent(Instant.now(), "alarm_stopped", mapOf("reason" to reason)))
+            appendToCurrentNightLog(this, NightLogEvent(nowInstant(), "alarm_stopped", mapOf("reason" to reason)))
         }
         stopRingingArtifacts()
         runGuarded("release the alarm wake lock") { releaseAlarmWakeLock() }

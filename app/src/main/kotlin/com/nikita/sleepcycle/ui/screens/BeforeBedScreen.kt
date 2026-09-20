@@ -60,7 +60,7 @@ fun BeforeBedScreen(
         }
         Text(text = stringResource(R.string.before_bed_title), style = MaterialTheme.typography.headlineLarge)
 
-        DebugBanner(state.activeDebugSwitches)
+        DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
 
         SettingsCard {
             ToggleRow(

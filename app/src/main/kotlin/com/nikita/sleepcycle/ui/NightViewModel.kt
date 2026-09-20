@@ -24,6 +24,9 @@ import com.nikita.sleepcycle.night.endNight as endNightTracking
 import com.nikita.sleepcycle.night.listNightLogs
 import com.nikita.sleepcycle.night.loadMorningReport
 import com.nikita.sleepcycle.night.loadNightState
+import com.nikita.sleepcycle.night.UI_TICKER_INTERVAL_MS
+import com.nikita.sleepcycle.night.nowInstant
+import com.nikita.sleepcycle.night.uiTickerIntervalMillis
 import com.nikita.sleepcycle.night.observedNightState
 import com.nikita.sleepcycle.night.publishNightState
 import com.nikita.sleepcycle.night.readAppSettings
@@ -76,7 +79,8 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 
-private const val TICKER_INTERVAL_MS = 30_000L
+/** W1: the flow-sharing timeout keeps the app's ordinary half-minute cadence - it is about how long to keep collecting after the last subscriber leaves, not about how often the clock is read. */
+private const val TICKER_INTERVAL_MS = UI_TICKER_INTERVAL_MS
 
 private data class CoreInputs(
     val appSettings: AppSettings?,
@@ -124,7 +128,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     // for where it changes. Surviving rotation and backgrounding falls out for free: like `screen` itself,
     // this only needs to outlive the ViewModel, not the process.
     private val setupWizardPageState = MutableStateFlow<SetupWizardPage?>(null)
-    private val now = MutableStateFlow(Instant.now())
+    // T4: virtual - drives every timer/countdown the whole UI shows.
+    private val now = MutableStateFlow(nowInstant())
     private val screenVisible = MutableStateFlow(false)
     private val permissionStatus = MutableStateFlow(PermissionStatus.unknown())
     private val gadgetbridgeInstalled = MutableStateFlow(false)
@@ -252,16 +257,27 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Ticks [now] every 30 s while a screen is visible; pauses entirely while the app is backgrounded. */
+    /**
+     * Ticks [now] while a screen is visible; pauses entirely while the app is backgrounded.
+     *
+     * W1: the cadence follows the simulated clock's speed ([uiTickerIntervalMillis]) rather than being a flat
+     * 30 s, and the whole loop restarts whenever the warp changes - so it re-samples immediately. Both halves
+     * matter and both were wrong: tapping "Reset to real time" updated the speed chip at once (that comes
+     * straight from DataStore) while the time readout kept showing the old simulated time for up to 30 real
+     * seconds, which reads as the control not working; and while sped up, the readout stood still and then
+     * jumped by however much simulated time those 30 seconds covered.
+     */
     private fun watchScreenVisibilityTicker() {
         viewModelScope.launch {
-            screenVisible.collectLatest { visible ->
-                if (!visible) return@collectLatest
-                while (true) {
-                    now.value = Instant.now()
-                    delay(TICKER_INTERVAL_MS)
+            combine(screenVisible, debug.storedOptions) { visible, options -> visible to options.speed }
+                .collectLatest { (visible, speed) ->
+                    if (!visible) return@collectLatest
+                    val interval = uiTickerIntervalMillis(speed)
+                    while (true) {
+                        now.value = nowInstant()
+                        delay(interval)
+                    }
                 }
-            }
         }
     }
 
@@ -372,6 +388,13 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         if (mac.isNullOrBlank() || uri == null) return
         viewModelScope.launch {
             connectionTest.value = ConnectionTestState.Running
+            // U4 SUPERSEDES the part 1 sweep: this feeds checkDataFreshness against a REAL band sample
+            // timestamp (Gadgetbridge's own export), so it must stay real - added to T4's exception list
+            // alongside BandDataSync/DebugSettingsStore's own idle guard/NightState's quarantine name/
+            // DebugTestAlarm. Also feeds lastSetupCheckPassedAt, but that is safe too: startNightGate skips its
+            // own recency comparison entirely whenever simulatedBandData is on (SetupCompleteness.kt), and U1
+            // guarantees the clock can only be warped when simulatedBandData is on - so this real timestamp is
+            // never compared against a virtual `now` anywhere it would matter.
             val now = Instant.now()
             val report = try {
                 runSetupCheck(context, mac, uri, now)
@@ -403,7 +426,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private fun beginNight() {
         val settings = appSettings.value ?: return
         val debugOptions = debug.effectiveOptions()
-        val startedAt = Instant.now()
+        // T4: virtual - becomes NightState.startedAt.
+        val startedAt = nowInstant()
         val deadline = deadlineInstantFor(settings, startedAt, currentZone())
         val cycles = resolvePickedCycles(settings.pickedCycles, startedAt, deadline, debugOptions)
         val nightSettings = NightSettings(
@@ -444,7 +468,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         confirmingEndNight.value = false
         endingNight.value = true
         viewModelScope.launch {
-            val report = endNightTracking(context, Instant.now())
+            // T4: virtual - endNight records this into night_end/the morning report, both virtual-time.
+            val report = endNightTracking(context, nowInstant())
             if (report != null) {
                 cachedMorningReport.value = CachedMorningReport(buildNightEngineView(report.nightState, report.endedAt))
                 morningReportEndedAt.value = report.endedAt
@@ -473,11 +498,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     // Debug screen actions: thin delegates to DebugScreenController.kt, which owns the actual state.
     fun setSimulatedBandData(enabled: Boolean) = debug.setSimulatedBandData(enabled)
-    fun setFastNight(enabled: Boolean) = debug.setFastNight(enabled)
-    fun fellAsleepNow() = debug.fellAsleepNow()
-    fun wokeUpNow() = debug.wokeUpNow()
-    fun fellBackAsleepNow() = debug.fellBackAsleepNow()
+    fun setSpeed(speed: Int) = debug.setSpeed(speed)
+    fun setSimulatedAsleep(asleep: Boolean) = debug.setSimulatedAsleep(asleep)
     fun clearSimulatedSleep() = debug.clearSimulatedSleep()
+    fun applyClockJump(time: LocalTime) = debug.applyClockJump(time)
+    fun resetClockToRealTime() = debug.resetToRealTime()
     fun ringDebugTestAlarm() = debug.ringTestAlarm()
 }
 

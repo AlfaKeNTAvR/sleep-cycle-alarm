@@ -37,7 +37,7 @@ fun NightScreen(
     onOpenDebug: () -> Unit = {},
 ) {
     ScreenContainer(scrollable = false, bottomPadding = ScreenBottomPadding) {
-        DebugBanner(state.activeDebugSwitches)
+        DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
         // BuildConfig.DEBUG-gated, same as the Debug row on Setup (SetupScreen.kt): the simulator's buttons
         // need to be reachable while a simulated night is actually running, not just before it starts.
         if (BuildConfig.DEBUG) {

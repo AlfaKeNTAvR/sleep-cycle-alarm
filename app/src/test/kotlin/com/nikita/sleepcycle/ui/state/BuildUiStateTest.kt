@@ -4,12 +4,14 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
+import com.nikita.sleepcycle.night.ClockWarp
 import com.nikita.sleepcycle.night.DebugOptions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 private fun state(
     appSettings: com.nikita.sleepcycle.night.AppSettings = testAppSettings(),
@@ -211,14 +213,15 @@ class DebugWarningBannerTest {
         assertEquals(listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA), result.beforeBed.activeDebugSwitches)
     }
 
-    @Test fun `night screen names every active switch while asleep, not just fast night`() {
+    @Test fun `night screen names every active switch while asleep, not just simulated time`() {
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
-        val debugOptions = DebugOptions(simulatedBandData = true, fastNight = true)
+        val warp = ClockWarp(60, Instant.parse("2026-09-17T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"))
+        val debugOptions = DebugOptions(simulatedBandData = true, warp = warp)
         val night = testNightState(lastPlan = plan, debugOptions = debugOptions)
         val view = testEngineView(SleepState.ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night, debugOptions = debugOptions)
         assertEquals(
-            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.FAST_NIGHT),
+            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.SIMULATED_TIME),
             result.night!!.activeDebugSwitches
         )
     }
@@ -227,7 +230,7 @@ class DebugWarningBannerTest {
         val view = testEngineView(SleepState.AWAKE)
         val result = state(
             nightState = null, engineView = view, showingMorningReport = true, morningReportEndedAt = "2026-09-17T06:50",
-            screen = Screen.Night, debugOptions = DebugOptions(fastNight = true),
+            screen = Screen.Night, debugOptions = DebugOptions(warp = ClockWarp(60, Instant.parse("2026-09-17T00:00:00Z"), Instant.parse("2026-09-17T00:00:00Z"))),
         )
         assertTrue(result.night!!.activeDebugSwitches.isEmpty())
     }

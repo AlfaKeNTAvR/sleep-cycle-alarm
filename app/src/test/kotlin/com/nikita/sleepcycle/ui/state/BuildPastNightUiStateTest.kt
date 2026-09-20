@@ -27,14 +27,14 @@ class BuildPastNightUiStateTest {
         summary: PastNightSummary,
         deadline: Instant? = Instant.parse("2026-09-18T06:30:00Z"),
         pickedCycles: Int? = 5,
-        fastNight: Boolean = false,
+        speed: Int = 1,
     ) = PastNightLog(
         summary = summary,
         startedAt = Instant.parse("2026-09-17T22:11:00Z"),
         endedAt = Instant.parse("2026-09-18T06:17:00Z"),
         deadline = deadline,
         pickedCycles = pickedCycles,
-        fastNight = fastNight,
+        speed = speed,
     )
 
     private val detailed = PastNightSummary.Detailed(
@@ -80,16 +80,21 @@ class BuildPastNightUiStateTest {
         assertEquals("7.5 h", state.pickedLengthLabel)
     }
 
+    /**
+     * T7: a simulated-time night's picked length always labels in real hours now - a fast debug night comes
+     * from warping the clock (SimulatedClock.kt), never from shrinking EngineConfig's own cycle length, so the
+     * picked length label no longer depends on the night's own speed at all.
+     */
     @Test
-    fun `a simulated fast night labels its picked length in minutes, not decimal hours`() {
+    fun `T7 a simulated-time night still labels its picked length in real hours, regardless of speed`() {
         val state = buildPastNightUiState(
             row(isSimulated = true),
-            log(detailed, pickedCycles = 3, fastNight = true),
+            log(detailed, pickedCycles = 3, speed = 60),
             TEST_ZONE
         )
 
         assertTrue(state.isSimulated)
-        assertEquals("15 min", state.pickedLengthLabel)
+        assertEquals("4.5 h", state.pickedLengthLabel)
     }
 
     @Test

@@ -2,7 +2,9 @@ package com.nikita.sleepcycle.night
 
 // File purpose: resolveDebugOptions is the ONE seam that decides whether debug options can take effect -
 // this is the test that a release build can never run a simulated night no matter what got left in DataStore.
-// Also A1: which switches are live (for the warning banner) and the idle-reset rule.
+// Also A1: which switches are live (for the warning banner) and the idle-reset rule. U3: isAnyEnabled and
+// activeDebugSwitches key off [DebugOptions.warp], not [DebugOptions.speed] - a jump at speed 1 counts as
+// simulated time too.
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -12,7 +14,10 @@ import java.time.Duration
 import java.time.Instant
 
 class DebugOptionsTest {
-    private val allOn = DebugOptions(simulatedBandData = true, fastNight = true)
+    private val anchorReal = Instant.parse("2026-09-17T20:00:00Z")
+    private val anchorVirtual = Instant.parse("2026-09-18T03:00:00Z")
+    private val speedWarp = ClockWarp(speed = 60, anchorReal = anchorReal, anchorVirtual = anchorReal)
+    private val allOn = DebugOptions(simulatedBandData = true, warp = speedWarp)
 
     @Test
     fun `a release build always resolves to all-off, regardless of what is stored`() {
@@ -30,7 +35,7 @@ class DebugOptionsTest {
     }
 
     @Test
-    fun `isAnyEnabled is false when every switch is off`() {
+    fun `isAnyEnabled is false when every switch is off and there is no warp`() {
         assertEquals(false, DebugOptions().isAnyEnabled)
     }
 
@@ -40,8 +45,26 @@ class DebugOptionsTest {
     }
 
     @Test
-    fun `isAnyEnabled is true when only fast night is on`() {
-        assertEquals(true, DebugOptions(fastNight = true).isAnyEnabled)
+    fun `isAnyEnabled is true when a warp is active, even with speed left at 1 (U2's jump-at-1x state)`() {
+        val jumpAtOneX = ClockWarp(speed = 1, anchorReal = anchorReal, anchorVirtual = anchorVirtual)
+        assertTrue(DebugOptions(warp = jumpAtOneX).isAnyEnabled)
+    }
+
+    /**
+     * V7 REPLACES this file's own older test here ("isAnyEnabled is false when speed is non-1 but no warp
+     * object is carried... the field, not speed, is the source of truth"): that scenario - a non-1 speed with
+     * no warp - used to be constructible at all, because `speed` was its own settable field alongside `warp`.
+     * V7 deletes that field; `speed` is now DERIVED (`warp?.speed ?: 1`), so the disagreeing state the old test
+     * defended against is no longer just unlikely, it is impossible to even construct - the compiler enforces
+     * what that test used to check at runtime.
+     */
+    @Test
+    fun `V7 speed is always derived from warp - there is no way to construct one that disagrees with the other`() {
+        assertEquals(1, DebugOptions().speed)
+        assertEquals(1, DebugOptions(simulatedBandData = true).speed)
+        val warp = ClockWarp(speed = 600, anchorReal = anchorReal, anchorVirtual = anchorVirtual)
+        assertEquals(600, DebugOptions(warp = warp).speed)
+        assertEquals(warp.speed, DebugOptions(warp = warp).speed)
     }
 
     @Test
@@ -55,16 +78,40 @@ class DebugOptionsTest {
     }
 
     @Test
-    fun `activeDebugSwitches names fast night alone`() {
-        assertEquals(listOf(ActiveDebugSwitch.FAST_NIGHT), activeDebugSwitches(DebugOptions(fastNight = true)))
+    fun `activeDebugSwitches names simulated time alone when a warp is active`() {
+        assertEquals(listOf(ActiveDebugSwitch.SIMULATED_TIME), activeDebugSwitches(DebugOptions(warp = speedWarp)))
     }
 
     @Test
     fun `activeDebugSwitches names every switch that is on, in a stable order`() {
         assertEquals(
-            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.FAST_NIGHT),
+            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.SIMULATED_TIME),
             activeDebugSwitches(allOn)
         )
+    }
+
+    // ---- U1: the speed selector and jump require simulated band data -------------------------------------
+
+    @Test
+    fun `the speed selector is allowed only while simulated band data is on`() {
+        assertTrue(isSpeedSelectorAllowed(simulatedBandData = true))
+        assertFalse(isSpeedSelectorAllowed(simulatedBandData = false))
+    }
+
+    @Test
+    fun `the jump action requires simulated band data on AND no active night`() {
+        assertTrue(isJumpToTimeAllowed(simulatedBandData = true, nightActive = false))
+        assertFalse(isJumpToTimeAllowed(simulatedBandData = false, nightActive = false))
+        assertFalse(isJumpToTimeAllowed(simulatedBandData = true, nightActive = true))
+        assertFalse(isJumpToTimeAllowed(simulatedBandData = false, nightActive = true))
+    }
+
+    // ---- V4: turning simulated band data off (or on) is refused outright while a night is active ------------
+
+    @Test
+    fun `the simulated band data toggle is allowed only while no night is active`() {
+        assertTrue(isSimulatedBandDataToggleAllowed(nightActive = false))
+        assertFalse(isSimulatedBandDataToggleAllowed(nightActive = true))
     }
 
     @Test

@@ -1,10 +1,12 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: the simulator's event-to-segment pure functions - fell asleep, woke, back asleep, repeated
-// presses, clear, and the open (most recent) segment extending to `now` on every call.
+// File purpose: the simulator's event-to-segment pure functions - the T9 "Asleep" toggle (ASLEEP/AWAKE),
+// repeated presses, clear, T10's control gating, and the open (most recent) segment extending to `now` on
+// every call.
 
 import com.nikita.sleepcycle.engine.SegmentKind
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -21,8 +23,8 @@ class BandDataSimulatorTest {
     }
 
     @Test
-    fun `fell asleep opens one LIGHT segment extended to now`() {
-        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
+    fun `asleep opens one LIGHT segment extended to now`() {
+        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
 
         val segments = buildSimulatedSegments(events, t1)
 
@@ -34,7 +36,7 @@ class BandDataSimulatorTest {
 
     @Test
     fun `the open segment keeps extending to a later now on a later tick`() {
-        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
+        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
 
         val segments = buildSimulatedSegments(events, t3)
 
@@ -42,9 +44,9 @@ class BandDataSimulatorTest {
     }
 
     @Test
-    fun `woke up closes the sleep segment and opens an AWAKE one extended to now`() {
-        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, t1)
+    fun `awake closes the sleep segment and opens an AWAKE one extended to now`() {
+        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, t1)
 
         val segments = buildSimulatedSegments(events, t2)
 
@@ -58,10 +60,10 @@ class BandDataSimulatorTest {
     }
 
     @Test
-    fun `fell back asleep closes the awake segment and opens a new LIGHT one extended to now`() {
-        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, t1)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP, t2)
+    fun `asleep again after waking closes the awake segment and opens a new LIGHT one extended to now`() {
+        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, t1)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, t2)
 
         val segments = buildSimulatedSegments(events, t3)
 
@@ -72,36 +74,36 @@ class BandDataSimulatorTest {
     }
 
     @Test
-    fun `a repeated fell-asleep press is a no-op`() {
-        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
+    fun `a repeated asleep press is a no-op`() {
+        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
         val before = events
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.FELL_ASLEEP, t1)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, t1)
 
         assertEquals(before, events)
     }
 
     @Test
-    fun `a repeated woke-up press is a no-op`() {
-        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, t1)
+    fun `a repeated awake press is a no-op`() {
+        var events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, t1)
         val before = events
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.WOKE_UP, t2)
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, t2)
 
         assertEquals(before, events)
     }
 
     @Test
-    fun `fell-back-asleep before any woke-up event is a no-op`() {
-        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_BACK_ASLEEP, t0)
+    fun `awake before any asleep event (the very first press) is a no-op - null counts as AWAKE`() {
+        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.AWAKE, t0)
 
         assertTrue(events.isEmpty())
     }
 
     @Test
-    fun `woke-up before any fell-asleep event is a no-op`() {
-        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.WOKE_UP, t0)
+    fun `asleep is allowed as the very first press - null counts as AWAKE`() {
+        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
 
-        assertTrue(events.isEmpty())
+        assertEquals(1, events.size)
     }
 
     @Test
@@ -111,9 +113,22 @@ class BandDataSimulatorTest {
 
     @Test
     fun `isSimulatedSleepEventAllowed agrees with appendSimulatedSleepEvent's own no-op behaviour`() {
-        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.FELL_ASLEEP, t0)
-        assertEquals(false, isSimulatedSleepEventAllowed(events, SimulatedSleepEventKind.FELL_ASLEEP))
-        assertEquals(true, isSimulatedSleepEventAllowed(events, SimulatedSleepEventKind.WOKE_UP))
-        assertEquals(false, isSimulatedSleepEventAllowed(events, SimulatedSleepEventKind.FELL_BACK_ASLEEP))
+        val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)
+        assertEquals(false, isSimulatedSleepEventAllowed(events, SimulatedSleepEventKind.ASLEEP))
+        assertEquals(true, isSimulatedSleepEventAllowed(events, SimulatedSleepEventKind.AWAKE))
+    }
+
+    @Test
+    fun `isSimulatedSleepEventAllowed treats no events yet as the AWAKE state`() {
+        assertEquals(true, isSimulatedSleepEventAllowed(emptyList(), SimulatedSleepEventKind.ASLEEP))
+        assertEquals(false, isSimulatedSleepEventAllowed(emptyList(), SimulatedSleepEventKind.AWAKE))
+    }
+
+    // ---- T10: the sleep toggle and Clear require simulated band data -----------------------------------
+
+    @Test
+    fun `the sleep control is allowed only while simulated band data is on`() {
+        assertTrue(isSimulatedSleepControlAllowed(simulatedBandData = true))
+        assertFalse(isSimulatedSleepControlAllowed(simulatedBandData = false))
     }
 }

@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.ui.state
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.activeDebugSwitches
+import com.nikita.sleepcycle.night.formatSimulatedTimeValue
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
 import com.nikita.sleepcycle.night.sleepLengthFor
 import com.nikita.sleepcycle.night.sleepLengthIsAvailable
@@ -59,7 +60,7 @@ fun buildBeforeBedUiState(
     val sleepLengthOptions = sleepLengthCycleOptions.map { cycles ->
         SleepLengthOption(
             cycles = cycles,
-            hoursLabel = formatSleepLengthLabel(sleepLengthFor(cycles, debugOptions), debugOptions.fastNight),
+            hoursLabel = formatSleepLengthLabel(sleepLengthFor(cycles, debugOptions)),
             selected = cycles == resolvedCycles,
             available = sleepLengthIsAvailable(cycles, now, deadline, debugOptions),
         )
@@ -75,6 +76,7 @@ fun buildBeforeBedUiState(
         startNightBlocker = startNightBlocker(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions),
         startNightBlockedBySetupCheck = gate.blockedBySetupCheck,
         activeDebugSwitches = activeDebugSwitches(debugOptions),
+        simulatedTimeValue = debugOptions.warp?.let { formatSimulatedTimeValue(it, now, zone) },
         confirmingDebugNightStart = confirmingDebugNightStart,
     )
 }

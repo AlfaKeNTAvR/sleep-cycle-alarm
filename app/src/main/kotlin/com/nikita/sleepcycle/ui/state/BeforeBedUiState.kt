@@ -23,6 +23,8 @@ data class BeforeBedUiState(
     val startNightBlockedBySetupCheck: Boolean,
     /** A1: every debug switch currently live: shows the amber warning banner naming all of them when non-empty. */
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
+    /** T12 (amended): the live simulated-clock reading, e.g. "03:15" or "03:15, 60x" - null when not warped. Formats [ActiveDebugSwitch.SIMULATED_TIME]'s own banner label; see [com.nikita.sleepcycle.night.formatSimulatedTimeValue]. */
+    val simulatedTimeValue: String? = null,
     /** True while "Start night" is asking the owner to confirm a simulated night (any debug option on) before it actually starts. */
     val confirmingDebugNightStart: Boolean = false,
 )
