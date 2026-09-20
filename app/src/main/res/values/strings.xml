@@ -162,7 +162,7 @@
     <string name="debug_clear_simulated_sleep_button">Clear simulated sleep</string>
     <string name="debug_timeline_title">Simulated timeline</string>
     <string name="debug_timeline_empty">No simulated events yet.</string>
-    <string name="debug_timeline_entry">%1$s  %2$s → %3$s</string>
+    <string name="debug_timeline_entry">%1$s  %2$s → %3$s  (%4$s)</string>
     <string name="debug_jump_section_title">Set simulated time</string>
     <string name="debug_reset_to_real_time_button">Reset to real time</string>
     <string name="debug_jump_night_active_reason">Not available while a night is active.</string>

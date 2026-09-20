@@ -15,7 +15,8 @@ package com.nikita.sleepcycle.ui.state
 import java.time.LocalTime
 
 /** One line of the simulated sleep timeline: kind, from, to - exactly as the task spec asks for it. */
-data class SimulatedSleepLine(val kindLabel: String, val fromTimeLabel: String, val toTimeLabel: String)
+/** [durationLabel] (W5) is how long that segment lasted - two clock times alone make the reader subtract, and the last segment's grows on every refresh, which is the clearest sign the simulated clock is actually running. */
+data class SimulatedSleepLine(val kindLabel: String, val fromTimeLabel: String, val toTimeLabel: String, val durationLabel: String)
 
 /** Everything the Debug screen shows and can act on. */
 data class DebugUiState(

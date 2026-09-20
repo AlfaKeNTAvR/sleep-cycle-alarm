@@ -17,6 +17,8 @@ import com.nikita.sleepcycle.night.isSimulatedBandDataToggleAllowed
 import com.nikita.sleepcycle.night.isSimulatedSleepControlAllowed
 import com.nikita.sleepcycle.night.isSpeedSelectorAllowed
 import com.nikita.sleepcycle.ui.format.formatClockTime
+import com.nikita.sleepcycle.ui.format.formatDuration
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
@@ -24,7 +26,12 @@ import java.time.ZoneId
 fun buildDebugUiState(debugOptions: DebugOptions, simulatedEvents: List<SimulatedSleepEvent>, now: Instant, zone: ZoneId, nightActive: Boolean): DebugUiState {
     val segments = buildSimulatedSegments(simulatedEvents, now)
     val timeline = segments.map { segment ->
-        SimulatedSleepLine(kindLabel = segment.kind.name, fromTimeLabel = formatClockTime(segment.start, zone), toTimeLabel = formatClockTime(segment.end, zone))
+        SimulatedSleepLine(
+            kindLabel = segment.kind.name,
+            fromTimeLabel = formatClockTime(segment.start, zone),
+            toTimeLabel = formatClockTime(segment.end, zone),
+            durationLabel = formatDuration(Duration.between(segment.start, segment.end)),
+        )
     }
     val simulatedTimeControlEnabled = isSpeedSelectorAllowed(debugOptions.simulatedBandData)
     val sleepControlEnabled = isSimulatedSleepControlAllowed(debugOptions.simulatedBandData)

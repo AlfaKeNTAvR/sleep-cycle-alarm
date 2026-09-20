@@ -132,7 +132,7 @@ fun DebugScreen(
             }
             state.simulatedTimeline.forEach { line ->
                 Text(
-                    text = stringResource(R.string.debug_timeline_entry, line.kindLabel, line.fromTimeLabel, line.toTimeLabel),
+                    text = stringResource(R.string.debug_timeline_entry, line.kindLabel, line.fromTimeLabel, line.toTimeLabel, line.durationLabel),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
