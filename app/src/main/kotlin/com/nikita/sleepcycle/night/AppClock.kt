@@ -11,12 +11,26 @@ package com.nikita.sleepcycle.night
 // matter what a debug build once left in DataStore on the same device.
 
 import com.nikita.sleepcycle.BuildConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.time.Instant
 
 /** The process-wide simulated-clock holder every `nowInstant()` call site reads through. */
 object AppClock {
     @Volatile
     private var warp: ClockWarp? = null
+
+    private val warpFlow = MutableStateFlow<ClockWarp?>(null)
+
+    /**
+     * W4: the live warp as a flow, for anything that must react the moment the clock changes rather than when
+     * the change reaches disk. The UI's own ticker watches this instead of the DataStore mirror: the mirror
+     * publishes the new speed while this holder is still on the old warp, so a screen keyed to it re-sampled a
+     * clock that had not moved yet and then sat on that stale reading until its next tick - up to 30 s after
+     * "Reset to real time" was tapped, which read as the button having done nothing.
+     */
+    val currentWarp: StateFlow<ClockWarp?> = warpFlow.asStateFlow()
 
     /** The current virtual instant - the real wall clock, warped by whatever [ClockWarp] is currently loaded. */
     fun now(): Instant = virtualNow(warp, Instant.now())
@@ -27,9 +41,11 @@ object AppClock {
     /** The currently loaded warp, or null when the clock is running at real time. */
     fun warp(): ClockWarp? = warp
 
-    /** Sets the loaded warp - a no-op outside a debug build, whatever [warp] is, so a release build can never run on a warped clock. */
+    /** Sets the loaded warp - a no-op outside a debug build, whatever [warp] is, so a release build can never run on a warped clock. Publishes to [currentWarp] in the same call, so no observer can see the two disagree. */
     fun setWarp(warp: ClockWarp?) {
-        if (BuildConfig.DEBUG) this.warp = warp
+        if (!BuildConfig.DEBUG) return
+        this.warp = warp
+        warpFlow.value = warp
     }
 }
 

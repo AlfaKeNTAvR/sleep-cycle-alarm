@@ -24,6 +24,7 @@ import com.nikita.sleepcycle.night.endNight as endNightTracking
 import com.nikita.sleepcycle.night.listNightLogs
 import com.nikita.sleepcycle.night.loadMorningReport
 import com.nikita.sleepcycle.night.loadNightState
+import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.UI_TICKER_INTERVAL_MS
 import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.uiTickerIntervalMillis
@@ -266,13 +267,18 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * straight from DataStore) while the time readout kept showing the old simulated time for up to 30 real
      * seconds, which reads as the control not working; and while sped up, the readout stood still and then
      * jumped by however much simulated time those 30 seconds covered.
+     *
+     * W4: it watches [AppClock.currentWarp], the live clock, NOT the DataStore mirror of it. The mirror
+     * changes only once the write reaches disk, so a restart driven by it could re-sample a clock that had
+     * not been switched over yet, and then hold that stale reading until the next tick. Watching the holder
+     * that [nowInstant] itself reads makes the restart and the value it samples the same event.
      */
     private fun watchScreenVisibilityTicker() {
         viewModelScope.launch {
-            combine(screenVisible, debug.storedOptions) { visible, options -> visible to options.speed }
-                .collectLatest { (visible, speed) ->
+            combine(screenVisible, AppClock.currentWarp) { visible, warp -> visible to warp }
+                .collectLatest { (visible, warp) ->
                     if (!visible) return@collectLatest
-                    val interval = uiTickerIntervalMillis(speed)
+                    val interval = uiTickerIntervalMillis(warp?.speed ?: 1)
                     while (true) {
                         now.value = nowInstant()
                         delay(interval)

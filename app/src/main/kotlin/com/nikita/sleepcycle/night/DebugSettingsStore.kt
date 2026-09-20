@@ -111,6 +111,15 @@ private fun readClockWarpFromPreferences(preferences: Preferences): ClockWarp? {
  * after the next process start, while still surviving one via [readClockWarp].
  */
 suspend fun writeClockWarp(context: Context, warp: ClockWarp?) {
+    // W4 (owner-diagnosed, 2026-09-20): the live clock MUST change before the persisted value, never after.
+    // Persisting first publishes the new speed to everything watching the store - including the UI's own
+    // ticker, which restarts and immediately re-samples the clock - while AppClock is still running on the
+    // OLD warp. Tapping "Reset to real time" off 60x therefore showed the speed drop to 1x at once, sampled
+    // the still-warped clock for the readout, and only corrected a full 30 s later on the next 1x tick, so
+    // the reset looked like it had hung. Nothing reads this back off disk between the two statements, and V8
+    // clears any stored warp at process start, so persisting second costs nothing even if the process dies
+    // in between.
+    AppClock.setWarp(warp)
     context.debugSettingsStore.edit { preferences ->
         if (warp == null) {
             preferences.remove(KEY_CLOCK_WARP_SPEED)
@@ -122,7 +131,6 @@ suspend fun writeClockWarp(context: Context, warp: ClockWarp?) {
             preferences[KEY_CLOCK_WARP_ANCHOR_VIRTUAL] = warp.anchorVirtual.toString()
         }
     }
-    AppClock.setWarp(warp)
 }
 
 /**
