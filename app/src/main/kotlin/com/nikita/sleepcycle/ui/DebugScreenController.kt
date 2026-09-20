@@ -90,8 +90,26 @@ class DebugScreenController(private val context: Context, private val scope: Cor
      */
     fun setSimulatedBandData(enabled: Boolean) {
         if (!isSimulatedBandDataToggleAllowed(nightActive = observedNightState.value != null)) return
-        persistOptions { it.copy(simulatedBandData = enabled) }
-        if (!enabled) clearClockWarp()
+        if (enabled) {
+            persistOptions { it.copy(simulatedBandData = enabled) }
+            return
+        }
+        // W6 (owner decision, 2026-09-20): turning the switch off also wakes the simulator up. Leaving the
+        // "Asleep" toggle showing asleep with the switch off is a state the owner cannot act on - the toggle
+        // is disabled in that case - and the timeline would keep one sleep segment open forever.
+        //
+        // The three writes are one coroutine, in this order, because each depends on the one before:
+        // the AWAKE mark must be stamped while the SIMULATED clock is still live, or it closes a segment that
+        // opened at (say) virtual 03:00 with a real afternoon instant and invents hours of sleep; and the
+        // clock must be back to real time before the switch itself is persisted, since the switch is what
+        // unlocks the controls that would then act on the clock.
+        scope.launch {
+            val awakened = appendSimulatedSleepEvent(simulatedSleepEvents.value, SimulatedSleepEventKind.AWAKE, nowInstant())
+            if (awakened != simulatedSleepEvents.value) writeSimulatedSleepEvents(context, awakened)
+            writeClockWarp(context, null)
+            updateDebugOptions(context, Instant.now()) { it.copy(simulatedBandData = false) }
+            requestImmediateTick(context)
+        }
     }
 
     /**
