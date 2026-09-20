@@ -73,8 +73,8 @@ The Debug screen has three groups of controls, in the order they appear:
   unrelated to all of this: a standalone test alarm 5 real seconds out, always real time regardless of the
   simulated clock, for checking the ring screen in daylight with no night running.
 
-**The banner**: once any control above is live, an amber banner reading **SIMULATED SLEEP DATA** and/or
-**SIMULATED HH:mm[, Nx]** appears on Before bed, the Night screen and the tracking notification. The time is
+**The banner**: once any control above is live, an amber banner reading **SIMULATED** and/or
+**HH:mm[, Nx]** appears on Before bed, the Night screen and the tracking notification. The time is
 the app's own current virtual time; the multiplier is left off at 1x, so a jump with no speed change just
 shows the time.
 

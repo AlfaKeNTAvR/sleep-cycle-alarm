@@ -172,8 +172,8 @@
     <string name="debug_ring_test_alarm_disabled_reason">Disabled while a night is active.</string>
 
     <!-- Debug warning banner (Before bed and Night screens): names every switch that is currently live. SIMULATED_TIME carries the live "HH:mm[, Nx]" reading (T12 amendment) - see com.nikita.sleepcycle.night.formatSimulatedTimeValue. -->
-    <string name="debug_switch_simulated_sleep_data">SIMULATED SLEEP DATA</string>
-    <string name="debug_switch_simulated_time">SIMULATED %1$s</string>
+    <string name="debug_switch_simulated_sleep_data">SIMULATED</string>
+    <string name="debug_switch_simulated_time">%1$s</string>
 
     <!-- Simulated-night start confirmation -->
     <string name="debug_confirm_start_title">This is a simulated night</string>

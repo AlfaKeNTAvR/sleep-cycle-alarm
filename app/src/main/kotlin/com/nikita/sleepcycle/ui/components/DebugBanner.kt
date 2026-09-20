@@ -29,14 +29,21 @@ import com.nikita.sleepcycle.ui.theme.OnAmberAccent
 
 private const val DEBUG_BANNER_SEPARATOR = "  ·  "
 
-/** The plain-word label for one active debug switch, from `strings.xml` (app-spec: user text lives there). [simulatedTimeValue] fills SIMULATED_TIME's own "SIMULATED %s" template; an unexpected null (should not happen - see this file's own header) falls back to an empty value rather than crashing. */
+/** The plain-word label for one active debug switch, from `strings.xml` (app-spec: user text lives there). [simulatedTimeValue] fills SIMULATED_TIME's own template; an unexpected null (should not happen - see this file's own header) falls back to an empty value rather than crashing. */
 @Composable
 private fun labelFor(switch: ActiveDebugSwitch, simulatedTimeValue: String?): String = when (switch) {
     ActiveDebugSwitch.SIMULATED_SLEEP_DATA -> stringResource(R.string.debug_switch_simulated_sleep_data)
     ActiveDebugSwitch.SIMULATED_TIME -> stringResource(R.string.debug_switch_simulated_time, simulatedTimeValue ?: "")
 }
 
-/** A full-width amber banner naming every switch in [switches], e.g. "SIMULATED SLEEP DATA  ·  SIMULATED 03:15, 60x". Renders nothing when [switches] is empty - callers should skip it entirely in that case. */
+/**
+ * A full-width amber banner naming every switch in [switches], e.g. "SIMULATED  ·  03:15, 60x". Renders
+ * nothing when [switches] is empty - callers should skip it entirely in that case.
+ *
+ * W3 (owner decision, 2026-09-20): the two labels used to read "SIMULATED SLEEP DATA" and "SIMULATED 03:15,
+ * 60x", which together overflowed the banner on a phone and said the word twice. It now carries once for the
+ * whole bar: an amber strip reading "SIMULATED  ·  03:15" already says that clock is not the real one.
+ */
 @Composable
 fun DebugBanner(switches: List<ActiveDebugSwitch>, modifier: Modifier = Modifier, simulatedTimeValue: String? = null) {
     if (switches.isEmpty()) return
