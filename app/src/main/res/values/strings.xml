@@ -153,6 +153,7 @@
     <string name="debug_subtitle">Simulate a whole night at your desk. Only available in a debug build.</string>
     <string name="debug_simulated_band_data_title">Simulated band data</string>
     <string name="debug_simulated_band_data_description">Sleep segments come from the buttons below instead of a real Gadgetbridge sync.</string>
+    <string name="debug_quick_controls_title">Simulation</string>
     <string name="debug_speed_title">Simulated clock speed</string>
     <string name="debug_speed_description">Runs the app\'s own clock faster than real time, so a whole night passes in minutes.</string>
     <string name="debug_speed_multiplier_label">%1$dx</string>

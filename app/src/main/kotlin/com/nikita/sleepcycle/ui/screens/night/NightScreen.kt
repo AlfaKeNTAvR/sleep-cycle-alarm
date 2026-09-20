@@ -17,10 +17,12 @@ import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
+import com.nikita.sleepcycle.ui.components.DebugQuickControls
 import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
+import com.nikita.sleepcycle.ui.state.DebugUiState
 import com.nikita.sleepcycle.ui.state.EndNightAction
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
@@ -30,10 +32,13 @@ import com.nikita.sleepcycle.ui.theme.ScreenBottomPadding
 @Composable
 fun NightScreen(
     state: NightUiState,
+    debug: DebugUiState,
     onRequestEndNight: () -> Unit,
     onConfirmEndNight: () -> Unit,
     onCancelEndNight: () -> Unit,
     onDone: () -> Unit,
+    onSpeedChange: (Int) -> Unit,
+    onSetSimulatedAsleep: (Boolean) -> Unit,
     onOpenDebug: () -> Unit = {},
 ) {
     ScreenContainer(scrollable = false, bottomPadding = ScreenBottomPadding) {
@@ -60,6 +65,11 @@ fun NightScreen(
                 is NightScreenContent.MorningReport -> MorningReportContent(content)
             }
         }
+
+        // W7: the speed row and the Asleep toggle, right where a simulated night is actually watched - this
+        // screen is where the owner spends the whole simulation, and driving it meant a round trip to Debug
+        // for every change. Renders nothing at all on a real night.
+        DebugQuickControls(state = debug, onSpeedChange = onSpeedChange, onSetSimulatedAsleep = onSetSimulatedAsleep)
 
         when (state.content) {
             is NightScreenContent.MorningReport ->

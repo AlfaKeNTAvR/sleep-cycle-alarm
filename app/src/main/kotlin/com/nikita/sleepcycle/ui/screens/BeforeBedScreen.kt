@@ -34,6 +34,10 @@ import java.time.LocalTime
  * The "Before bed" screen. [onStartNight] is called when the owner taps "Start night" - the caller decides
  * whether that needs the "this is a simulated night" confirmation first (see [BeforeBedUiState.confirmingDebugNightStart]);
  * [onConfirmDebugNightStart] / [onCancelDebugNightStart] answer that confirmation when it is showing.
+ *
+ * W7: the simulator's live controls are NOT here. They were, briefly, and it was useless: they are needed
+ * from the moment a night starts, which is exactly when this screen goes away. They live on the night screen
+ * instead, and this screen's banner says only that the night will be simulated.
  */
 @Composable
 fun BeforeBedScreen(

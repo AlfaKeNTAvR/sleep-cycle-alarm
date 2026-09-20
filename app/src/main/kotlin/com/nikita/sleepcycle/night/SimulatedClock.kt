@@ -108,16 +108,19 @@ fun uiTickerIntervalMillis(speed: Int): Long =
 private val SIMULATED_TIME_VALUE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
- * T12 (amended by U-decisions doc): the live simulated-clock reading for the debug banner and the night
- * notification, e.g. "03:15" at speed 1 (a jump with no speed change), or "03:15, 60x" when the speed is also
- * non-default - never "1x" (the amendment's own instruction). Callers wrap this in a localized "SIMULATED %s"
- * template (`debug_switch_simulated_time` in strings.xml); this function itself stays plain JVM/no-Android so
- * it is directly unit-testable.
+ * T12: the live simulated-clock reading for the debug banner and the night notification, e.g. "03:15".
+ *
+ * W7: the speed multiplier used to be appended here ("03:15, 60x"). It is gone: the banner now only ever
+ * appears on the night screen, where the speed chips sit directly below it and already show which speed is
+ * selected, so the suffix restated a control the reader can see. [warp] is still taken rather than a bare
+ * instant, because whether a reading exists at all is a property of the warp.
+ *
+ * Callers wrap this in a localized template (`debug_switch_simulated_time` in strings.xml); this function
+ * stays plain JVM/no-Android so it is directly unit-testable.
  */
-fun formatSimulatedTimeValue(warp: ClockWarp, virtualNow: Instant, zone: ZoneId): String {
-    val time = SIMULATED_TIME_VALUE_FORMAT.withZone(zone).format(virtualNow)
-    return if (warp.speed == 1) time else "$time, ${warp.speed}x"
-}
+@Suppress("UNUSED_PARAMETER")
+fun formatSimulatedTimeValue(warp: ClockWarp, virtualNow: Instant, zone: ZoneId): String =
+    SIMULATED_TIME_VALUE_FORMAT.withZone(zone).format(virtualNow)
 
 /** [Duration.between] followed by [Duration.toMillis], saturating instead of throwing when the millis value would overflow a [Long]. */
 private fun millisBetweenSaturating(from: Instant, to: Instant): Long {

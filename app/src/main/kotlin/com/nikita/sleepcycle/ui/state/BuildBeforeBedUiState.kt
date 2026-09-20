@@ -5,8 +5,8 @@ package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
+import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
-import com.nikita.sleepcycle.night.formatSimulatedTimeValue
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
 import com.nikita.sleepcycle.night.sleepLengthFor
 import com.nikita.sleepcycle.night.sleepLengthIsAvailable
@@ -75,8 +75,11 @@ fun buildBeforeBedUiState(
         startNightEnabled = gate.enabled && !nightActive,
         startNightBlocker = startNightBlocker(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions),
         startNightBlockedBySetupCheck = gate.blockedBySetupCheck,
-        activeDebugSwitches = activeDebugSwitches(debugOptions),
-        simulatedTimeValue = debugOptions.warp?.let { formatSimulatedTimeValue(it, now, zone) },
+        // W7: this screen's banner says only that the coming night is simulated. A live clock reading belongs
+        // next to the controls that move it, which are on the night screen; here, where nothing can act on
+        // it, it was noise.
+        activeDebugSwitches = activeDebugSwitches(debugOptions).map { ActiveDebugSwitch.SIMULATED_SLEEP_DATA }.distinct(),
+        simulatedTimeValue = null,
         confirmingDebugNightStart = confirmingDebugNightStart,
     )
 }

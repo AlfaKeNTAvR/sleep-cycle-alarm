@@ -94,10 +94,13 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                     is Screen.Night -> uiState.night?.let { nightState ->
                         NightScreen(
                             state = nightState,
+                            debug = uiState.debug,
                             onRequestEndNight = viewModel::requestEndNight,
                             onConfirmEndNight = viewModel::confirmEndNight,
                             onCancelEndNight = viewModel::cancelEndNight,
                             onDone = viewModel::finishMorningReport,
+                            onSpeedChange = viewModel::setSpeed,
+                            onSetSimulatedAsleep = viewModel::setSimulatedAsleep,
                             onOpenDebug = viewModel::openDebug,
                         )
                     }

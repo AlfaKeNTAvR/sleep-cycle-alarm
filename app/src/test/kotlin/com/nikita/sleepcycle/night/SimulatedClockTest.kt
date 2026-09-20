@@ -162,24 +162,22 @@ class SimulatedClockTest {
         assertEquals(ClockWarp(600, anchorReal, anchorVirtual), warp)
     }
 
-    // ---- T12 (amended): formatSimulatedTimeValue - never prints "1x" ---------------------------------------
+    // ---- T12/W7: formatSimulatedTimeValue - the time alone, at every speed --------------------------------
 
     @Test
-    fun `formatSimulatedTimeValue at speed 1 prints only the time, never a multiplier`() {
-        val warp = ClockWarp(1, anchorReal, anchorVirtual)
-        assertEquals("03:00", formatSimulatedTimeValue(warp, virtualNow = anchorVirtual, zone = ZoneOffset.UTC))
-    }
-
-    @Test
-    fun `formatSimulatedTimeValue at a non-1 speed appends the multiplier`() {
-        val warp = ClockWarp(60, anchorReal, anchorVirtual)
-        assertEquals("03:00, 60x", formatSimulatedTimeValue(warp, virtualNow = anchorVirtual, zone = ZoneOffset.UTC))
+    fun `formatSimulatedTimeValue prints the time alone at every speed`() {
+        // W7: the multiplier used to be appended above 1x. The banner now only appears beside the speed
+        // chips, which already show the selected speed, so the suffix restated a control already on screen.
+        SIMULATION_SPEEDS.forEach { speed ->
+            val warp = ClockWarp(speed, anchorReal, anchorVirtual)
+            assertEquals("03:00", formatSimulatedTimeValue(warp, virtualNow = anchorVirtual, zone = ZoneOffset.UTC), "speed ${speed}x")
+        }
     }
 
     @Test
     fun `formatSimulatedTimeValue formats the given virtualNow, not the warp's own anchor`() {
         val warp = ClockWarp(600, anchorReal, anchorVirtual)
         val laterVirtual = anchorVirtual.plus(Duration.ofMinutes(15))
-        assertEquals("03:15, 600x", formatSimulatedTimeValue(warp, virtualNow = laterVirtual, zone = ZoneOffset.UTC))
+        assertEquals("03:15", formatSimulatedTimeValue(warp, virtualNow = laterVirtual, zone = ZoneOffset.UTC))
     }
 }
