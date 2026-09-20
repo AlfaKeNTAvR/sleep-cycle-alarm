@@ -1,7 +1,7 @@
 package com.nikita.sleepcycle.ui.screens.night
 
 // File purpose: the night screen's chrome - status line, the confirm-end dialog, and dispatch to the content
-// variant for the current engine mode (states A-D plus the OVERDUE and FINISHED amendments).
+// variant for the current engine mode (states A-D plus the FINISHED amendment).
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,18 +15,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
-import com.nikita.sleepcycle.ui.state.BandAlarmStatusUi
 import com.nikita.sleepcycle.ui.state.EndNightAction
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
-import com.nikita.sleepcycle.ui.state.SmartWakeupWarningUi
 import com.nikita.sleepcycle.ui.theme.ScreenBottomPadding
 
 /** The night screen: always-visible sync status, the state-specific content, and the end-night action. */
@@ -53,21 +50,6 @@ fun NightScreen(
             }
         }
         StatusLine(text = statusLineText(state), ok = state.lastSyncOk != false)
-        state.bandAlarmStatus?.let { status ->
-            StatusLine(text = bandAlarmStatusLineText(status), ok = status.confirmed)
-        }
-        if (state.noPhoneAlarmWarning) {
-            AmberWarningLine(text = stringResource(R.string.warning_no_phone_alarm))
-        }
-        state.smartWakeupWarning?.let { warning ->
-            AmberWarningLine(text = smartWakeupWarningText(warning))
-        }
-        if (state.bandAlarmBlind) {
-            AmberWarningLine(text = stringResource(R.string.warning_band_alarm_blind))
-        }
-        if (state.bandAlarmResendLimitReached) {
-            AmberWarningLine(text = stringResource(R.string.warning_band_resend_limit_reached))
-        }
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             when (val content = state.content) {
@@ -75,7 +57,6 @@ fun NightScreen(
                 is NightScreenContent.GoingToBedOrAsleep -> GoingToBedContent(content)
                 is NightScreenContent.NapAsleep -> NapAsleepContent(content)
                 is NightScreenContent.WokeUp -> WokeUpContent(content)
-                is NightScreenContent.Overdue -> OverdueContent(content)
                 is NightScreenContent.NightFinished -> FinishedContent(content)
                 is NightScreenContent.MorningReport -> MorningReportContent(content)
             }
@@ -120,19 +101,6 @@ private fun statusLineText(state: NightUiState): String = when {
     state.lastSyncOk == false -> stringResource(R.string.night_status_data_stale, state.lastSyncTimeLabel.orEmpty())
     else -> stringResource(R.string.night_status_synced_ok, state.lastSyncTimeLabel.orEmpty())
 }
-
-@Composable
-private fun smartWakeupWarningText(warning: SmartWakeupWarningUi): String =
-    warning.windowMinutes?.let { stringResource(R.string.warning_band_smart_wakeup, it, warning.displaySlotNumber) }
-        ?: stringResource(R.string.warning_band_smart_wakeup_unknown_window, warning.displaySlotNumber)
-
-@Composable
-private fun bandAlarmStatusLineText(status: BandAlarmStatusUi): String =
-    if (status.confirmed) {
-        stringResource(R.string.night_band_alarm_status_confirmed, status.timeLabel)
-    } else {
-        stringResource(R.string.night_band_alarm_status_requested, status.timeLabel)
-    }
 
 @Composable
 private fun endActionLabel(action: EndNightAction): String = when (action) {

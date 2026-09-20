@@ -14,7 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.CardDivider
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.LabeledValueRow
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsCard
@@ -30,8 +30,7 @@ private val TitleRowGap = 6.dp
 fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit) {
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TitleRowGap)) {
-            IconGlyphButton(
-                glyph = stringResource(R.string.glyph_back),
+            BackArrowButton(
                 contentDescription = stringResource(R.string.content_description_back),
                 onClick = onBack,
             )

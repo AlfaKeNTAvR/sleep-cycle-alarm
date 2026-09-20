@@ -37,7 +37,6 @@ class SetupWizardPageOrderTest {
                 SetupWizardPage.GADGETBRIDGE_AUTO_EXPORT,
                 SetupWizardPage.EXPORT_FILE,
                 SetupWizardPage.PHONE_PERMISSIONS,
-                SetupWizardPage.BAND_ALARMS,
                 SetupWizardPage.TEST_CONNECTION,
             ),
             SETUP_WIZARD_PAGE_ORDER,
@@ -72,7 +71,6 @@ class SetupWizardPageCompletenessTest {
         val state = stateWithAllCompleteExcept()
         assertFalse(isSetupWizardPageComplete(SetupWizardPage.GADGETBRIDGE_INTENTS, state))
         assertFalse(isSetupWizardPageComplete(SetupWizardPage.GADGETBRIDGE_AUTO_EXPORT, state))
-        assertFalse(isSetupWizardPageComplete(SetupWizardPage.BAND_ALARMS, state))
     }
 
     @Test
@@ -141,7 +139,7 @@ class SetupWizardNextTransitionTest {
     @Test
     fun `next never skips past test connection even when every other page is satisfied`() {
         val state = stateWithAllCompleteExcept()
-        assertEquals(SetupWizardPage.TEST_CONNECTION, nextSetupWizardPage(SetupWizardPage.BAND_ALARMS, state))
+        assertEquals(SetupWizardPage.TEST_CONNECTION, nextSetupWizardPage(SetupWizardPage.PHONE_PERMISSIONS, state))
     }
 
     @Test
@@ -168,6 +166,6 @@ class SetupWizardBackTransitionTest {
         // the entered device MAC, picked export file, or any other setting - see nextSetupWizardPage/
         // previousSetupWizardPage signatures.
         val before = previousSetupWizardPage(SetupWizardPage.TEST_CONNECTION)
-        assertEquals(SetupWizardPage.BAND_ALARMS, before)
+        assertEquals(SetupWizardPage.PHONE_PERMISSIONS, before)
     }
 }

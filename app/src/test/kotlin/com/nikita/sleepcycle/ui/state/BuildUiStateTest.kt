@@ -4,9 +4,7 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
-import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
-import com.nikita.sleepcycle.night.MAX_SINGLE_SLOT_RESENDS_PER_NIGHT
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -23,7 +21,6 @@ private fun state(
     screen: Screen = Screen.BeforeBed,
     showingMorningReport: Boolean = false,
     morningReportEndedAt: String? = null,
-    morningReportBandAlarmLeftover: com.nikita.sleepcycle.night.BandAlarmCommitment? = null,
     debugOptions: DebugOptions = DebugOptions(),
     confirmingEndNight: Boolean = false,
     endingNight: Boolean = false,
@@ -41,7 +38,6 @@ private fun state(
     confirmingEndNight = confirmingEndNight,
     showingMorningReport = showingMorningReport,
     morningReportEndedAt = morningReportEndedAt?.let(::instant),
-    morningReportBandAlarmLeftover = morningReportBandAlarmLeftover,
     debugOptions = debugOptions,
     endingNight = endingNight,
     errorMessage = null,
@@ -105,10 +101,10 @@ class SleepLengthFallbackTest {
 class NightScreenStateTest {
     @Test fun `state A shows the projected caption before sleep is detected`() {
         val plan = testAlarmPlan(
-            mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5,
+            mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5,
             referenceOnset = "2026-09-17T00:15", onsetIsProjected = true,
         )
-        val night = testNightState(lastPlan = plan, settings = NightSettings(null, 5, false))
+        val night = testNightState(lastPlan = plan, settings = NightSettings(null, 5))
         val view = testEngineView(SleepState.NOT_YET_ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night)
         val content = result.night!!.content as NightScreenContent.GoingToBedOrAsleep
@@ -119,7 +115,7 @@ class NightScreenStateTest {
 
     @Test fun `state A shows the actual onset once asleep, before any awakening`() {
         val plan = testAlarmPlan(
-            mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5,
+            mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5,
             referenceOnset = "2026-09-17T00:15", onsetIsProjected = false,
         )
         val night = testNightState(lastPlan = plan)
@@ -130,7 +126,7 @@ class NightScreenStateTest {
     }
 
     @Test fun `state B shows the latest stretch duration and Stop night when more sleep fits`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:15", cycles = 3)
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:15", cycles = 3)
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(
             SleepState.AWAKE,
@@ -138,31 +134,23 @@ class NightScreenStateTest {
             stretches = listOf(com.nikita.sleepcycle.engine.StretchSummary(instant("2026-09-17T00:30"), instant("2026-09-17T02:29"), java.time.Duration.ofMinutes(119), 1.3)),
         )
         val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        val content = result.night!!.content as NightScreenContent.WokeUp
+        val nightUi = requireNotNull(result.night)
+        val content = nightUi.content as NightScreenContent.WokeUp
         assertFalse(content.napOnly)
         assertEquals("1 h 59", content.sleptDurationLabel)
-        assertEquals(EndNightAction.STOP, result.night!!.endAction)
+        assertEquals(EndNightAction.STOP, nightUi.endAction)
     }
 
     @Test fun `state C is nap-only and offers I'm up, end night`() {
-        val plan = testAlarmPlan(mode = AlarmMode.NAP, bandAlarm = "2026-09-17T06:48")
+        val plan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = "2026-09-17T06:48")
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.AWAKE, totalSleep = java.time.Duration.ofMinutes(334))
         val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        val content = result.night!!.content as NightScreenContent.WokeUp
+        val nightUi = requireNotNull(result.night)
+        val content = nightUi.content as NightScreenContent.WokeUp
         assertTrue(content.napOnly)
-        assertEquals(EndNightAction.IM_UP, result.night!!.endAction)
+        assertEquals(EndNightAction.IM_UP, nightUi.endAction)
         assertEquals("20 min", content.napLengthLabel)
-    }
-
-    @Test fun `OVERDUE shows the next buzz time and offers I'm up, end night`() {
-        val plan = testAlarmPlan(mode = AlarmMode.OVERDUE, bandAlarm = "2026-09-17T08:07")
-        val night = testNightState(lastPlan = plan)
-        val view = testEngineView(SleepState.ASLEEP)
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        val content = result.night!!.content as NightScreenContent.Overdue
-        assertEquals("08:07", content.nextBuzzTimeLabel)
-        assertEquals(EndNightAction.IM_UP, result.night!!.endAction)
     }
 
     @Test fun `FINISHED shows the engine's own reason and offers End night`() {
@@ -170,9 +158,10 @@ class NightScreenStateTest {
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.AWAKE)
         val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        val content = result.night!!.content as NightScreenContent.NightFinished
+        val nightUi = requireNotNull(result.night)
+        val content = nightUi.content as NightScreenContent.NightFinished
         assertEquals("Night finished, deadline was 08:30.", content.reasonText)
-        assertEquals(EndNightAction.END, result.night!!.endAction)
+        assertEquals(EndNightAction.END, nightUi.endAction)
     }
 
     @Test fun `no plan yet shows Loading`() {
@@ -202,36 +191,6 @@ class NightScreenStateTest {
         assertEquals("5 h 54", content.totalSleepDurationLabel)
         assertEquals(2, content.stretches.size)
         assertEquals("1.3", content.stretches[0].cyclesLabel)
-        assertNull(content.bandAlarmLeftoverTimeLabel, "nothing was ever set on the band, so nothing is left armed")
-    }
-
-    @Test fun `the morning report names the time the band is still armed at`() {
-        // No Gadgetbridge intent can disarm a slot, so the last minute this app SET survives the night and the
-        // report has to say so rather than implying the band is clear.
-        val view = com.nikita.sleepcycle.night.NightEngineView(
-            sleepState = SleepState.AWAKE,
-            summary = com.nikita.sleepcycle.engine.NightSummary(
-                totalSleep = java.time.Duration.ofMinutes(354),
-                stretches = listOf(
-                    com.nikita.sleepcycle.engine.StretchSummary(instant("2026-09-17T00:30"), instant("2026-09-17T06:15"), java.time.Duration.ofMinutes(345), 3.8),
-                ),
-            ),
-            wakeOptions = emptyList(),
-        )
-
-        val result = state(
-            nightState = null,
-            engineView = view,
-            showingMorningReport = true,
-            morningReportEndedAt = "2026-09-17T06:50",
-            morningReportBandAlarmLeftover = com.nikita.sleepcycle.night.BandAlarmCommitment(
-                com.nikita.sleepcycle.night.BAND_ALARM_TITLE, 8, 20, instant("2026-09-17T06:17")
-            ),
-            screen = Screen.Night,
-        )
-
-        val content = result.night!!.content as NightScreenContent.MorningReport
-        assertEquals("08:20", content.bandAlarmLeftoverTimeLabel)
     }
 
     @Test fun `with no night at all, the night screen state is null`() {
@@ -240,7 +199,7 @@ class NightScreenStateTest {
     }
 }
 
-/** A1: the warning banner must be driven by isAnyEnabled, not fastNight alone - simulated data or dry-run alone must warn just as loudly as a fast night. */
+/** A1: the warning banner must be driven by isAnyEnabled, not fastNight alone - simulated data alone must warn just as loudly as a fast night. */
 class DebugWarningBannerTest {
     @Test fun `before bed shows no banner when every debug switch is off`() {
         val result = state(debugOptions = DebugOptions())
@@ -252,19 +211,14 @@ class DebugWarningBannerTest {
         assertEquals(listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA), result.beforeBed.activeDebugSwitches)
     }
 
-    @Test fun `before bed shows the banner for dry-run band commands alone, not just fast night`() {
-        val result = state(debugOptions = DebugOptions(bandCommandMode = BandCommandMode.DRY_RUN))
-        assertEquals(listOf(ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT), result.beforeBed.activeDebugSwitches)
-    }
-
     @Test fun `night screen names every active switch while asleep, not just fast night`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
-        val debugOptions = DebugOptions(simulatedBandData = true, bandCommandMode = BandCommandMode.DRY_RUN)
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val debugOptions = DebugOptions(simulatedBandData = true, fastNight = true)
         val night = testNightState(lastPlan = plan, debugOptions = debugOptions)
         val view = testEngineView(SleepState.ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night, debugOptions = debugOptions)
         assertEquals(
-            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT),
+            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.FAST_NIGHT),
             result.night!!.activeDebugSwitches
         )
     }
@@ -293,66 +247,10 @@ class DebugTestAlarmGatingTest {
     }
 }
 
-/** Item 4: a night can run with no phone alarm at all (deadline off AND phone backup off) - Before bed and the Night screen must both show the amber warning, and never show it whenever either switch is on. */
-class NoPhoneAlarmWarningWiringTest {
-    @Test fun `before bed warns when the deadline and phone backup are both off`() {
-        val result = state(appSettings = testAppSettings(deadlineEnabled = false, phoneBackupEnabled = false))
-        assertTrue(result.beforeBed.noPhoneAlarmWarning)
-    }
-
-    @Test fun `before bed does not warn once a deadline is on`() {
-        val result = state(appSettings = testAppSettings(deadlineEnabled = true, phoneBackupEnabled = false))
-        assertFalse(result.beforeBed.noPhoneAlarmWarning)
-    }
-
-    @Test fun `before bed does not warn once phone backup is on`() {
-        val result = state(appSettings = testAppSettings(deadlineEnabled = false, phoneBackupEnabled = true))
-        assertFalse(result.beforeBed.noPhoneAlarmWarning)
-    }
-
-    @Test fun `the night screen warns mid-night with no deadline and no phone backup`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
-        val night = testNightState(lastPlan = plan, settings = NightSettings(deadline = null, pickedCycles = 5, phoneBackupEnabled = false))
-        val view = testEngineView(SleepState.ASLEEP)
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        assertTrue(result.night!!.noPhoneAlarmWarning)
-    }
-
-    @Test fun `the night screen does not warn mid-night once phone backup is on`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
-        val night = testNightState(lastPlan = plan, settings = NightSettings(deadline = null, pickedCycles = 5, phoneBackupEnabled = true))
-        val view = testEngineView(SleepState.ASLEEP)
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        assertFalse(result.night!!.noPhoneAlarmWarning)
-    }
-}
-
-/** The single-slot re-send bound, wired end to end: once it is spent the app stops trying to restore the band alarm, which until now only the night log said. */
-class BandAlarmResendLimitWiringTest {
-    private val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
-
-    @Test fun `the night screen flags the spent re-send bound`() {
-        val night = testNightState(lastPlan = plan, singleSlotResendsUsed = MAX_SINGLE_SLOT_RESENDS_PER_NIGHT)
-        val result = state(nightState = night, engineView = testEngineView(SleepState.ASLEEP), screen = Screen.Night)
-        assertTrue(result.night!!.bandAlarmResendLimitReached)
-    }
-
-    @Test fun `one re-send short of the bound is not flagged`() {
-        val night = testNightState(lastPlan = plan, singleSlotResendsUsed = MAX_SINGLE_SLOT_RESENDS_PER_NIGHT - 1)
-        val result = state(nightState = night, engineView = testEngineView(SleepState.ASLEEP), screen = Screen.Night)
-        assertFalse(result.night!!.bandAlarmResendLimitReached)
-    }
-
-    @Test fun `a night before its first tick is not flagged`() {
-        val result = state(nightState = testNightState(), engineView = null, screen = Screen.Night)
-        assertFalse(result.night!!.bandAlarmResendLimitReached)
-    }
-}
-
 /** Item 1: the end-night button/dialog flow, wired end to end through buildUiState. */
 class EndNightFlowWiringTest {
     @Test fun `endingNight flows through to the night screen state`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night, confirmingEndNight = false, endingNight = true)
@@ -360,7 +258,7 @@ class EndNightFlowWiringTest {
     }
 
     @Test fun `endingNight defaults to false`() {
-        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, bandAlarm = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5, referenceOnset = "2026-09-17T00:15")
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night)

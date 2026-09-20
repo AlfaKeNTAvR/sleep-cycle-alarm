@@ -15,37 +15,22 @@ class ChooseModeTest {
         owedCycles: Int = 5,
         referenceOnset: String = "2026-09-17T00:30",
         now: String = "2026-09-17T01:00",
-        previousPlan: AlarmPlan? = null
+        napAlarmsUsed: Int = 0
     ) = chooseMode(
-        state, afterAwakening, deadline, cycles, owedCycles, instant(referenceOnset), instant(now), previousPlan,
-        config
+        state, afterAwakening, deadline, cycles, owedCycles, instant(referenceOnset), instant(now), config, napAlarmsUsed
     )
 
     @Test fun `rule 1 a deadline at or before now is FINISHED`() {
         assertEquals(PlanRule.FINISHED, rule(deadline = instant("2026-09-17T01:00"), now = "2026-09-17T01:00"))
     }
 
-    @Test fun `rule 1 waking at or after the previous band alarm is FINISHED`() {
-        val previous = AlarmPlan(
-            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), null, 5, instant("2026-09-17T00:30"), false, "r"
-        )
+    @Test fun `D3 waking at or after the previous alarm no longer FINISHES the night by itself`() {
+        // owedCycles = 0 (the default `cycles`/`owedCycles` of 5 do not apply once the whole picked total has
+        // been slept), afterAwakening from being AWAKE with history: rule 7's own, unmodified test now governs
+        // this window (a sliding nap alarm, not FINISHED) - see PlanSteps.kt's D3 doc comment on chooseMode.
         assertEquals(
-            PlanRule.FINISHED,
-            rule(state = SleepState.AWAKE, now = "2026-09-17T08:00", previousPlan = previous)
-        )
-    }
-
-    @Test fun `rule 1 wins over rule 7 when both would otherwise match`() {
-        val previous = AlarmPlan(
-            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), null, 5, instant("2026-09-17T00:30"), false, "r"
-        )
-        // Rule 7's deadline test also matches here: 07:30 plus one cycle lands past the 08:30 deadline.
-        assertEquals(
-            PlanRule.FINISHED,
-            rule(
-                state = SleepState.AWAKE, afterAwakening = true, deadline = instant("2026-09-17T08:30"),
-                referenceOnset = "2026-09-17T07:30", now = "2026-09-17T08:00", previousPlan = previous
-            )
+            PlanRule.NAP,
+            rule(state = SleepState.AWAKE, afterAwakening = true, cycles = 0, owedCycles = 0, now = "2026-09-17T08:00")
         )
     }
 
@@ -89,5 +74,64 @@ class ChooseModeTest {
 
     @Test fun `rule 4 is the default case`() {
         assertEquals(PlanRule.FULL_CYCLES, rule(cycles = 5))
+    }
+
+    // ---- D5/G8: naps after an awakening, capped at MAX_NAP_ALARMS regardless of whether the main wake alarm
+    // has fired ------------------------------------------------------------------------------------------------
+
+    @Test fun `D5 a return to sleep while under the cap is a nap, same as rule 7`() {
+        assertEquals(
+            PlanRule.NAP,
+            rule(afterAwakening = true, cycles = 0, owedCycles = 0, napAlarmsUsed = 1)
+        )
+    }
+
+    @Test fun `D5 a genuinely new return to sleep once the cap is spent FINISHES the night instead of a third nap`() {
+        assertEquals(
+            PlanRule.FINISHED,
+            rule(afterAwakening = true, cycles = 0, owedCycles = 0, referenceOnset = "2026-09-17T08:00", napAlarmsUsed = MAX_NAP_ALARMS)
+        )
+    }
+
+    @Test fun `G8 SUPERSEDES D5 - the cap applies even before the main wake alarm has ever fired`() {
+        // The old guard required NightState.wakeAlarmFiredAt to be non-null before the cap could engage at
+        // all - reachable on a night that uses up the picked total through repeated waking, where the FIRST
+        // nap is entered without any FULL_CYCLES/DEADLINE_ONLY alarm ever having rung. chooseMode itself does
+        // not even take wakeAlarmFiredAt as a parameter any more: the cap counts every nap alarm that fires,
+        // mid-night or post-wake alike (see PlanSteps.kt's isPostWakeNapCapSpent).
+        assertEquals(
+            PlanRule.FINISHED,
+            rule(afterAwakening = true, cycles = 0, owedCycles = 0, napAlarmsUsed = MAX_NAP_ALARMS)
+        )
+    }
+
+    @Test fun `G8 state AWAKE right after a nap fires never spends the cap by itself - only a genuine return to sleep does`() {
+        // Matches PostWakeNapTest's `thirdAwake` cases: the cap must not force FINISHED while the owner is
+        // simply awake between naps (F5's own AWAKE-branch-arms-nothing already covers that window at the
+        // wakeAt level); only ASLEEP + afterAwakening - a genuine new return to sleep - can spend it.
+        assertEquals(
+            PlanRule.NAP,
+            rule(state = SleepState.AWAKE, afterAwakening = true, cycles = 0, owedCycles = 0, napAlarmsUsed = MAX_NAP_ALARMS)
+        )
+    }
+
+    @Test fun `F4 SUPERSEDES the original spec - a spent cap with a deadline still ahead is DEADLINE_ONLY, not FINISHED`() {
+        assertEquals(
+            PlanRule.DEADLINE_ONLY,
+            rule(
+                afterAwakening = true, cycles = 0, owedCycles = 0, referenceOnset = "2026-09-17T09:00",
+                deadline = instant("2026-09-17T09:30"), now = "2026-09-17T09:00", napAlarmsUsed = MAX_NAP_ALARMS
+            )
+        )
+    }
+
+    @Test fun `F4 a spent cap FINISHES the night only once the deadline is also gone`() {
+        assertEquals(
+            PlanRule.FINISHED,
+            rule(
+                afterAwakening = true, cycles = 0, owedCycles = 0, referenceOnset = "2026-09-17T09:00",
+                deadline = null, now = "2026-09-17T09:00", napAlarmsUsed = MAX_NAP_ALARMS
+            )
+        )
     }
 }

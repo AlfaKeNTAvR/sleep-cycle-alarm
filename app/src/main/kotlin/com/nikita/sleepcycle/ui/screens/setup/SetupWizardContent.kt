@@ -29,7 +29,6 @@ private fun titleRes(page: SetupWizardPage): Int = when (page) {
     SetupWizardPage.GADGETBRIDGE_AUTO_EXPORT -> R.string.setup_wizard_gadgetbridge_auto_export_title
     SetupWizardPage.EXPORT_FILE -> R.string.setup_wizard_export_file_title
     SetupWizardPage.PHONE_PERMISSIONS -> R.string.setup_wizard_phone_permissions_title
-    SetupWizardPage.BAND_ALARMS -> R.string.setup_wizard_band_alarms_title
     SetupWizardPage.TEST_CONNECTION -> R.string.setup_wizard_test_connection_title
 }
 
@@ -57,7 +56,6 @@ fun SetupWizardContent(state: SetupUiState, page: SetupWizardPage, actions: Setu
                 actions.onOpenFullScreenIntentSettings,
                 actions.onOpenBatteryOptimizationSettings,
             )
-            SetupWizardPage.BAND_ALARMS -> BandAlarmsPage()
             SetupWizardPage.TEST_CONNECTION -> TestConnectionPage(state, actions.onRunConnectionTest, actions.onOpenDebug, actions.onExitWizard)
         }
     }

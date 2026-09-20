@@ -24,7 +24,7 @@ class DescribePlanTest {
         assertTrue(reason.contains("Estimated asleep at"))
     }
 
-    @Test fun `DEADLINE_ONLY names the band alarm`() {
+    @Test fun `DEADLINE_ONLY names the alarm`() {
         val reason = describePlan(
             AlarmMode.DEADLINE_ONLY, ReferenceOnset(instant("2026-09-17T00:40"), projected = true),
             settings("2026-09-17T00:50"), 0, instant("2026-09-17T00:50"), testZone
@@ -41,14 +41,6 @@ class DescribePlanTest {
         assertTrue(reason.contains("01:00"))
     }
 
-    @Test fun `OVERDUE names the band alarm`() {
-        val reason = describePlan(
-            AlarmMode.OVERDUE, ReferenceOnset(instant("2026-09-17T00:30"), projected = false),
-            settings(), 5, instant("2026-09-17T08:07"), testZone
-        )
-        assertTrue(reason.contains("08:07"))
-    }
-
     @Test fun `FINISHED with a deadline names it`() {
         val reason = describePlan(
             AlarmMode.FINISHED, ReferenceOnset(instant("2026-09-17T00:30"), projected = false),
@@ -63,5 +55,17 @@ class DescribePlanTest {
             settings(), 5, null, testZone
         )
         assertTrue(reason.startsWith("Night finished"))
+    }
+
+    @Test fun `F9 FINISHED with no deadline blames the spent nap cap, not the deadline`() {
+        // F4 means a deadline-present FINISHED can now only ever come from the deadline itself having passed
+        // (a spent cap with a deadline still ahead is DEADLINE_ONLY instead), so the two FINISHED causes are
+        // distinguished by deadline presence alone - see describePlan's own comment.
+        val reason = describePlan(
+            AlarmMode.FINISHED, ReferenceOnset(instant("2026-09-17T00:30"), projected = false),
+            settings(), 5, null, testZone
+        )
+        assertTrue(reason.contains("nap alarms are used up"), "expected the cap to be named as the cause: $reason")
+        assertTrue(!reason.contains("deadline"), "a no-deadline finish must never mention a deadline: $reason")
     }
 }

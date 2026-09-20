@@ -2,8 +2,8 @@ package com.nikita.sleepcycle.ui.components
 
 // File purpose: the amber warning banner shown on Before bed, the Night screen and (as plain text) the night
 // service notification whenever any debug switch is live (A1) - keyed to isAnyEnabled, never to fastNight
-// alone, and naming every switch that is on in plain words so a simulated-data-only or dry-run-only night
-// warns just as loudly as a fast one.
+// alone, and naming every switch that is on in plain words so a simulated-data-only night warns just as
+// loudly as a fast one.
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +28,6 @@ private const val DEBUG_BANNER_SEPARATOR = "  ·  "
 @Composable
 private fun labelFor(switch: ActiveDebugSwitch): String = when (switch) {
     ActiveDebugSwitch.SIMULATED_SLEEP_DATA -> stringResource(R.string.debug_switch_simulated_sleep_data)
-    ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT -> stringResource(R.string.debug_switch_band_commands_not_sent)
     ActiveDebugSwitch.FAST_NIGHT -> stringResource(R.string.debug_switch_fast_night)
 }
 

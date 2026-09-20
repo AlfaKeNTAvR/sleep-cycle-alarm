@@ -13,7 +13,6 @@ import androidx.lifecycle.viewModelScope
 import com.nikita.sleepcycle.bridge.isGadgetbridgeInstalled
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.night.AppSettings
-import com.nikita.sleepcycle.night.BandAlarmCommitment
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
@@ -95,14 +94,9 @@ private data class ExtraInputs(
     val endingNight: Boolean,
 )
 
-/**
- * The morning report is rendered after the night state has been cleared, so everything it needs is captured
- * here first: the engine view, plus the band alarm the band is STILL armed with, which no Gadgetbridge intent
- * can disarm (see NightController.logLeftoverBandAlarm).
- */
+/** The morning report is rendered after the night state has been cleared, so everything it needs is captured here first: the engine view. */
 private data class CachedMorningReport(
     val engineView: NightEngineView,
-    val bandAlarmLeftover: BandAlarmCommitment?,
 )
 
 private data class ReportInputs(
@@ -168,6 +162,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { resolveInitialScreen() }
         watchScreenVisibilityTicker()
         watchSleepLengthFallback()
+        watchNightStateClearedWhileViewing()
     }
 
     private fun toUiState(core: CoreInputs, extra: ExtraInputs, report: ReportInputs, debugInputs: DebugInputs, error: String?): UiState {
@@ -192,7 +187,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             endingNight = extra.endingNight,
             showingMorningReport = report.showingMorningReport,
             morningReportEndedAt = report.morningReportEndedAt,
-            morningReportBandAlarmLeftover = report.cachedMorningReport?.bandAlarmLeftover,
             debugOptions = debug.effectiveOptions(),
             simulatedSleepEvents = debugInputs.simulatedSleepEvents,
             confirmingDebugNightStart = debugInputs.confirmingDebugNightStart,
@@ -235,9 +229,27 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun restoreMorningReportFromDiskIfAny(nightStateFromDisk: NightState?) {
         if (nightStateFromDisk != null) return
         val saved = withContext(Dispatchers.IO) { loadMorningReport(context) } ?: return
-        cachedMorningReport.value = CachedMorningReport(buildNightEngineView(saved.nightState, saved.endedAt), saved.nightState.lastBandAlarmSet)
+        cachedMorningReport.value = CachedMorningReport(buildNightEngineView(saved.nightState, saved.endedAt))
         morningReportEndedAt.value = saved.endedAt
         showingMorningReport.value = true
+    }
+
+    /**
+     * H4: mirrors [confirmEndNight]'s own disk fallback for the case where the owner never tapped anything -
+     * a FINISHED tick's own bookkeeping ([finishNightIfNeeded][com.nikita.sleepcycle.night.finishNightIfNeeded])
+     * clears the live night state on its own, which used to leave an already-open Night screen showing a
+     * blank engineView (nightState null, no cached report) until the app was reopened. `!endingNight.value`
+     * skips the OWNER-initiated end path (Stop/"I'm up, end night" from this same screen): [confirmEndNight]
+     * already handles that case itself, from the authoritative report `endNight` returns, not a disk re-read.
+     */
+    private fun watchNightStateClearedWhileViewing() {
+        viewModelScope.launch {
+            observedNightState.collectLatest { state ->
+                if (state == null && screen.value == Screen.Night && !showingMorningReport.value && !endingNight.value) {
+                    restoreMorningReportFromDiskIfAny(nightStateFromDisk = null)
+                }
+            }
+        }
     }
 
     /** Ticks [now] every 30 s while a screen is visible; pauses entirely while the app is backgrounded. */
@@ -367,15 +379,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 setupCheckFailureReport(error)
             }
             connectionTest.value = ConnectionTestState.Done(report)
-            persistSettings {
-                it.copy(
-                    lastSetupCheckPassedAt = if (report.isReady) now else null,
-                    // Only a passing check's slot count means anything; a failed one leaves nothing known
-                    // about the band, which the Before-bed gate reads as "do not judge" (see
-                    // singleSlotNightNeedsPhoneAlarm) - the stale-check gate blocks that night anyway.
-                    lastSetupCheckUsableBandAlarmSlots = if (report.isReady) report.usableBandAlarmSlots else null
-                )
-            }
+            persistSettings { it.copy(lastSetupCheckPassedAt = if (report.isReady) now else null) }
         }
     }
 
@@ -383,7 +387,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     fun setDeadlineEnabled(enabled: Boolean) = persistSettings { it.copy(deadlineEnabled = enabled) }
     fun setDeadlineTime(time: LocalTime) = persistSettings { it.copy(lastDeadline = time) }
     fun setPickedCycles(cycles: Int) = persistSettings { it.copy(pickedCycles = cycles) }
-    fun setPhoneBackupEnabled(enabled: Boolean) = persistSettings { it.copy(phoneBackupEnabled = enabled) }
 
     /** What "Start night" actually calls: if any debug option is on, this is a simulated night, so it asks for confirmation first rather than starting straight away (task spec: "asks for confirmation so it cannot happen by accident at real bedtime"). */
     fun requestStartNight() {
@@ -406,11 +409,10 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         val nightSettings = NightSettings(
             deadline = deadline,
             pickedCycles = cycles,
-            phoneBackupEnabled = settings.phoneBackupEnabled && !settings.deadlineEnabled,
         )
         // startNightTracking already arms the initial plan and triggers the first real tick as one ordered
         // sequence (see NightController.startNight); requesting a second immediate tick here would race it
-        // and could let a stale dismissal from that sequence erase the tick's own work (Opus review 3.2).
+        // and could let out-of-order work overwrite the tick's own (Opus review 3.2).
         startNightTracking(context, nightSettings, startedAt, debugOptions)
         showingMorningReport.value = false
         cachedMorningReport.value = null
@@ -431,6 +433,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * disables the button and shows "Ending night..." for the whole ~3 s endNight takes, and a second confirm
      * while it is still running is ignored - `endNightTracking` (NightController.endNight) is itself idempotent
      * too, so even a call that slipped past this guard would not repeat the work.
+     *
+     * H4: a null report means there was no live night left to end - a FINISHED tick's own bookkeeping
+     * (finishNightIfNeeded) can beat this tap to it, clearing the state before the owner even taps the button.
+     * That bookkeeping already saved a morning report to disk, so fall back to it instead of showing an empty
+     * one - the same fallback [restoreMorningReportFromDiskIfAny] uses at app start.
      */
     fun confirmEndNight() {
         if (!canConfirmEndNight(EndNightFlowState(confirmingEndNight.value, endingNight.value))) return
@@ -439,8 +446,10 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val report = endNightTracking(context, Instant.now())
             if (report != null) {
-                cachedMorningReport.value = CachedMorningReport(buildNightEngineView(report.nightState, report.endedAt), report.nightState.lastBandAlarmSet)
+                cachedMorningReport.value = CachedMorningReport(buildNightEngineView(report.nightState, report.endedAt))
                 morningReportEndedAt.value = report.endedAt
+            } else {
+                restoreMorningReportFromDiskIfAny(nightStateFromDisk = null)
             }
             showingMorningReport.value = true
             endingNight.value = false
@@ -465,7 +474,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     // Debug screen actions: thin delegates to DebugScreenController.kt, which owns the actual state.
     fun setSimulatedBandData(enabled: Boolean) = debug.setSimulatedBandData(enabled)
     fun setFastNight(enabled: Boolean) = debug.setFastNight(enabled)
-    fun setDryRunBandCommands(enabled: Boolean) = debug.setDryRunBandCommands(enabled)
     fun fellAsleepNow() = debug.fellAsleepNow()
     fun wokeUpNow() = debug.wokeUpNow()
     fun fellBackAsleepNow() = debug.fellBackAsleepNow()
@@ -477,6 +485,4 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 private fun setupCheckFailureReport(error: Exception): SetupCheckReport = SetupCheckReport(
     isReady = false,
     lines = listOf(SetupCheckLine("Setup check failed: ${error.message ?: error::class.simpleName}", SetupCheckLineSeverity.ACTION_NEEDED)),
-    freeBandAlarmSlots = 0,
-    otherEnabledBandAlarms = emptyList(),
 )

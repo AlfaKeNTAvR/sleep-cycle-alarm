@@ -1,6 +1,6 @@
 package com.nikita.sleepcycle.ui.state
 
-// File purpose: the Debug screen's state shape - the three switches, the simulated sleep timeline as plain
+// File purpose: the Debug screen's state shape - the two switches, the simulated sleep timeline as plain
 // text, and which simulator buttons currently do something.
 
 /** One line of the simulated sleep timeline: kind, from, to - exactly as the task spec asks for it. */
@@ -10,7 +10,6 @@ data class SimulatedSleepLine(val kindLabel: String, val fromTimeLabel: String, 
 data class DebugUiState(
     val simulatedBandData: Boolean,
     val fastNight: Boolean,
-    val dryRunBandCommands: Boolean,
     val simulatedTimeline: List<SimulatedSleepLine>,
     val canFallAsleep: Boolean,
     val canWakeUp: Boolean,

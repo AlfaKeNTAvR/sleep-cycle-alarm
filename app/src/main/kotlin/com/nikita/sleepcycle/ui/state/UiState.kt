@@ -28,8 +28,6 @@ data class UiState(
                 deadlineEnabled = false,
                 deadlineTime = LocalTime.of(8, 0),
                 sleepLengthOptions = emptyList(),
-                phoneBackupRowVisible = false,
-                phoneBackupEnabled = false,
                 startNightEnabled = false,
                 startNightBlocker = null,
                 startNightBlockedBySetupCheck = false,
@@ -39,7 +37,6 @@ data class UiState(
             debug = DebugUiState(
                 simulatedBandData = false,
                 fastNight = false,
-                dryRunBandCommands = false,
                 simulatedTimeline = emptyList(),
                 canFallAsleep = true,
                 canWakeUp = false,

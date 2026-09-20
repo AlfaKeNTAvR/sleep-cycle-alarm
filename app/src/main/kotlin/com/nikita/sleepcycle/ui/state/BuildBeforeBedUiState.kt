@@ -1,12 +1,11 @@
 package com.nikita.sleepcycle.ui.state
 
 // File purpose: pure derivation of the Before-bed screen's state - deadline, the "sleep up to" picker with its
-// hatched/disabled options, the phone-backup row, and "Start night" gating.
+// hatched/disabled options, and "Start night" gating.
 
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.activeDebugSwitches
-import com.nikita.sleepcycle.night.noPhoneAlarmTonight
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
 import com.nikita.sleepcycle.night.sleepLengthFor
 import com.nikita.sleepcycle.night.sleepLengthIsAvailable
@@ -72,13 +71,10 @@ fun buildBeforeBedUiState(
         deadlineEnabled = appSettings.deadlineEnabled,
         deadlineTime = appSettings.lastDeadline ?: DEFAULT_DEADLINE_TIME,
         sleepLengthOptions = sleepLengthOptions,
-        phoneBackupRowVisible = !appSettings.deadlineEnabled,
-        phoneBackupEnabled = appSettings.phoneBackupEnabled,
         startNightEnabled = gate.enabled && !nightActive,
         startNightBlocker = startNightBlocker(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions),
         startNightBlockedBySetupCheck = gate.blockedBySetupCheck,
         activeDebugSwitches = activeDebugSwitches(debugOptions),
         confirmingDebugNightStart = confirmingDebugNightStart,
-        noPhoneAlarmWarning = noPhoneAlarmTonight(appSettings.deadlineEnabled, appSettings.phoneBackupEnabled),
     )
 }

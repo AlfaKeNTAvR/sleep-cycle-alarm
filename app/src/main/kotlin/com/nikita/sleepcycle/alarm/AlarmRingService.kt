@@ -1,10 +1,13 @@
 package com.nikita.sleepcycle.alarm
 
 // File purpose: foreground service that rings the phone alarm - sound, vibration, full-screen notification -
-// until stopped from AlarmActivity or after an auto-stop timeout. startRinging is idempotent: a second start
-// command while already ringing does nothing rather than overwriting a live MediaPlayer without releasing
-// it. stopRinging guards each step so a failure stopping the sound can never skip stopping vibration,
-// releasing the wake lock, or stopSelf.
+// until stopped from AlarmActivity or after an auto-stop timeout. F1: startRinging is NOT idempotent - a
+// second start command while already ringing means a genuinely new alarm fired (typically the out-of-bed
+// nudge, D4) into a service that never got stopped, and it restarts ringing fresh for that new alarm rather
+// than silently no-op'ing. The old idempotent no-op used to let AUTO_STOP_AFTER's countdown, started by the
+// FIRST alarm, tear the service down moments after the nudge arrived, without the nudge ever actually
+// ringing - see EngineConfig.ringAutoStopAfter's own doc for the timing root cause. stopRinging guards each
+// step so a failure stopping the sound can never skip stopping vibration, releasing the wake lock, or stopSelf.
 //
 // stopAlarmRinging is also called unconditionally by endNight, every time a night ends, whether or not the
 // alarm ever rang - starting the service just to ask it to stop, when it was never running, used to log a
@@ -33,6 +36,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendToCurrentNightLog
 import java.time.Duration
@@ -55,10 +59,13 @@ private const val ALARM_ACTIVITY_REQUEST_CODE = 3001
 private const val ALARM_STOP_REQUEST_CODE = 3002
 private val VIBRATION_PATTERN = longArrayOf(0, 800, 500)
 
-/** How long the alarm rings before auto-stopping; also the timeout on the wake lock PhoneAlarmReceiver acquires. */
-val AUTO_STOP_AFTER: Duration = Duration.ofMinutes(10)
+/** F1: carries the resolved EngineConfig.ringAutoStopAfter (real or fast-night) from PhoneAlarmReceiver, which knows the night's own debug options; this service has no state file to read one from itself. */
+const val EXTRA_RING_AUTO_STOP_AFTER_MILLIS = "ringAutoStopAfterMillis"
 
-/** Foreground service (type `mediaPlayback`, falls back to `specialUse`) that owns the ringing alarm. */
+/** The real-config fallback used only when no duration was supplied (should not normally happen - every real firing intent carries one). Kept equal to [EngineConfig]'s own real default, not a second independently-tuned number, so the two can never quietly drift apart (F1). */
+val AUTO_STOP_AFTER: Duration = EngineConfig().ringAutoStopAfter
+
+/** Foreground service (type `specialUse`) that owns the ringing alarm. */
 class AlarmRingService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var isRinging = false
@@ -78,14 +85,28 @@ class AlarmRingService : Service() {
             stopRinging(reason)
             return START_NOT_STICKY
         }
-        startForeground(NOTIFICATION_ID, buildAlarmNotification(this))
-        startRinging()
+        // D4: which alarm is ringing - the wake/nap alarm or the out-of-bed nudge - only matters for the
+        // notification's and AlarmActivity's wording; sound, vibration and every stop path are identical either way.
+        val isOutOfBed = intent?.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false) ?: false
+        val autoStopAfterMillis = intent?.getLongExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, AUTO_STOP_AFTER.toMillis()) ?: AUTO_STOP_AFTER.toMillis()
+        startForeground(NOTIFICATION_ID, buildAlarmNotification(this, isOutOfBed))
+        startRinging(Duration.ofMillis(autoStopAfterMillis))
         return START_NOT_STICKY
     }
 
-    /** Idempotent: called again while already ringing (e.g. a duplicate delivery) does nothing. */
-    private fun startRinging() {
-        if (isRinging) return
+    /**
+     * F1: NOT idempotent. A call while already ringing means a genuinely new alarm fired into this still-live
+     * service (in practice: the out-of-bed nudge, D4, arriving because the owner slept through the whole wake
+     * alarm ring - exactly the case the nudge exists for) - it tears down the current ring's artifacts and
+     * starts fresh for the new one, with its own full [autoStopAfter] window timed from now. The old no-op
+     * left the auto-stop countdown running on the FIRST alarm's own clock, which - started slightly later than
+     * the nudge's own arming instant (see EngineConfig.ringAutoStopAfter's doc) - reliably fired a moment
+     * after the nudge arrived, silently swallowing it.
+     */
+    private fun startRinging(autoStopAfter: Duration) {
+        if (isRinging) {
+            stopRingingArtifacts()
+        }
         isRinging = true
         appendToCurrentNightLog(
             this,
@@ -101,7 +122,14 @@ class AlarmRingService : Service() {
             )
         )
         vibrate(this)
-        stopHandler.postDelayed(stopRunnable, AUTO_STOP_AFTER.toMillis())
+        stopHandler.postDelayed(stopRunnable, autoStopAfter.toMillis())
+    }
+
+    /** Stops the sound, vibration and the pending auto-stop only - never the service, the notification or the wake lock. Shared by [startRinging]'s restart path (F1) and as the first step of [stopRinging] itself. */
+    private fun stopRingingArtifacts() {
+        stopPlayerSafely()
+        runGuarded("stop vibration") { stopVibration(this) }
+        stopHandler.removeCallbacks(stopRunnable)
     }
 
     /**
@@ -114,10 +142,8 @@ class AlarmRingService : Service() {
         if (isRinging) {
             appendToCurrentNightLog(this, NightLogEvent(Instant.now(), "alarm_stopped", mapOf("reason" to reason)))
         }
-        stopPlayerSafely()
-        runGuarded("stop vibration") { stopVibration(this) }
+        stopRingingArtifacts()
         runGuarded("release the alarm wake lock") { releaseAlarmWakeLock() }
-        stopHandler.removeCallbacks(stopRunnable)
         isRinging = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -178,10 +204,14 @@ private fun stopVibration(context: Context) {
 /**
  * The alarm's notification: a tap and the Stop action both reach [AlarmActivity] / this service, so the
  * alarm can always be silenced even when the full-screen presentation did not show (screen unlocked,
- * permission revoked, or the banner was swiped away).
+ * permission revoked, or the banner was swiped away). D4: [isOutOfBed] only changes the wording, so the
+ * nudge reads as "time to get up" rather than the wake alarm's own text - the Stop action still only stops
+ * the sound (D6), it never ends the night, whichever alarm this is.
  */
-fun buildAlarmNotification(context: Context): Notification {
-    val activityIntent = Intent(context, AlarmActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+fun buildAlarmNotification(context: Context, isOutOfBed: Boolean = false): Notification {
+    val activityIntent = Intent(context, AlarmActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
     val activityPendingIntent = PendingIntent.getActivity(
         context, ALARM_ACTIVITY_REQUEST_CODE, activityIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -190,9 +220,11 @@ fun buildAlarmNotification(context: Context): Notification {
         context, ALARM_STOP_REQUEST_CODE, Intent(context, AlarmRingService::class.java).setAction(ACTION_STOP),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
+    val titleRes = if (isOutOfBed) R.string.alarm_notification_out_of_bed_title else R.string.alarm_notification_title
+    val textRes = if (isOutOfBed) R.string.alarm_notification_out_of_bed_text else R.string.alarm_notification_text
     return NotificationCompat.Builder(context, ALARM_NOTIFICATION_CHANNEL_ID)
-        .setContentTitle(context.getString(R.string.alarm_notification_title))
-        .setContentText(context.getString(R.string.alarm_notification_text))
+        .setContentTitle(context.getString(titleRes))
+        .setContentText(context.getString(textRes))
         .setSmallIcon(R.mipmap.ic_launcher)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -213,8 +245,8 @@ fun createNotificationChannel(context: Context) {
 }
 
 /** Posts the alarm notification directly, without going through [AlarmRingService] - the fallback PhoneAlarmReceiver uses when it cannot start the service at all. */
-fun postAlarmNotificationDirectly(context: Context) {
+fun postAlarmNotificationDirectly(context: Context, isOutOfBed: Boolean = false) {
     createNotificationChannel(context)
     val manager = context.getSystemService<NotificationManager>() ?: return
-    manager.notify(NOTIFICATION_ID, buildAlarmNotification(context))
+    manager.notify(NOTIFICATION_ID, buildAlarmNotification(context, isOutOfBed))
 }

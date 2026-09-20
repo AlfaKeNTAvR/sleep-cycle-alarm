@@ -16,7 +16,6 @@ enum class SetupWizardPage {
     GADGETBRIDGE_AUTO_EXPORT,
     EXPORT_FILE,
     PHONE_PERMISSIONS,
-    BAND_ALARMS,
     TEST_CONNECTION,
 }
 
@@ -24,10 +23,10 @@ enum class SetupWizardPage {
 val SETUP_WIZARD_PAGE_ORDER: List<SetupWizardPage> = SetupWizardPage.entries
 
 /**
- * The [SetupItemKind]s a page's green/grey state depends on. Three pages have none of their own: the
- * Gadgetbridge Intent API switches, the Gadgetbridge auto-export toggle, and the band's own alarm-slot
- * settings are all configured inside another app or on the band itself, so this app has nothing it can read
- * back to confirm they were done. Those pages are never auto-marked complete - see [isSetupWizardPageComplete].
+ * The [SetupItemKind]s a page's green/grey state depends on. Two pages have none of their own: the
+ * Gadgetbridge Intent API switches and the Gadgetbridge auto-export toggle are both configured inside
+ * Gadgetbridge itself, so this app has nothing it can read back to confirm they were done. Those pages are
+ * never auto-marked complete - see [isSetupWizardPageComplete].
  */
 private val PAGE_SETUP_ITEM_KINDS: Map<SetupWizardPage, List<SetupItemKind>> = mapOf(
     SetupWizardPage.WHAT_YOU_NEED to listOf(SetupItemKind.GADGETBRIDGE_INSTALLED),
@@ -41,7 +40,6 @@ private val PAGE_SETUP_ITEM_KINDS: Map<SetupWizardPage, List<SetupItemKind>> = m
         SetupItemKind.BATTERY_OPTIMIZATION,
         SetupItemKind.EXACT_ALARMS,
     ),
-    SetupWizardPage.BAND_ALARMS to emptyList(),
     SetupWizardPage.TEST_CONNECTION to emptyList(),
 )
 

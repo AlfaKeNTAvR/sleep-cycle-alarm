@@ -3,7 +3,6 @@ package com.nikita.sleepcycle.ui.state
 // File purpose: pure derivation of the Debug screen's state from the currently effective debug options and
 // the persisted simulated sleep event timeline.
 
-import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import com.nikita.sleepcycle.night.SimulatedSleepEventKind
@@ -23,7 +22,6 @@ fun buildDebugUiState(debugOptions: DebugOptions, simulatedEvents: List<Simulate
     return DebugUiState(
         simulatedBandData = debugOptions.simulatedBandData,
         fastNight = debugOptions.fastNight,
-        dryRunBandCommands = debugOptions.bandCommandMode == BandCommandMode.DRY_RUN,
         simulatedTimeline = timeline,
         canFallAsleep = isSimulatedSleepEventAllowed(simulatedEvents, SimulatedSleepEventKind.FELL_ASLEEP),
         canWakeUp = isSimulatedSleepEventAllowed(simulatedEvents, SimulatedSleepEventKind.WOKE_UP),

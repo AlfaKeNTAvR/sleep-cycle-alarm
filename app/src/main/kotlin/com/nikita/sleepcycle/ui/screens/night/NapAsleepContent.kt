@@ -9,8 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.HeroNumeral
-import com.nikita.sleepcycle.ui.components.LabeledValueRow
-import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 
@@ -21,10 +19,5 @@ fun NapAsleepContent(content: NightScreenContent.NapAsleep) {
             value = content.alarmTimeLabel,
             caption = stringResource(R.string.night_nap_asleep_caption, content.onsetTimeLabel),
         )
-        if (content.phoneSafetyAlarmTimeLabel != null) {
-            SettingsCard {
-                LabeledValueRow(label = stringResource(R.string.night_phone_safety_alarm), value = content.phoneSafetyAlarmTimeLabel)
-            }
-        }
     }
 }

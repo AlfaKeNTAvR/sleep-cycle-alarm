@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.HeroNumeral
-import com.nikita.sleepcycle.ui.components.LabeledValueRow
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.components.WakeTimeline
 import com.nikita.sleepcycle.ui.state.NightScreenContent
@@ -43,11 +42,6 @@ fun GoingToBedContent(content: NightScreenContent.GoingToBedOrAsleep) {
                 }
             }
             WakeTimeline(entries = content.timeline)
-        }
-        if (content.phoneSafetyAlarmTimeLabel != null) {
-            SettingsCard {
-                LabeledValueRow(label = stringResource(R.string.night_phone_safety_alarm), value = content.phoneSafetyAlarmTimeLabel)
-            }
         }
     }
 }

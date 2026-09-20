@@ -1,13 +1,12 @@
 package com.nikita.sleepcycle.ui.state
 
-// File purpose: pure derivation of each night-screen content variant (states A-D plus the OVERDUE and FINISHED
-// amendments) from one AlarmPlan and NightEngineView. Split from BuildNightUiState.kt to keep each file small.
+// File purpose: pure derivation of each night-screen content variant (states A-D plus the FINISHED amendment)
+// from one AlarmPlan and NightEngineView. Split from BuildNightUiState.kt to keep each file small.
 
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.WakeOption
-import com.nikita.sleepcycle.night.BandAlarmCommitment
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.napLengthFor
@@ -36,22 +35,20 @@ fun buildGoingToBedContent(settings: NightSettings, plan: AlarmPlan, view: Night
     return NightScreenContent.GoingToBedOrAsleep(
         onsetPhase = if (plan.onsetIsProjected) OnsetPhase.PROJECTED else OnsetPhase.ACTUAL,
         onsetTimeLabel = formatClockTime(onset, zone),
-        alarmTimeLabel = plan.bandAlarm?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
+        alarmTimeLabel = plan.wakeAt?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
         sleepLengthHoursLabel = formatSleepLengthLabel(sleepLengthFor(plan.cycles, debugOptions), debugOptions.fastNight),
         isDeadlineOnly = isDeadlineOnly,
         timeline = view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone, debugOptions) },
         deadlineTimeLabel = settings.deadline?.let { formatClockTime(it, zone) },
-        phoneSafetyAlarmTimeLabel = plan.phoneAlarm?.let { formatClockTime(it, zone) },
     )
 }
 
-/** NAP mode while asleep again for the nap (D4): asleep-style wording, the nap alarm as the hero number, no cycle timeline - a nap is one fixed short alarm, not a choice of cycles. */
+/** NAP mode while asleep again for the nap: asleep-style wording, the nap alarm as the hero number, no cycle timeline - a nap is one fixed short alarm, not a choice of cycles. */
 fun buildNapAsleepContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.NapAsleep {
     val onset = checkNotNull(plan.referenceOnset) { "referenceOnset is only null once the night is FINISHED" }
     return NightScreenContent.NapAsleep(
         onsetTimeLabel = formatClockTime(onset, zone),
-        alarmTimeLabel = plan.bandAlarm?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
-        phoneSafetyAlarmTimeLabel = plan.phoneAlarm?.let { formatClockTime(it, zone) },
+        alarmTimeLabel = plan.wakeAt?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
     )
 }
 
@@ -72,32 +69,20 @@ fun buildWokeUpContent(plan: AlarmPlan, deadline: Instant?, view: NightEngineVie
         timeline = if (napOnly) emptyList() else view.wakeOptions.map { toTimelineEntry(it, plan.cycles, zone, debugOptions) },
         napLengthLabel = if (napOnly) formatDuration(napLengthFor(debugOptions)) else null,
         tonightSoFarLabel = if (napOnly) formatDuration(view.summary.totalSleep) else null,
-        bandAlarmTimeLabel = if (napOnly) null else plan.bandAlarm?.let { formatClockTime(it, zone) },
-        bandAlarmIsEstimate = plan.onsetIsProjected,
-        phoneSafetyAlarmTimeLabel = plan.phoneAlarm?.let { formatClockTime(it, zone) },
+        alarmTimeLabel = if (napOnly) null else plan.wakeAt?.let { formatClockTime(it, zone) },
+        alarmIsEstimate = plan.onsetIsProjected,
     )
 }
 
-/** Amendment: still asleep past the planned alarm; the band keeps buzzing every few minutes until an awake mark. */
-fun buildOverdueContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.Overdue = NightScreenContent.Overdue(
-    nextBuzzTimeLabel = plan.bandAlarm?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
-    phoneSafetyAlarmTimeLabel = plan.phoneAlarm?.let { formatClockTime(it, zone) },
-)
+/** Amendment: the night is over but not ended yet; [AlarmPlan.reason] is already one plain-English sentence. F14: FINISHED never carries an alarm (wakeAt is null by construction), so there is nothing else to show. */
+fun buildFinishedContent(plan: AlarmPlan): NightScreenContent.NightFinished =
+    NightScreenContent.NightFinished(plan.reason)
 
-/** Amendment: the night is over but not ended yet; [AlarmPlan.reason] is already one plain-English sentence. The phone alarm is still armed at this point (D4), so it is shown here too. */
-fun buildFinishedContent(plan: AlarmPlan, zone: ZoneId): NightScreenContent.NightFinished =
-    NightScreenContent.NightFinished(plan.reason, plan.phoneAlarm?.let { formatClockTime(it, zone) })
-
-/**
- * State D: the morning report, built from the view captured just before ending the night.
- * [bandAlarmLeftover] is [NightState.lastBandAlarmSet]: the band is still armed at that minute, because no
- * Gadgetbridge intent can disarm a slot, and the report says so rather than implying the night is fully over.
- */
+/** State D: the morning report, built from the view captured just before ending the night. */
 fun buildMorningReportContent(
     view: NightEngineView,
     endedAt: Instant,
     zone: ZoneId,
-    bandAlarmLeftover: BandAlarmCommitment? = null,
 ): NightScreenContent.MorningReport {
     val stretches = view.summary.stretches.map { stretch ->
         StretchLine(
@@ -112,7 +97,6 @@ fun buildMorningReportContent(
         totalSleepDurationLabel = formatDuration(view.summary.totalSleep),
         wokeAtTimeLabel = view.summary.stretches.lastOrNull()?.end?.let { formatClockTime(it, zone) },
         stretches = stretches,
-        bandAlarmLeftoverTimeLabel = bandAlarmLeftover?.let { "%02d:%02d".format(it.hour, it.minute) },
     )
 }
 

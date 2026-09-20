@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
@@ -53,8 +54,7 @@ fun LogsScreen(
 
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconGlyphButton(
-                glyph = stringResource(R.string.glyph_back),
+            BackArrowButton(
                 contentDescription = stringResource(R.string.content_description_back),
                 onClick = onBack,
             )

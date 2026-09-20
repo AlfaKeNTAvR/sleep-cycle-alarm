@@ -1,7 +1,7 @@
 package com.nikita.sleepcycle.ui.screens
 
 // File purpose: the Debug/simulation screen - reached from a "Debug" row at the bottom of Setup, present
-// only in a debug build (see DebugOptions.kt). Three independent switches, the simulator's event buttons and
+// only in a debug build (see DebugOptions.kt). Two independent switches, the simulator's event buttons and
 // timeline, and the phone-alarm daylight test button.
 
 import androidx.compose.foundation.layout.Row
@@ -11,7 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
@@ -25,7 +25,6 @@ fun DebugScreen(
     state: DebugUiState,
     onSimulatedBandDataChange: (Boolean) -> Unit,
     onFastNightChange: (Boolean) -> Unit,
-    onDryRunBandCommandsChange: (Boolean) -> Unit,
     onFellAsleep: () -> Unit,
     onWokeUp: () -> Unit,
     onFellBackAsleep: () -> Unit,
@@ -35,8 +34,7 @@ fun DebugScreen(
 ) {
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconGlyphButton(
-                glyph = stringResource(R.string.glyph_back),
+            BackArrowButton(
                 contentDescription = stringResource(R.string.content_description_back),
                 onClick = onBack,
             )
@@ -58,13 +56,6 @@ fun DebugScreen(
                 checked = state.fastNight,
                 onCheckedChange = onFastNightChange,
                 contentDescription = stringResource(R.string.debug_fast_night_title),
-            )
-            ToggleRow(
-                title = stringResource(R.string.debug_dry_run_title),
-                description = stringResource(R.string.debug_dry_run_description),
-                checked = state.dryRunBandCommands,
-                onCheckedChange = onDryRunBandCommandsChange,
-                contentDescription = stringResource(R.string.debug_dry_run_title),
             )
         }
 

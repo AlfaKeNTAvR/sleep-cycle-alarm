@@ -1,12 +1,16 @@
 package com.nikita.sleepcycle.ui.screens.night
 
-// File purpose: the FINISHED amendment - the night is over (deadline passed, or woken at the alarm) but not
-// ended yet; offers "End night" (wired up by the caller, see NightScreen.kt).
+// File purpose: the FINISHED amendment - the night is over (deadline passed, or D5's nap cap spent with none
+// left) but not ended yet; offers "End night" (wired up by the caller, see NightScreen.kt). D3: band-detected
+// wake alone no longer reaches this state - only the deadline, the nap cap, or the owner's own "I'm awake"
+// (which ends the night outright, never landing here at all) do. F14: FINISHED never carries an alarm (D1's
+// wakeAt is null by construction the moment mode becomes FINISHED, and F7 makes the night's real ending
+// - cancelling the phone alarm and the tick alarm - happen on that same tick), so there is nothing to show
+// beyond the engine's own reason.
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,12 +20,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.LabeledValueRow
-import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
-import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 
 @Composable
 fun FinishedContent(content: NightScreenContent.NightFinished) {
@@ -42,13 +43,5 @@ fun FinishedContent(content: NightScreenContent.NightFinished) {
             color = NightOnSurfaceMuted,
             textAlign = TextAlign.Center,
         )
-        // The phone alarm stays armed even after the night is FINISHED but not yet ended (D4).
-        if (content.phoneSafetyAlarmTimeLabel != null) {
-            Column(modifier = Modifier.fillMaxWidth().padding(top = ScreenContentGap)) {
-                SettingsCard {
-                    LabeledValueRow(label = stringResource(R.string.night_phone_safety_alarm), value = content.phoneSafetyAlarmTimeLabel)
-                }
-            }
-        }
     }
 }

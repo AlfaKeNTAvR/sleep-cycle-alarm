@@ -7,7 +7,6 @@
     <string name="action_done">Done</string>
     <string name="glyph_setup">⚙</string>
     <string name="glyph_logs">≡</string>
-    <string name="glyph_back">←</string>
     <string name="content_description_open_setup">Open setup</string>
     <string name="content_description_open_logs">Open night logs</string>
     <string name="content_description_back">Back</string>
@@ -41,7 +40,6 @@
         <item>Automations › Auto export database: turn on \"Auto export enabled\"</item>
         <item>Same screen, \"Export location\": set it (e.g. to Documents) - required, or exports write nothing</item>
         <item>Do NOT use Data management › Export Data - that folder belongs to Gadgetbridge and our app cannot read it</item>
-        <item>Band gear › Developer options: \"Allow 3rd party apps to set alarms\"</item>
     </string-array>
     <string name="start_blocked_gadgetbridge">Install Gadgetbridge to continue.</string>
     <string name="start_blocked_band_address">Enter the band\'s address in Setup.</string>
@@ -62,14 +60,11 @@
     <string name="before_bed_band_connected">Band connected</string>
     <string name="before_bed_band_not_ready">Band setup incomplete</string>
     <string name="before_bed_wake_me_by">Wake me by</string>
-    <string name="before_bed_wake_me_by_description">Band wakes you at the end of a sleep cycle before this. Phone rings at this time as a safety.</string>
+    <string name="before_bed_wake_me_by_description">The alarm rings at the end of a sleep cycle before this.</string>
     <string name="content_description_deadline_switch">Use a deadline</string>
     <string name="before_bed_sleep_up_to">Sleep up to</string>
     <string name="content_description_sleep_length_option">Sleep %1$s</string>
     <string name="content_description_sleep_length_option_unavailable">Sleep %1$s, does not fit before the deadline</string>
-    <string name="before_bed_phone_backup_title">Phone backup</string>
-    <string name="before_bed_phone_backup_description">15 min after the band alarm. Only without a deadline.</string>
-    <string name="content_description_phone_backup_switch">Phone backup alarm</string>
     <string name="before_bed_start_night">Start night</string>
 
     <!-- Night screen: common -->
@@ -77,8 +72,6 @@
     <string name="night_status_synced_ok">Synced at %1$s</string>
     <string name="night_status_sync_failed">Sync failed at %1$s: %2$s</string>
     <string name="night_status_data_stale">Data may be stale as of %1$s</string>
-    <string name="night_band_alarm_status_requested">Band alarm %1$s sent, not confirmed yet</string>
-    <string name="night_band_alarm_status_confirmed">Band alarm %1$s confirmed on the band</string>
     <string name="night_loading">Getting the first reading…</string>
     <string name="night_stop_night">Stop night</string>
     <string name="night_im_up_end_night">I\'m up, end night</string>
@@ -95,20 +88,16 @@
     <string name="night_a_sleep_length">%1$s of sleep</string>
     <string name="night_timeline_title">Possible wake-ups</string>
     <string name="night_timeline_deadline_by">by %1$s</string>
-    <string name="night_phone_safety_alarm">Phone safety alarm</string>
 
     <!-- Night screen: states B and C -->
     <string name="night_woke_caption">You slept</string>
     <string name="night_b_timeline_header">Fall back asleep by %1$s</string>
     <string name="night_c_timeline_header">No full cycle fits before %1$s</string>
     <string name="night_c_nap_title">Nap: %1$s</string>
-    <string name="night_c_nap_description">Band wakes you 20 min after you fall asleep, before deep sleep.</string>
-    <string name="night_band_alarm">Band alarm</string>
-    <string name="night_band_alarm_estimate">~%1$s</string>
+    <string name="night_c_nap_description">Alarm rings 20 min after you fall asleep, before deep sleep.</string>
+    <string name="night_alarm">Alarm</string>
+    <string name="night_alarm_estimate">~%1$s</string>
     <string name="night_tonight_so_far">Tonight so far</string>
-
-    <!-- Night screen: overdue -->
-    <string name="night_overdue_title">Time to get up</string>
 
     <!-- Night screen: finished -->
     <string name="night_finished_title">Night finished</string>
@@ -145,28 +134,15 @@
     <string name="alarm_notification_title">Wake up</string>
     <string name="alarm_notification_text">Sleep cycle alarm</string>
     <string name="alarm_notification_stop_action">Stop</string>
+    <!-- D4/H7.1: the out-of-bed nudge, 15 min after the wake alarm rings -->
+    <string name="alarm_notification_out_of_bed_title">Time to get up</string>
+    <string name="alarm_notification_out_of_bed_text">Sleep cycle alarm</string>
 
     <!-- Before bed: no-deadline note -->
     <string name="before_bed_no_deadline_note">Without a deadline the wake time keeps moving until the band reports sleep, so nothing caps the night.</string>
 
-    <!-- Item 4: no phone alarm at all tonight (deadline off AND phone backup off) -->
-    <string name="warning_no_phone_alarm">Nothing on the phone will ring tonight, only the band.</string>
-
-    <!-- The band's own alarm table could not be read on the last sync, so the alarm already on the band is held as it is -->
-    <string name="warning_band_alarm_blind">The alarm list on the band could not be read; the band keeps the alarm it already has until the next good sync.</string>
-
-    <!-- Tonight's bounded re-sends are all spent, so the app stopped trying to restore the band alarm -->
-    <string name="warning_band_resend_limit_reached">The band alarm could not be set again tonight; the app has stopped retrying. The band still holds the last time it was given.</string>
-
-    <!-- Morning report: no Gadgetbridge intent can disarm a band alarm slot, so the last alarm set is still armed -->
-    <string name="night_morning_band_alarm_leftover">Your band is still set to vibrate at %1$s. Gadgetbridge cannot switch a band alarm off, only overwrite it, so it will go off again at that time unless you start another night first or clear it in Gadgetbridge (long-press the alarm and mark it unused).</string>
-
-    <!-- Smart-wakeup: the slot backing our confirmed or requested band alarm still carries the band's own smart-wakeup flag -->
-    <string name="warning_band_smart_wakeup">Band may wake you up to %1$d min early: slot %2$d is a smart alarm</string>
-    <string name="warning_band_smart_wakeup_unknown_window">Band may wake you up early: slot %1$d is a smart alarm</string>
-
     <!-- Night screen: state A, DEADLINE_ONLY -->
-    <string name="night_a_deadline_only_note">Band vibrates at the deadline</string>
+    <string name="night_a_deadline_only_note">Alarm rings at the deadline</string>
 
     <!-- Night screen: NAP while asleep -->
     <string name="night_nap_asleep_caption">Napping, asleep since %1$s</string>
@@ -184,9 +160,7 @@
     <string name="debug_simulated_band_data_title">Simulated band data</string>
     <string name="debug_simulated_band_data_description">Sleep segments come from the buttons below instead of a real Gadgetbridge sync.</string>
     <string name="debug_fast_night_title">Fast night</string>
-    <string name="debug_fast_night_description">Runs the engine on a shortened schedule: 3 min cycles, so a whole night finishes in minutes.</string>
-    <string name="debug_dry_run_title">Dry run band commands</string>
-    <string name="debug_dry_run_description">Logs band alarm commands instead of sending them; confirms them after one tick so the flow continues.</string>
+    <string name="debug_fast_night_description">Runs the engine on a shortened schedule: 5 min cycles, so a whole night finishes in minutes.</string>
     <string name="debug_simulator_controls_title">Simulator</string>
     <string name="debug_fell_asleep_button">I fell asleep now</string>
     <string name="debug_woke_up_button">I woke up now</string>
@@ -202,7 +176,6 @@
 
     <!-- Debug warning banner (Before bed and Night screens): names every switch that is currently live -->
     <string name="debug_switch_simulated_sleep_data">SIMULATED SLEEP DATA</string>
-    <string name="debug_switch_band_commands_not_sent">BAND COMMANDS NOT SENT</string>
     <string name="debug_switch_fast_night">FAST NIGHT</string>
 
     <!-- Simulated-night start confirmation -->
@@ -245,11 +218,6 @@
     <string name="setup_wizard_export_file_title">Export file</string>
 
     <string name="setup_wizard_phone_permissions_title">Phone permissions</string>
-
-    <string name="setup_wizard_band_alarms_title">Band alarms</string>
-    <string name="setup_wizard_band_alarms_allow_third_party_line">Band gear › Developer options: \"Allow 3rd party apps to set alarms\"</string>
-    <string name="setup_wizard_band_alarms_smart_slot_note">One of the band\'s alarm slots may be a fixed smart-wakeup slot that can never become a normal alarm. If Test connection flags one, give it a title (for example \"Smart\") and leave it switched off.</string>
-    <string name="setup_wizard_band_alarms_free_slot_note">If Test connection reports no usable slot, open the band\'s alarms in Gadgetbridge and clear the title of a disabled one.</string>
 
     <string name="setup_wizard_test_connection_title">Test connection</string>
 </resources>

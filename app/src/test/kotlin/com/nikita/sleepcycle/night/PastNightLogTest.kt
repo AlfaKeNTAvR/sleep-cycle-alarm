@@ -57,8 +57,7 @@ class PastNightLogTest {
 
     private val deadlineSettings = NightSettings(
         deadline = Instant.parse("2026-09-18T06:30:00Z"),
-        pickedCycles = 5,
-        phoneBackupEnabled = false
+        pickedCycles = 5
     )
 
     @Test
@@ -91,7 +90,7 @@ class PastNightLogTest {
 
     @Test
     fun `a night with no deadline round trips as no deadline`() {
-        val settings = NightSettings(deadline = null, pickedCycles = 4, phoneBackupEnabled = true)
+        val settings = NightSettings(deadline = null, pickedCycles = 4)
 
         val parsed = parsePastNightLog(listOf(nightEndLine(twoStretchSummary, settings, Instant.parse("2026-09-18T04:25:00Z"))))
 
@@ -170,7 +169,7 @@ class PastNightLogTest {
 
     @Test
     fun `a fast simulated night is read back as a fast night`() {
-        val settings = NightSettings(deadline = null, pickedCycles = 3, phoneBackupEnabled = false)
+        val settings = NightSettings(deadline = null, pickedCycles = 3)
 
         val parsed = parsePastNightLog(listOf(nightStartLine(settings, Instant.parse("2026-09-18T04:11:05Z"), fastNight = true)))
 

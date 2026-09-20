@@ -1,6 +1,6 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: user-facing settings persisted in DataStore - device MAC, export file, deadline, sleep length, backup switch.
+// File purpose: user-facing settings persisted in DataStore - device MAC, export file, deadline, sleep length.
 
 import android.content.Context
 import android.net.Uri
@@ -17,7 +17,6 @@ import java.time.LocalTime
 
 private const val DATASTORE_NAME = "app_settings"
 const val DEFAULT_PICKED_CYCLES = 5
-const val DEFAULT_PHONE_BACKUP_ENABLED = false
 const val DEFAULT_DEADLINE_ENABLED = false
 
 private val Context.appSettingsStore by preferencesDataStore(name = DATASTORE_NAME)
@@ -27,20 +26,16 @@ private val KEY_EXPORT_URI = stringPreferencesKey("export_uri")
 private val KEY_LAST_DEADLINE = stringPreferencesKey("last_deadline")
 private val KEY_DEADLINE_ENABLED = booleanPreferencesKey("deadline_enabled")
 private val KEY_PICKED_CYCLES = intPreferencesKey("picked_cycles")
-private val KEY_PHONE_BACKUP_ENABLED = booleanPreferencesKey("phone_backup_enabled")
 private val KEY_LAST_SETUP_CHECK_PASSED_AT = longPreferencesKey("last_setup_check_passed_at_epoch_ms")
-private val KEY_LAST_SETUP_CHECK_USABLE_SLOTS = intPreferencesKey("last_setup_check_usable_band_alarm_slots")
 
-/** The user's saved setup and last-used night settings. [lastSetupCheckUsableBandAlarmSlots] is how many band alarm slots the last passing setup check found usable; null when no check has passed, and what tells the Before-bed screen tonight would run on one slot (see SetupCompleteness.kt). */
+/** The user's saved setup and last-used night settings. */
 data class AppSettings(
     val deviceMac: String?,
     val exportUri: Uri?,
     val lastDeadline: LocalTime?,
     val deadlineEnabled: Boolean,
     val pickedCycles: Int,
-    val phoneBackupEnabled: Boolean,
-    val lastSetupCheckPassedAt: Instant?,
-    val lastSetupCheckUsableBandAlarmSlots: Int? = null
+    val lastSetupCheckPassedAt: Instant?
 )
 
 /** Streams the saved app settings, with sensible defaults before anything has been picked. */
@@ -52,9 +47,7 @@ fun readAppSettings(context: Context): Flow<AppSettings> =
             lastDeadline = preferences[KEY_LAST_DEADLINE]?.let(LocalTime::parse),
             deadlineEnabled = preferences[KEY_DEADLINE_ENABLED] ?: DEFAULT_DEADLINE_ENABLED,
             pickedCycles = preferences[KEY_PICKED_CYCLES] ?: DEFAULT_PICKED_CYCLES,
-            phoneBackupEnabled = preferences[KEY_PHONE_BACKUP_ENABLED] ?: DEFAULT_PHONE_BACKUP_ENABLED,
-            lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli),
-            lastSetupCheckUsableBandAlarmSlots = preferences[KEY_LAST_SETUP_CHECK_USABLE_SLOTS]
+            lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli)
         )
     }
 
@@ -66,11 +59,8 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         settings.lastDeadline?.let { preferences[KEY_LAST_DEADLINE] = it.toString() } ?: preferences.remove(KEY_LAST_DEADLINE)
         preferences[KEY_DEADLINE_ENABLED] = settings.deadlineEnabled
         preferences[KEY_PICKED_CYCLES] = settings.pickedCycles
-        preferences[KEY_PHONE_BACKUP_ENABLED] = settings.phoneBackupEnabled
         settings.lastSetupCheckPassedAt?.let { preferences[KEY_LAST_SETUP_CHECK_PASSED_AT] = it.toEpochMilli() }
             ?: preferences.remove(KEY_LAST_SETUP_CHECK_PASSED_AT)
-        settings.lastSetupCheckUsableBandAlarmSlots?.let { preferences[KEY_LAST_SETUP_CHECK_USABLE_SLOTS] = it }
-            ?: preferences.remove(KEY_LAST_SETUP_CHECK_USABLE_SLOTS)
     }
 }
 
@@ -78,11 +68,11 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
 fun withDeviceMac(settings: AppSettings, mac: String): AppSettings {
     val normalized = mac.trim().uppercase()
     if (normalized == settings.deviceMac) return settings.copy(deviceMac = normalized)
-    return settings.copy(deviceMac = normalized, lastSetupCheckPassedAt = null, lastSetupCheckUsableBandAlarmSlots = null)
+    return settings.copy(deviceMac = normalized, lastSetupCheckPassedAt = null)
 }
 
 /** [settings] with [uri] as the export file. A passing setup check is only trustworthy for the file it read, so changing it clears the check. */
 fun withExportUri(settings: AppSettings, uri: Uri): AppSettings {
     if (uri == settings.exportUri) return settings
-    return settings.copy(exportUri = uri, lastSetupCheckPassedAt = null, lastSetupCheckUsableBandAlarmSlots = null)
+    return settings.copy(exportUri = uri, lastSetupCheckPassedAt = null)
 }

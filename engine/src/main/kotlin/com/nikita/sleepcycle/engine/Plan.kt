@@ -15,9 +15,39 @@ fun computeAlarmPlan(
     segments: List<SleepSegment>,
     settings: NightSettings,
     now: Instant,
-    previousPlan: AlarmPlan?,
+    /**
+     * H1 SUPERSEDES the earlier `previousPlan?.wakeAt` reading: the night's own morning alarm time, LATCHED
+     * by the app layer (NightState.morningAlarmAt) from whichever tick last produced a [AlarmMode.FULL_CYCLES]
+     * or [AlarmMode.DEADLINE_ONLY] plan, and never overwritten by a [AlarmMode.NAP] plan's own slid `wakeAt`.
+     * Null before the first such plan exists. `previousPlan?.wakeAt` looked like the same fact but was not: in
+     * the sliding-AWAKE-nap case it IS the slid nap's own value (`now + napLength` from the tick before), which
+     * is always ahead of `now` by construction, so a guard built on it could never fire - see WakeAlarm.kt's
+     * `napAlarm` for where this is actually used.
+     */
+    morningAlarmAt: Instant?,
     zone: ZoneId,
-    config: EngineConfig
+    config: EngineConfig,
+    /**
+     * D5/F6: the MAIN wake alarm's fired instant (NightState.wakeAlarmFiredAt), null until it fires this
+     * night. Never a mid-night rule 7 nap's own firing - only the wake alarm itself sets this, so rule 7's
+     * mid-night nap can never switch on the D5 cap machinery by itself.
+     */
+    wakeAlarmFiredAt: Instant?,
+    /**
+     * F2 SUPERSEDES the original spec: how many post-wake nap ALARMS have actually FIRED this night
+     * (NightState.napAlarmsUsed), capped at [MAX_NAP_ALARMS] - not how many have been armed. Armed-but-not-yet-
+     * fired naps do not count, so retargeting or pull-forward while one is still pending can never inflate it.
+     */
+    napAlarmsUsed: Int,
+    /**
+     * H2: the most recent nap alarm's own fired instant, mid-night (rule 7) or post-wake (D5) alike - null
+     * until the first nap alarm ever fires this night. Lets [computeWakeAlarm]'s ASLEEP branch tell "a nap
+     * alarm already rang for THIS stretch, the owner slept through it" (compare against `referenceOnset`) apart
+     * from "this target just happens to be overdue" (a nap detected late, or an alarm computed in the past
+     * after a reboot) - only the first case must skip the ordinary 2-minute pull-forward for a genuinely fresh
+     * napLength instead. See WakeAlarm.kt's own doc.
+     */
+    lastNapAlarmFiredAt: Instant?
 ): AlarmPlan {
     validateConfig(config)
     validateSettings(settings, config)
@@ -38,50 +68,29 @@ fun computeAlarmPlan(
     val cycles = capCyclesByDeadline(owedCycles, reference.onset, settings, config)
 
     val rule = chooseMode(
-        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, now, previousPlan, config
+        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, now, config, napAlarmsUsed
     )
-    val outcome = computeBandAlarm(
-        rule, state, reference.onset, settings.deadline, cycles, now, previousPlan, config
+    // H1: the latched morningAlarmAt, alongside wakeAlarmFiredAt, is what lets computeWakeAlarm's AWAKE branch
+    // (rule 7's sliding nap) tell that the morning's alarm time has already passed even when no firing was
+    // ever recorded for it, and tell it PERMANENTLY rather than for one tick - see WakeAlarm.kt's own doc.
+    val wakeAt = computeWakeAlarm(
+        rule, state, reference.onset, settings.deadline, cycles, now, config, wakeAlarmFiredAt, morningAlarmAt, lastNapAlarmFiredAt
     )
-    val mode = modeOf(outcome)
-    val bandAlarm = alarmOf(outcome)
-    val outcomeOverdueSince = overdueSinceOf(outcome)
-    val overdueSince = if (mode == AlarmMode.OVERDUE) outcomeOverdueSince else null
-    val phoneAlarm = computePhoneAlarm(
-        settings.deadline, settings.phoneBackupEnabled, mode, bandAlarm, previousPlan, config
-    )
+    val mode = modeOf(rule)
 
     val finished = mode == AlarmMode.FINISHED
     val referenceOnset = if (finished) null else reference.onset
     val onsetIsProjected = if (finished) false else reference.projected
-    // The overdue cap (EngineConfig.maxOverdueDuration), not the deadline or an awake mark, is what ended the
-    // night: `describePlan` needs this to explain the FINISHED verdict correctly.
-    val overdueCapReached = finished && outcomeOverdueSince != null &&
-        !now.isBefore(outcomeOverdueSince.plus(config.maxOverdueDuration))
 
-    val reason = describePlan(
-        mode, reference, settings, cycles, bandAlarm, zone, outcomeOverdueSince, overdueCapReached, sleptSoFar
-    )
-    return AlarmPlan(
-        mode, bandAlarm, phoneAlarm, cycles, referenceOnset, onsetIsProjected, reason, overdueSince,
-        sleptSoFar, owedCycles
-    )
+    val reason = describePlan(mode, reference, settings, cycles, wakeAt, zone, sleptSoFar)
+    return AlarmPlan(mode, wakeAt, cycles, referenceOnset, onsetIsProjected, reason, sleptSoFar, owedCycles)
 }
 
-private fun modeOf(outcome: BandAlarmResult): AlarmMode = when (outcome) {
-    is BandAlarmResult.Finished -> AlarmMode.FINISHED
-    is BandAlarmResult.Scheduled -> outcome.mode
-}
-
-private fun alarmOf(outcome: BandAlarmResult): Instant? = when (outcome) {
-    is BandAlarmResult.Finished -> null
-    is BandAlarmResult.Scheduled -> outcome.alarm
-}
-
-/** The missed band alarm that started the overdue period, if [outcome] carries one (spec step 2, "Overdue rule"). */
-private fun overdueSinceOf(outcome: BandAlarmResult): Instant? = when (outcome) {
-    is BandAlarmResult.Finished -> outcome.overdueSince
-    is BandAlarmResult.Scheduled -> outcome.overdueSince
+private fun modeOf(rule: PlanRule): AlarmMode = when (rule) {
+    PlanRule.FINISHED -> AlarmMode.FINISHED
+    PlanRule.NAP -> AlarmMode.NAP
+    PlanRule.DEADLINE_ONLY -> AlarmMode.DEADLINE_ONLY
+    PlanRule.FULL_CYCLES -> AlarmMode.FULL_CYCLES
 }
 
 /** Rule 6/7's "is this a return to sleep after an awakening": true in AWAKE with history, or ASLEEP after one. */
@@ -114,47 +123,43 @@ internal fun describePlan(
     reference: ReferenceOnset,
     settings: NightSettings,
     cycles: Int,
-    bandAlarm: Instant?,
+    wakeAt: Instant?,
     zone: ZoneId,
-    overdueSince: Instant? = null,
-    overdueCapReached: Boolean = false,
     sleptSoFar: Duration = Duration.ZERO
 ): String {
-    val alarmText = bandAlarm?.let { formatTime(it, zone) } ?: "none"
+    val alarmText = wakeAt?.let { formatTime(it, zone) } ?: "none"
     val onsetLabel = if (reference.projected) "Estimated asleep at" else "Asleep since"
     return when (mode) {
-        // Rule 1 (deadline passed / woken at alarm) or the overdue cap amendment (still asleep too long past
-        // the missed alarm): both end the night, so the sentence names whichever one actually happened.
-        AlarmMode.FINISHED -> {
-            val deadlineText = settings.deadline?.let { ", deadline was ${formatTime(it, zone)}" } ?: ""
-            if (overdueCapReached && overdueSince != null) {
-                "Still asleep long after the missed alarm at ${formatTime(overdueSince, zone)}, giving up for the night$deadlineText."
-            } else {
-                "Night finished$deadlineText."
-            }
+        // Rule 1, or D5's nap cap with no deadline left to fall back on (F4: a cap spent with a deadline still
+        // ahead is DEADLINE_ONLY, not FINISHED - so FINISHED with a deadline present can only mean the
+        // deadline itself is what ended the night, never the cap). D3: band-detected wake no longer ends the
+        // night by itself. F9: the two triggers get their own wording rather than one text silently blaming
+        // the deadline for a cap-spent finish, or saying nothing at all about the cause.
+        AlarmMode.FINISHED -> if (settings.deadline != null) {
+            "Night finished, deadline was ${formatTime(settings.deadline, zone)}."
+        } else {
+            "Night finished, the $MAX_NAP_ALARMS nap alarms are used up."
         }
         // Rules 3, 4, 6: onset plus the whole cycles still owed of the night's total that also fit.
         AlarmMode.FULL_CYCLES -> {
             val onsetText = "$onsetLabel ${formatTime(reference.onset, zone)}"
             val deadlineText = settings.deadline?.let { " before ${formatTime(it, zone)}" } ?: ""
             if (sleptSoFar.isZero) {
-                "$onsetText, $cycles of ${settings.pickedCycles} picked cycles fit$deadlineText, band alarm $alarmText."
+                "$onsetText, $cycles of ${settings.pickedCycles} picked cycles fit$deadlineText, alarm $alarmText."
             } else {
                 val fittingText = settings.deadline?.let { ", fitting before ${formatTime(it, zone)}" } ?: ""
                 "$onsetText, $cycles of ${settings.pickedCycles} picked cycles still owed after " +
-                    "${formatSleepDuration(sleptSoFar)} slept tonight$fittingText, band alarm $alarmText."
+                    "${formatSleepDuration(sleptSoFar)} slept tonight$fittingText, alarm $alarmText."
             }
         }
-        // Rule 5: no whole cycle fits before the deadline, so the band vibrates at the deadline.
-        AlarmMode.DEADLINE_ONLY -> "No full cycle fits before the deadline, band alarm $alarmText."
+        // Rule 5: no whole cycle fits before the deadline, so the alarm rings at the deadline.
+        AlarmMode.DEADLINE_ONLY -> "No full cycle fits before the deadline, alarm $alarmText."
         // Rule 7: a short nap after an awakening, capped by the deadline when there is one.
         AlarmMode.NAP -> {
             val boundaryText = settings.deadline?.let { ", capped at ${formatTime(it, zone)}" } ?: ""
             val sleptText = if (sleptSoFar.isZero) "" else ", ${formatSleepDuration(sleptSoFar)} slept tonight"
-            "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText, band alarm $alarmText$boundaryText."
+            "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText, alarm $alarmText$boundaryText."
         }
-        // Overdue amendment: still asleep past the planned alarm, buzzing again shortly after this sync.
-        AlarmMode.OVERDUE -> "Still asleep past the planned alarm, band alarm $alarmText."
     }
 }
 

@@ -21,7 +21,6 @@ private val Context.debugSettingsStore by preferencesDataStore(name = DATASTORE_
 
 private val KEY_SIMULATED_BAND_DATA = booleanPreferencesKey("simulated_band_data")
 private val KEY_FAST_NIGHT = booleanPreferencesKey("fast_night")
-private val KEY_BAND_COMMAND_MODE = stringPreferencesKey("band_command_mode")
 private val KEY_SIMULATED_EVENTS = stringPreferencesKey("simulated_sleep_events")
 private val KEY_LAST_CHANGED_AT = stringPreferencesKey("debug_options_last_changed_at")
 
@@ -30,8 +29,7 @@ fun readDebugOptions(context: Context): Flow<DebugOptions> =
     context.debugSettingsStore.data.map { preferences ->
         DebugOptions(
             simulatedBandData = preferences[KEY_SIMULATED_BAND_DATA] ?: false,
-            fastNight = preferences[KEY_FAST_NIGHT] ?: false,
-            bandCommandMode = preferences[KEY_BAND_COMMAND_MODE]?.let(::parseBandCommandMode) ?: BandCommandMode.SEND_TO_BAND
+            fastNight = preferences[KEY_FAST_NIGHT] ?: false
         )
     }
 
@@ -44,7 +42,6 @@ suspend fun writeDebugOptions(context: Context, options: DebugOptions, changedAt
     context.debugSettingsStore.edit { preferences ->
         preferences[KEY_SIMULATED_BAND_DATA] = options.simulatedBandData
         preferences[KEY_FAST_NIGHT] = options.fastNight
-        preferences[KEY_BAND_COMMAND_MODE] = options.bandCommandMode.name
         preferences[KEY_LAST_CHANGED_AT] = changedAt.toString()
     }
 }
@@ -61,13 +58,6 @@ suspend fun writeSimulatedSleepEvents(context: Context, events: List<SimulatedSl
         preferences[KEY_SIMULATED_EVENTS] = encodeSimulatedSleepEvents(events)
     }
 }
-
-private fun parseBandCommandMode(text: String): BandCommandMode =
-    try {
-        BandCommandMode.valueOf(text)
-    } catch (error: IllegalArgumentException) {
-        BandCommandMode.SEND_TO_BAND
-    }
 
 /** JSON encoding of a simulated event list, the inverse of [decodeSimulatedSleepEventsTolerant]. */
 fun encodeSimulatedSleepEvents(events: List<SimulatedSleepEvent>): String {

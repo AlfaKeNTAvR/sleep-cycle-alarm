@@ -15,9 +15,15 @@ private const val WAKE_LOCK_TAG = "SleepCycleAlarm:Ringing"
 
 private var heldWakeLock: PowerManager.WakeLock? = null
 
-/** Acquires the ringing wake lock, timed out at [timeout] (matching the alarm's auto-stop) as a last-resort safety net. */
+/**
+ * Acquires the ringing wake lock, timed out at [timeout] (matching the alarm's auto-stop) as a last-resort
+ * safety net. F12: releases any previously held lock first - D4 made overlapping alarms possible for the
+ * first time (the wake alarm and its own out-of-bed nudge can both fire within one ringing session), and
+ * without this the earlier lock's reference was simply overwritten and leaked until its own timeout.
+ */
 fun acquireAlarmWakeLock(context: Context, timeout: Duration) {
     val powerManager = context.getSystemService<PowerManager>() ?: return
+    releaseAlarmWakeLock()
     val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
     wakeLock.acquire(timeout.toMillis())
     heldWakeLock = wakeLock

@@ -64,23 +64,3 @@ fun sleepLengthFor(cycles: Int, debugOptions: DebugOptions = DebugOptions()): Du
 
 /** The nap length (rule 7), for the nap card's "Nap: 20 min" label (or the fast debug night's shorter one). */
 fun napLengthFor(debugOptions: DebugOptions = DebugOptions()): Duration = resolveEngineConfig(debugOptions).napLength
-
-/** Where the band alarm commitment stands, for the night screen's status line. Null when neither a request nor a confirmation is on file (no band alarm wanted right now). */
-sealed interface BandAlarmStatus {
-    /** Asked the band to carry [hour]:[minute], not yet seen it confirmed by read-back. */
-    data class Requested(val hour: Int, val minute: Int) : BandAlarmStatus
-
-    /** [hour]:[minute] was read back from the band's own alarm table: it is really there. */
-    data class Confirmed(val hour: Int, val minute: Int) : BandAlarmStatus
-}
-
-/**
- * Reads [NightState.requestedBandAlarm] and [NightState.confirmedBandAlarm] into one status. A pending
- * request takes priority over an older confirmed alarm ([BandAlarmOutcome.MISSING] can carry both at once):
- * the pending time is the one the owner actually cares about right now.
- */
-fun bandAlarmStatusFor(state: NightState): BandAlarmStatus? {
-    state.requestedBandAlarm?.let { return BandAlarmStatus.Requested(it.hour, it.minute) }
-    state.confirmedBandAlarm?.let { return BandAlarmStatus.Confirmed(it.hour, it.minute) }
-    return null
-}

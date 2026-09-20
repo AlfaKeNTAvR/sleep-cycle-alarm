@@ -12,7 +12,6 @@ class AppSettingsTest {
         lastDeadline = null,
         deadlineEnabled = false,
         pickedCycles = 5,
-        phoneBackupEnabled = false,
         lastSetupCheckPassedAt = Instant.parse("2026-09-17T00:00:00Z"),
     )
 

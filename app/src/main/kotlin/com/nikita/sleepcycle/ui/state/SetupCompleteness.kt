@@ -4,7 +4,6 @@ package com.nikita.sleepcycle.ui.state
 // screen's "Start night" gating, so the two can never disagree.
 
 import com.nikita.sleepcycle.night.AppSettings
-import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
 import java.time.Duration
 import java.time.Instant
@@ -30,14 +29,12 @@ data class StartNightGate(val enabled: Boolean, val blockedBySetupCheck: Boolean
 // an open question for the owner, not something this file decides silently.
 
 /**
- * True only when the Debug screen's simulated band data AND dry-run band commands are both on - the one
- * combination where the app never talks to Gadgetbridge or the band for real this night, so it can relax
- * which setup items and which setup-check recency it requires (see [isSetupItemRequired] and
- * [startNightGate]). Neither switch alone relaxes anything: fast night changes only timing, and either
- * simulated data or dry-run commands alone still touches the real band through the other one.
+ * True when the Debug screen's simulated band data switch is on - the app never talks to Gadgetbridge or the
+ * band for real this night (see DebugBandDataSource.kt), so it can relax which setup items and which
+ * setup-check recency it requires (see [isSetupItemRequired] and [startNightGate]). Fast night alone changes
+ * only timing and never relaxes anything.
  */
-fun debugOptionsRelaxSetup(debugOptions: DebugOptions): Boolean =
-    debugOptions.simulatedBandData && debugOptions.bandCommandMode == BandCommandMode.DRY_RUN
+fun debugOptionsRelaxSetup(debugOptions: DebugOptions): Boolean = debugOptions.simulatedBandData
 
 /** The phone-side setup items debug options never bypass (per the task spec: notifications, full-screen alarm, battery, and the always-granted exact-alarms item). */
 private val ALWAYS_REQUIRED_SETUP_ITEMS: Set<SetupItemKind> = setOf(

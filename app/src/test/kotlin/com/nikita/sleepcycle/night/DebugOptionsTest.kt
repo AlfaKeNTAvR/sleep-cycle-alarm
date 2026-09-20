@@ -12,7 +12,7 @@ import java.time.Duration
 import java.time.Instant
 
 class DebugOptionsTest {
-    private val allOn = DebugOptions(simulatedBandData = true, fastNight = true, bandCommandMode = BandCommandMode.DRY_RUN)
+    private val allOn = DebugOptions(simulatedBandData = true, fastNight = true)
 
     @Test
     fun `a release build always resolves to all-off, regardless of what is stored`() {
@@ -45,11 +45,6 @@ class DebugOptionsTest {
     }
 
     @Test
-    fun `isAnyEnabled is true when only dry-run band commands is on`() {
-        assertEquals(true, DebugOptions(bandCommandMode = BandCommandMode.DRY_RUN).isAnyEnabled)
-    }
-
-    @Test
     fun `activeDebugSwitches is empty when every switch is off`() {
         assertEquals(emptyList<ActiveDebugSwitch>(), activeDebugSwitches(DebugOptions()))
     }
@@ -60,11 +55,6 @@ class DebugOptionsTest {
     }
 
     @Test
-    fun `activeDebugSwitches names dry-run band commands alone`() {
-        assertEquals(listOf(ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT), activeDebugSwitches(DebugOptions(bandCommandMode = BandCommandMode.DRY_RUN)))
-    }
-
-    @Test
     fun `activeDebugSwitches names fast night alone`() {
         assertEquals(listOf(ActiveDebugSwitch.FAST_NIGHT), activeDebugSwitches(DebugOptions(fastNight = true)))
     }
@@ -72,7 +62,7 @@ class DebugOptionsTest {
     @Test
     fun `activeDebugSwitches names every switch that is on, in a stable order`() {
         assertEquals(
-            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT, ActiveDebugSwitch.FAST_NIGHT),
+            listOf(ActiveDebugSwitch.SIMULATED_SLEEP_DATA, ActiveDebugSwitch.FAST_NIGHT),
             activeDebugSwitches(allOn)
         )
     }

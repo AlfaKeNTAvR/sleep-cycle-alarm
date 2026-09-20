@@ -1,7 +1,8 @@
 package com.nikita.sleepcycle.bridge
 
-// File purpose: copies the Gadgetbridge database export into cache, verifies it, and reads sleep data and
-// the band's alarm table from it in the same pass.
+// File purpose: copies the Gadgetbridge database export into cache, verifies it, and reads sleep data from it.
+// D2: the band's alarm table is no longer read at all - the band is a sensor only, so nothing here ever
+// touches the ALARM table.
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
@@ -14,13 +15,11 @@ import java.time.Instant
 private const val CACHE_FILE_NAME = "gadgetbridge_export_copy.db"
 private const val TABLE_ACTIVITY_SAMPLE = "HUAWEI_ACTIVITY_SAMPLE"
 private const val TABLE_DEVICE = "DEVICE"
-private const val TABLE_ALARM = "ALARM"
 
 sealed interface BandDataResult {
     data class Success(
         val segments: List<SleepSegment>,
         val newestSampleAt: Instant?,
-        val bandAlarms: List<BandAlarmSlot>,
         val exportFileModifiedAt: Instant?
     ) : BandDataResult
     data class Failure(val step: String, val cause: String) : BandDataResult
@@ -28,8 +27,8 @@ sealed interface BandDataResult {
 
 /**
  * Copies the exported database at [exportUri] into cache, runs a quick integrity check, finds the device row
- * for [deviceMac], and reads sleep segments at or after [since] plus the current band alarm table. The cache
- * copy is always deleted afterwards, whether reading succeeded or not.
+ * for [deviceMac], and reads sleep segments at or after [since]. The cache copy is always deleted afterwards,
+ * whether reading succeeded or not.
  */
 fun readBandData(context: Context, exportUri: Uri, deviceMac: String, since: Instant): BandDataResult {
     val exportFileModifiedAt = queryDocumentLastModified(context, exportUri)
@@ -65,9 +64,7 @@ private fun readFromOpenDatabase(
     val samples = readRawActivitySamples(database, deviceId, since)
     val segments = mapRawSamplesToSleepSegments(samples, deviceId)
     val newestSampleAt = newestHeartRateSampleAt(samples, deviceId)
-    val alarmRows = readRawBandAlarmRows(database, deviceId)
-    val bandAlarms = mapRawBandAlarmRowsToSlots(alarmRows, deviceId)
-    return BandDataResult.Success(segments, newestSampleAt, bandAlarms, exportFileModifiedAt)
+    return BandDataResult.Success(segments, newestSampleAt, exportFileModifiedAt)
 }
 
 private fun copyUriToFile(context: Context, uri: Uri, destination: File) {
@@ -112,30 +109,5 @@ private fun readRawActivitySamples(database: SQLiteDatabase, deviceId: Int, sinc
             )
         }
         return samples
-    }
-}
-
-private fun readRawBandAlarmRows(database: SQLiteDatabase, deviceId: Int): List<RawBandAlarmRow> {
-    val query = """
-        SELECT DEVICE_ID, POSITION, ENABLED, HOUR, MINUTE, TITLE, SMART_WAKEUP, REPETITION, SMART_WAKEUP_INTERVAL
-        FROM $TABLE_ALARM
-        WHERE DEVICE_ID = ?
-    """.trimIndent()
-    database.rawQuery(query, arrayOf(deviceId.toString())).use { cursor ->
-        val rows = mutableListOf<RawBandAlarmRow>()
-        while (cursor.moveToNext()) {
-            rows += RawBandAlarmRow(
-                deviceId = cursor.getInt(0),
-                position = cursor.getInt(1),
-                enabled = cursor.getInt(2) != 0,
-                hour = cursor.getInt(3),
-                minute = cursor.getInt(4),
-                title = if (cursor.isNull(5)) null else cursor.getString(5),
-                smartWakeup = cursor.getInt(6) != 0,
-                repetition = cursor.getInt(7),
-                smartWakeupWindowMinutes = if (cursor.isNull(8)) null else cursor.getInt(8)
-            )
-        }
-        return rows
     }
 }

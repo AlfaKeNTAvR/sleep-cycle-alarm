@@ -11,7 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 
@@ -35,8 +35,7 @@ fun SetupWizardScaffold(
 ) {
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconGlyphButton(
-                glyph = stringResource(R.string.glyph_back),
+            BackArrowButton(
                 contentDescription = stringResource(R.string.content_description_back),
                 onClick = if (isFirstPage) onBack else onPreviousPage,
             )

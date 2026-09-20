@@ -2,11 +2,14 @@ package com.nikita.sleepcycle.night
 
 // File purpose: foreground service that keeps the night alive, runs each tick under a wake lock, and
 // shows a low-importance notification with the planned wake time. Any exception during a tick is logged
-// and a fallback tick is scheduled, so one bad tick cannot silently end syncing for the rest of the night.
+// and a fallback tick is scheduled, so one bad tick cannot silently end syncing for the rest of the night -
+// except a CancellationException (H3), which is never a tick failure: it means this service's own
+// bookkeeping already stopped it (a FINISHED plan, see finishNightIfNeeded), and is let through unhandled.
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -15,8 +18,10 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
+import com.nikita.sleepcycle.MainActivity
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.engine.AlarmMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +36,9 @@ private const val LOG_TAG = "NightService"
 private const val NOTIFICATION_CHANNEL_ID = "night_tracking"
 private const val NOTIFICATION_ID = 1
 private const val WAKE_LOCK_TAG = "SleepCycleAlarm:NightTick"
+
+/** F14: its own PendingIntent identity - 4001, its own family, distinct from the phone alarm's 2001/2002/2003 and AlarmRingService's 3001/3002 (PendingIntent identity is by requestCode AND target component together, so equal numbers across those never actually collided, but the old 3001 here read as if it deliberately avoided AlarmRingService's own 3001, which was simply wrong). */
+private const val OPEN_APP_REQUEST_CODE = 4001
 
 /** Longer than the worst case a tick can take: the sync (60 s) and export (60 s) waits, plus time to copy and read the database. */
 private val WAKE_LOCK_TIMEOUT: Duration = Duration.ofMinutes(5)
@@ -66,6 +74,14 @@ class NightService : Service() {
             try {
                 val newState = runNightTick(this@NightService, Instant.now(), scheduledFor, receivedAt)
                 handleTickResult(newState, startId)
+            } catch (error: CancellationException) {
+                // H3: a FINISHED tick's own bookkeeping (finishNightIfNeeded) stops this very service, which
+                // cancels this coroutine at its own next suspension point - completely expected once that
+                // bookkeeping has already committed, and never a real tick failure. Let it propagate rather
+                // than falling into the `catch (error: Exception)` below (CancellationException IS an
+                // Exception), which used to schedule a fallback tick 15 minutes out for a night that had
+                // already ended.
+                throw error
             } catch (error: Exception) {
                 handleTickFailure(error)
             } finally {
@@ -75,18 +91,19 @@ class NightService : Service() {
     }
 
     /** Publishes every committed state to [observedNightState] (D1) - the ViewModel must never miss a tick that ran from the service rather than from an immediate UI-requested tick. */
-    private fun handleTickResult(newState: NightState?, startId: Int) {
+    private suspend fun handleTickResult(newState: NightState?, startId: Int) {
         if (newState == null) {
             stopTracking(startId)
             return
         }
         publishNightState(newState)
-        val noPhoneAlarmWarning = noPhoneAlarmTonight(newState.settings.deadline != null, newState.settings.phoneBackupEnabled)
-        updateNotification(this, newState.lastPlan?.bandAlarm, newState.debugOptions, noPhoneAlarmWarning)
+        updateNotification(this, newState.lastPlan?.wakeAt, newState.debugOptions)
         if (newState.lastPlan?.mode == AlarmMode.FINISHED) {
-            // Ticks have already stopped scheduling themselves (runNightTick cancels the tick alarm).
-            // The state and the phone alarm stay in place; only the foreground tracking work is done.
-            stopTracking(startId)
+            // G1 SUPERSEDES F7: FINISHED ends the night's own bookkeeping - clears the persisted state, stops
+            // this service - but deliberately leaves a ringing alarm and an already-armed out-of-bed nudge
+            // alone (see finishNightIfNeeded's own doc). It still supersedes this tick's own stopTracking:
+            // finishNightIfNeeded's stopNightService call is what actually stops this service.
+            finishNightIfNeeded(this, newState)
         }
     }
 
@@ -149,23 +166,40 @@ private fun createNotificationChannel(context: Context) {
 }
 
 /**
+ * Resumes the running app the way the launcher icon does, rather than stacking a second copy of the screen on
+ * top of the one already there: MainActivity has the default launch mode, so an explicit intent alone would
+ * start a fresh instance every time the notification is tapped.
+ */
+private fun openAppIntent(context: Context): PendingIntent =
+    PendingIntent.getActivity(
+        context,
+        OPEN_APP_REQUEST_CODE,
+        Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+/**
  * A1: prefixes the notification text with every active debug switch's name, so a simulated night is never
- * mistaken for a real one from the notification shade alone. Item 4: [noPhoneAlarmWarning] appends the same
- * plain-English warning shown on Before bed and the Night screen, so the notification never disagrees with
- * either about whether the phone itself will ring tonight.
+ * mistaken for a real one from the notification shade alone.
+ *
+ * Tapping it opens the app ([openAppIntent]). Without a content intent a tap did nothing at all, which reads
+ * as a broken notification rather than a deliberately inert one.
  */
 private fun buildNotification(
     context: Context,
     plannedWake: Instant?,
     debugOptions: DebugOptions = DebugOptions(),
-    noPhoneAlarmWarning: Boolean = false,
 ): Notification {
     val wakeLine = plannedWake?.let { "Planned wake time: ${NOTIFICATION_TIME_FORMAT.format(it)}" } ?: "Waiting for first sync"
-    val warningSuffix = if (noPhoneAlarmWarning) " - ${context.getString(R.string.warning_no_phone_alarm)}" else ""
     return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
         .setContentTitle("Tracking your sleep")
-        .setContentText(debugBannerPrefix(context, debugOptions) + wakeLine + warningSuffix)
+        .setContentText(debugBannerPrefix(context, debugOptions) + wakeLine)
         .setSmallIcon(R.mipmap.ic_launcher)
+        .setContentIntent(openAppIntent(context))
         .setOngoing(true)
         .setSilent(true)
         .build()
@@ -175,7 +209,6 @@ private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): Str
     val labels = activeDebugSwitches(debugOptions).map { switch ->
         when (switch) {
             ActiveDebugSwitch.SIMULATED_SLEEP_DATA -> context.getString(R.string.debug_switch_simulated_sleep_data)
-            ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT -> context.getString(R.string.debug_switch_band_commands_not_sent)
             ActiveDebugSwitch.FAST_NIGHT -> context.getString(R.string.debug_switch_fast_night)
         }
     }
@@ -186,8 +219,7 @@ private fun updateNotification(
     context: Context,
     plannedWake: Instant?,
     debugOptions: DebugOptions = DebugOptions(),
-    noPhoneAlarmWarning: Boolean = false,
 ) {
     val manager = context.getSystemService<NotificationManager>() ?: return
-    manager.notify(NOTIFICATION_ID, buildNotification(context, plannedWake, debugOptions, noPhoneAlarmWarning))
+    manager.notify(NOTIFICATION_ID, buildNotification(context, plannedWake, debugOptions))
 }

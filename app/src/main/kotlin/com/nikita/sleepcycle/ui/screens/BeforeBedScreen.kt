@@ -1,7 +1,6 @@
 package com.nikita.sleepcycle.ui.screens
 
-// File purpose: the "Before bed" screen - deadline switch and time, the "sleep up to" picker, the phone-backup
-// switch, and "Start night".
+// File purpose: the "Before bed" screen - deadline switch and time, the "sleep up to" picker, and "Start night".
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.IconGlyphButton
@@ -44,7 +42,6 @@ fun BeforeBedScreen(
     onDeadlineEnabledChange: (Boolean) -> Unit,
     onDeadlineTimeChange: (LocalTime) -> Unit,
     onSleepLengthPicked: (Int) -> Unit,
-    onPhoneBackupChange: (Boolean) -> Unit,
     onStartNight: () -> Unit,
     onConfirmDebugNightStart: () -> Unit = {},
     onCancelDebugNightStart: () -> Unit = {},
@@ -100,23 +97,8 @@ fun BeforeBedScreen(
             }
         }
 
-        if (state.phoneBackupRowVisible) {
-            SettingsCard {
-                ToggleRow(
-                    title = stringResource(R.string.before_bed_phone_backup_title),
-                    description = stringResource(R.string.before_bed_phone_backup_description),
-                    checked = state.phoneBackupEnabled,
-                    onCheckedChange = onPhoneBackupChange,
-                    contentDescription = stringResource(R.string.content_description_phone_backup_switch),
-                )
-            }
-        }
-
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
-        if (state.noPhoneAlarmWarning) {
-            AmberWarningLine(text = stringResource(R.string.warning_no_phone_alarm))
-        }
         if (state.startNightBlocker != null) {
             Text(
                 text = stringResource(setupBlockerReasonRes(state.startNightBlocker)),

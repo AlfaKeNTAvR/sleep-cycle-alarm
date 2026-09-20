@@ -1,10 +1,9 @@
 package com.nikita.sleepcycle.ui.state
 
-// File purpose: every combination of the Debug screen's two data/command switches against setup gating -
-// only simulated band data AND dry-run band commands together relax anything, and even then never the
-// phone-side setup items.
+// File purpose: the Debug screen's simulated-data switch against setup gating - simulated band data alone
+// relaxes the band/Gadgetbridge setup items (D2: no real sync happens then, so there is nothing for a real
+// setup check to have verified), but never the phone-side setup items.
 
-import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -14,21 +13,11 @@ import java.time.Instant
 
 class DebugGatingTest {
     private val now = Instant.parse("2026-09-17T00:00:00Z")
-    private val allDebugRelaxed = DebugOptions(simulatedBandData = true, bandCommandMode = BandCommandMode.DRY_RUN)
+    private val simulatedData = DebugOptions(simulatedBandData = true)
 
     @Test
     fun `debug options off relaxes nothing`() {
         assertFalse(debugOptionsRelaxSetup(DebugOptions()))
-    }
-
-    @Test
-    fun `simulated band data alone does not relax setup`() {
-        assertFalse(debugOptionsRelaxSetup(DebugOptions(simulatedBandData = true, bandCommandMode = BandCommandMode.SEND_TO_BAND)))
-    }
-
-    @Test
-    fun `dry-run band commands alone does not relax setup`() {
-        assertFalse(debugOptionsRelaxSetup(DebugOptions(simulatedBandData = false, bandCommandMode = BandCommandMode.DRY_RUN)))
     }
 
     @Test
@@ -37,36 +26,36 @@ class DebugGatingTest {
     }
 
     @Test
-    fun `simulated band data AND dry run together relax setup`() {
-        assertTrue(debugOptionsRelaxSetup(allDebugRelaxed))
+    fun `simulated band data relaxes setup`() {
+        assertTrue(debugOptionsRelaxSetup(simulatedData))
     }
 
     @Test
     fun `with setup relaxed, band-address and export-file items are not required`() {
-        assertFalse(isSetupItemRequired(SetupItemKind.BAND_ADDRESS, allDebugRelaxed))
-        assertFalse(isSetupItemRequired(SetupItemKind.EXPORT_FILE, allDebugRelaxed))
-        assertFalse(isSetupItemRequired(SetupItemKind.GADGETBRIDGE_INSTALLED, allDebugRelaxed))
+        assertFalse(isSetupItemRequired(SetupItemKind.BAND_ADDRESS, simulatedData))
+        assertFalse(isSetupItemRequired(SetupItemKind.EXPORT_FILE, simulatedData))
+        assertFalse(isSetupItemRequired(SetupItemKind.GADGETBRIDGE_INSTALLED, simulatedData))
     }
 
     @Test
     fun `with setup relaxed, the phone-side items are still required`() {
-        assertTrue(isSetupItemRequired(SetupItemKind.NOTIFICATIONS, allDebugRelaxed))
-        assertTrue(isSetupItemRequired(SetupItemKind.FULL_SCREEN_INTENT, allDebugRelaxed))
-        assertTrue(isSetupItemRequired(SetupItemKind.BATTERY_OPTIMIZATION, allDebugRelaxed))
-        assertTrue(isSetupItemRequired(SetupItemKind.EXACT_ALARMS, allDebugRelaxed))
+        assertTrue(isSetupItemRequired(SetupItemKind.NOTIFICATIONS, simulatedData))
+        assertTrue(isSetupItemRequired(SetupItemKind.FULL_SCREEN_INTENT, simulatedData))
+        assertTrue(isSetupItemRequired(SetupItemKind.BATTERY_OPTIMIZATION, simulatedData))
+        assertTrue(isSetupItemRequired(SetupItemKind.EXACT_ALARMS, simulatedData))
     }
 
     @Test
     fun `isSetupComplete ignores a missing band address and export file when setup is relaxed`() {
         val settings = testAppSettings(deviceMac = null)
-        assertTrue(isSetupComplete(settings, testPermissionStatus(), gadgetbridgeInstalled = false, debugOptions = allDebugRelaxed))
+        assertTrue(isSetupComplete(settings, testPermissionStatus(), gadgetbridgeInstalled = false, debugOptions = simulatedData))
     }
 
     @Test
     fun `isSetupComplete still requires notifications when setup is relaxed`() {
         val settings = testAppSettings(deviceMac = null)
         val permissions = PermissionStatus(notificationsGranted = false, fullScreenIntentAllowed = true, batteryOptimizationIgnored = true, exactAlarmsAllowed = true)
-        assertFalse(isSetupComplete(settings, permissions, gadgetbridgeInstalled = false, debugOptions = allDebugRelaxed))
+        assertFalse(isSetupComplete(settings, permissions, gadgetbridgeInstalled = false, debugOptions = simulatedData))
     }
 
     @Test
@@ -76,17 +65,17 @@ class DebugGatingTest {
     }
 
     @Test
-    fun `startNightGate relaxes the setup-check recency requirement only when both switches are on`() {
-        val gate = startNightGate(checklistComplete = true, lastSetupCheckPassedAt = null, now = now, debugOptions = allDebugRelaxed)
+    fun `startNightGate relaxes the setup-check recency requirement when simulated data is on`() {
+        val gate = startNightGate(checklistComplete = true, lastSetupCheckPassedAt = null, now = now, debugOptions = simulatedData)
         assertTrue(gate.enabled)
         assertFalse(gate.blockedBySetupCheck)
     }
 
     @Test
-    fun `startNightGate still requires a recent setup check when only one debug switch is on`() {
+    fun `startNightGate still requires a recent setup check when only fast night is on`() {
         val gate = startNightGate(
             checklistComplete = true, lastSetupCheckPassedAt = null, now = now,
-            debugOptions = DebugOptions(simulatedBandData = true, bandCommandMode = BandCommandMode.SEND_TO_BAND)
+            debugOptions = DebugOptions(fastNight = true)
         )
         assertFalse(gate.enabled)
         assertTrue(gate.blockedBySetupCheck)

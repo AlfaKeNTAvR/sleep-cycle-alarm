@@ -1,27 +1,26 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: the debug/simulation mode's three independent switches, plus the ONE place that decides
+// File purpose: the debug/simulation mode's two independent switches, plus the ONE place that decides
 // whether they can ever take effect. `resolveDebugOptions` is the sole gate between "what is persisted in
 // DataStore" and "what the rest of the app is allowed to act on" - every other file reads debug options only
 // through its return value, never through the raw stored value, so a release build can never run a simulated
 // night no matter what got left in DataStore from a debug build. Also (A1) which switches are currently live,
 // for the on-screen warning banner, and the idle-reset rule that turns every switch off again on its own.
+//
+// D2: the "band commands not sent" dry-run switch is gone along with the rest of the band alarm machinery -
+// there is no longer any band alarm command to send or withhold.
 
 import java.time.Duration
 import java.time.Instant
 
-/** Whether a band alarm command is really sent to the band, or only logged as if it had been. */
-enum class BandCommandMode { SEND_TO_BAND, DRY_RUN }
-
-/** The debug screen's three independent switches. Persisted as-is in DataStore; only meaningful after passing through [resolveDebugOptions]. */
+/** The debug screen's two independent switches. Persisted as-is in DataStore; only meaningful after passing through [resolveDebugOptions]. */
 data class DebugOptions(
     val simulatedBandData: Boolean = false,
     val fastNight: Boolean = false,
-    val bandCommandMode: BandCommandMode = BandCommandMode.SEND_TO_BAND,
 ) {
     /** True when any switch would change the app's behaviour from a normal night - used to gate the "this is a simulated night" confirmation and the night log's "-sim-" file naming. */
     val isAnyEnabled: Boolean
-        get() = simulatedBandData || fastNight || bandCommandMode == BandCommandMode.DRY_RUN
+        get() = simulatedBandData || fastNight
 }
 
 /**
@@ -33,16 +32,15 @@ fun resolveDebugOptions(isDebugBuild: Boolean, stored: DebugOptions): DebugOptio
     if (isDebugBuild) stored else DebugOptions()
 
 /** A1: one debug switch that is currently live, named in plain words for the warning banner. Order matches the Debug screen's own switch order. */
-enum class ActiveDebugSwitch { SIMULATED_SLEEP_DATA, BAND_COMMANDS_NOT_SENT, FAST_NIGHT }
+enum class ActiveDebugSwitch { SIMULATED_SLEEP_DATA, FAST_NIGHT }
 
 /**
  * A1: every switch in [options] that is currently live, so the warning banner can name them all rather than
- * being keyed to `fastNight` alone - a simulated-data-only or dry-run-only night must warn just as loudly as
- * a fast one. Empty exactly when [DebugOptions.isAnyEnabled] is false.
+ * being keyed to `fastNight` alone - a simulated-data-only night must warn just as loudly as a fast one.
+ * Empty exactly when [DebugOptions.isAnyEnabled] is false.
  */
 fun activeDebugSwitches(options: DebugOptions): List<ActiveDebugSwitch> = buildList {
     if (options.simulatedBandData) add(ActiveDebugSwitch.SIMULATED_SLEEP_DATA)
-    if (options.bandCommandMode == BandCommandMode.DRY_RUN) add(ActiveDebugSwitch.BAND_COMMANDS_NOT_SENT)
     if (options.fastNight) add(ActiveDebugSwitch.FAST_NIGHT)
 }
 

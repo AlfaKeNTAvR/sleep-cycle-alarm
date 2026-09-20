@@ -20,7 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
@@ -82,8 +82,7 @@ fun SetupScreen(
 
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconGlyphButton(
-                glyph = stringResource(R.string.glyph_back),
+            BackArrowButton(
                 contentDescription = stringResource(R.string.content_description_back),
                 onClick = onBack,
             )

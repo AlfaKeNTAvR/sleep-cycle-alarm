@@ -59,13 +59,31 @@
                 android:value="Rings the wake-up alarm this app scheduled" />
         </service>
 
+        <!-- H7.3: the silent pre-nudge re-sync check, a background job that can take as long as a real band
+             sync - too long to risk inside a plain BroadcastReceiver, hence its own foreground service. -->
+        <service
+            android:name=".night.OutOfBedPreNudgeCheckService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Checks whether the owner is still asleep before the out-of-bed alarm" />
+        </service>
+
         <receiver android:name=".night.TickReceiver" android:exported="false" />
+
+        <receiver android:name=".night.OutOfBedPreNudgeCheckReceiver" android:exported="false" />
 
         <receiver
             android:name=".night.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- F13: Android cancels every alarm this app has set when its own package is replaced - an
+                     update mid-night would otherwise silently drop the wake alarm, the nudge and the tick
+                     alarm with nothing left to re-arm them. Delivered without a data/scheme filter, matching
+                     only this app's own package, so no <data> element is needed here. -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>

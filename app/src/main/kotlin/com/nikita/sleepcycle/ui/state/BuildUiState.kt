@@ -5,7 +5,6 @@ package com.nikita.sleepcycle.ui.state
 // first, so this function only ever touches JVM types and can be unit tested without an emulator.
 
 import com.nikita.sleepcycle.night.AppSettings
-import com.nikita.sleepcycle.night.BandAlarmCommitment
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
@@ -33,7 +32,6 @@ fun buildUiState(
     confirmingEndNight: Boolean,
     showingMorningReport: Boolean,
     morningReportEndedAt: Instant?,
-    morningReportBandAlarmLeftover: BandAlarmCommitment? = null,
     debugOptions: DebugOptions = DebugOptions(),
     simulatedSleepEvents: List<SimulatedSleepEvent> = emptyList(),
     confirmingDebugNightStart: Boolean = false,
@@ -47,7 +45,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, morningReportBandAlarmLeftover, confirmingEndNight, endingNight),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight),
         logs = buildLogsUiState(nightLogFiles, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
         errorMessage = errorMessage,

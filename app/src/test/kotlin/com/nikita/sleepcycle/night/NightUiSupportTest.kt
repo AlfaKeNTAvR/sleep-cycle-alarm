@@ -16,7 +16,7 @@ class NightUiSupportTest {
 
     @Test
     fun `derives NOT_YET_ASLEEP and an empty summary when there are no segments yet`() {
-        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false))
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5))
 
         val view = buildNightEngineView(state, now = startedAt)
 
@@ -30,7 +30,7 @@ class NightUiSupportTest {
         val end = Instant.parse("2026-09-17T01:00:00Z")
         val state = nightState(
             segments = listOf(SleepSegment(onset, end, SegmentKind.LIGHT)),
-            settings = NightSettings(null, 5, false)
+            settings = NightSettings(null, 5)
         )
 
         val view = buildNightEngineView(state, now = end)
@@ -42,7 +42,7 @@ class NightUiSupportTest {
 
     @Test
     fun `wake options come from the last plan's reference onset when a plan exists`() {
-        val state = nightState(segments = emptyList(), settings = NightSettings(null, 3, false))
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 3))
 
         val view = buildNightEngineView(state, now = startedAt)
 
@@ -59,14 +59,13 @@ class NightUiSupportTest {
         val onset = Instant.parse("2026-09-17T05:30:00Z")
         val plan = AlarmPlan(
             mode = AlarmMode.FULL_CYCLES,
-            bandAlarm = Instant.parse("2026-09-17T07:00:00Z"),
-            phoneAlarm = null,
+            wakeAt = Instant.parse("2026-09-17T07:00:00Z"),
             cycles = 1,
             referenceOnset = onset,
             onsetIsProjected = false,
             reason = "one cycle still owed"
         )
-        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false), lastPlan = plan)
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5), lastPlan = plan)
 
         val view = buildNightEngineView(state, now = onset)
 
@@ -76,7 +75,7 @@ class NightUiSupportTest {
 
     @Test
     fun `before any plan exists the timeline still offers the whole picked length`() {
-        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false))
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5))
 
         val view = buildNightEngineView(state, now = startedAt)
 
@@ -88,14 +87,13 @@ class NightUiSupportTest {
         val onset = Instant.parse("2026-09-17T07:40:00Z")
         val plan = AlarmPlan(
             mode = AlarmMode.NAP,
-            bandAlarm = Instant.parse("2026-09-17T08:00:00Z"),
-            phoneAlarm = null,
+            wakeAt = Instant.parse("2026-09-17T08:00:00Z"),
             cycles = 0,
             referenceOnset = onset,
             onsetIsProjected = false,
             reason = "nap"
         )
-        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false), lastPlan = plan)
+        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5), lastPlan = plan)
 
         val view = buildNightEngineView(state, now = onset)
 
@@ -105,53 +103,15 @@ class NightUiSupportTest {
     private fun nightState(
         segments: List<SleepSegment>,
         settings: NightSettings,
-        requestedBandAlarm: BandAlarmCommitment? = null,
-        confirmedBandAlarm: BandAlarmCommitment? = null,
         lastPlan: AlarmPlan? = null,
     ) = NightState(
         startedAt = startedAt,
         settings = settings,
         lastPlan = lastPlan,
-        requestedBandAlarm = requestedBandAlarm,
-        confirmedBandAlarm = confirmedBandAlarm,
         lastSyncAt = null,
         lastSyncOk = null,
         lastSegments = segments,
         lastExportFileModifiedAt = null,
         lastSyncFailureCause = null
     )
-
-    @Test
-    fun `band alarm status is Requested when a request is outstanding, even with an older confirmed alarm`() {
-        val state = nightState(
-            segments = emptyList(),
-            settings = NightSettings(null, 5, false),
-            requestedBandAlarm = BandAlarmCommitment("SCA-B", 7, 45, startedAt),
-            confirmedBandAlarm = BandAlarmCommitment("SCA-A", 7, 30, startedAt),
-        )
-
-        val status = bandAlarmStatusFor(state)
-
-        assertEquals(BandAlarmStatus.Requested(7, 45), status)
-    }
-
-    @Test
-    fun `band alarm status is Confirmed once there is no outstanding request`() {
-        val state = nightState(
-            segments = emptyList(),
-            settings = NightSettings(null, 5, false),
-            confirmedBandAlarm = BandAlarmCommitment("SCA-A", 7, 45, startedAt),
-        )
-
-        val status = bandAlarmStatusFor(state)
-
-        assertEquals(BandAlarmStatus.Confirmed(7, 45), status)
-    }
-
-    @Test
-    fun `band alarm status is null when neither a request nor a confirmation is on file`() {
-        val state = nightState(segments = emptyList(), settings = NightSettings(null, 5, false))
-
-        assertEquals(null, bandAlarmStatusFor(state))
-    }
 }

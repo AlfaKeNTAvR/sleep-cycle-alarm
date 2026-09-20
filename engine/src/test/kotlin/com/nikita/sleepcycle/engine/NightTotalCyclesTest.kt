@@ -6,22 +6,25 @@ package com.nikita.sleepcycle.engine
 // with no deadline. Includes the owner's own two worked examples.
 
 import java.time.Duration
+import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 class NightTotalCyclesTest {
     private fun plan(
-        segments: List<SleepSegment>, setting: NightSettings, now: String, previous: AlarmPlan? = null
-    ) = computeAlarmPlan(segments, setting, instant(now), previous, testZone, EngineConfig())
+        segments: List<SleepSegment>, setting: NightSettings, now: String, previous: AlarmPlan? = null,
+        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null
+    ) = computeAlarmPlan(
+        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+    )
 
-    /** The night's first plan: asleep at 23:00 with 7.5 h picked, so the band alarm is 06:30. */
+    /** The night's first plan: asleep at 23:00 with 7.5 h picked, so the alarm is 06:30. */
     private fun firstPlanOfTheNight(): AlarmPlan =
         plan(listOf(segment("2026-09-16T23:00", "2026-09-16T23:05", SegmentKind.LIGHT)), settings(cycles = 5), "2026-09-16T23:05")
 
-    /** The night's total if the sleeper stays asleep until [AlarmPlan.bandAlarm]: what was already slept plus this last stretch. */
+    /** The night's total if the sleeper stays asleep until [AlarmPlan.wakeAt]: what was already slept plus this last stretch. */
     private fun totalSleepIfSleptToAlarm(alreadySlept: Duration, lastOnset: String, plan: AlarmPlan): Duration =
-        alreadySlept.plus(Duration.between(instant(lastOnset), plan.bandAlarm!!))
+        alreadySlept.plus(Duration.between(instant(lastOnset), plan.wakeAt!!))
 
     // ---- The owner's two worked examples --------------------------------------------------------------------
 
@@ -37,7 +40,7 @@ class NightTotalCyclesTest {
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
         assertEquals(3, result.cycles)
         // 02:10 + 4.5 h. Total for the night: 3 h already slept plus 4.5 h more = the picked 7.5 h exactly.
-        assertEquals("06:40", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("06:40", formatTime(result.wakeAt!!, testZone))
     }
 
     @Test fun `owner example - 2 h slept of 7_5 h leaves 5_5 h, which rounds UP to 4 cycles and 8 h in total`() {
@@ -52,7 +55,7 @@ class NightTotalCyclesTest {
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
         assertEquals(4, result.cycles)
         // 5.5 h remaining is 3.67 cycles, which rounds to 4: 01:10 + 6 h, for 8 h in total.
-        assertEquals("07:10", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("07:10", formatTime(result.wakeAt!!, testZone))
     }
 
     // ---- The first stretch of the night must behave exactly as before ---------------------------------------
@@ -64,7 +67,7 @@ class NightTotalCyclesTest {
 
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
         assertEquals(5, result.cycles)
-        assertEquals("06:30", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("06:30", formatTime(result.wakeAt!!, testZone))
     }
 
     @Test fun `an awake blip shorter than minAwakening never splits the stretch, so nothing counts as already slept`() {
@@ -76,7 +79,7 @@ class NightTotalCyclesTest {
         val result = plan(segments, settings(cycles = 5), "2026-09-17T02:00")
 
         assertEquals(5, result.cycles)
-        assertEquals("06:30", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("06:30", formatTime(result.wakeAt!!, testZone))
     }
 
     // ---- Several awakenings in one night --------------------------------------------------------------------
@@ -95,7 +98,7 @@ class NightTotalCyclesTest {
         // 1.5 h + 1.5 h = 3 h slept, so 4.5 h (3 cycles) are still owed: 02:20 + 4.5 h.
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
         assertEquals(3, result.cycles)
-        assertEquals("06:50", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("06:50", formatTime(result.wakeAt!!, testZone))
     }
 
     @Test fun `hours into the new stretch the alarm still counts from ITS onset, with only completed sleep subtracted`() {
@@ -115,7 +118,7 @@ class NightTotalCyclesTest {
         assertEquals(Duration.ofHours(3), result.sleptSoFar, "only the COMPLETED stretch counts as already slept")
         assertEquals(3, result.owedCycles)
         assertEquals(3, result.cycles)
-        assertEquals("06:40", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("06:40", formatTime(result.wakeAt!!, testZone))
     }
 
     // ---- Rounding to the nearest cycle ----------------------------------------------------------------------
@@ -132,7 +135,7 @@ class NightTotalCyclesTest {
 
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
         assertEquals(1, result.cycles)
-        assertEquals("07:25", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("07:25", formatTime(result.wakeAt!!, testZone))
     }
 
     @Test fun `just under half a cycle remaining rounds DOWN to nothing owed, which is a nap`() {
@@ -146,7 +149,7 @@ class NightTotalCyclesTest {
         val result = plan(segments, settings(cycles = 5), "2026-09-17T05:57")
 
         assertEquals(AlarmMode.NAP, result.mode)
-        assertEquals("06:16", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("06:16", formatTime(result.wakeAt!!, testZone))
     }
 
     // ---- Nothing owed: nap with or without a deadline --------------------------------------------------------
@@ -157,19 +160,19 @@ class NightTotalCyclesTest {
         assertEquals(AlarmMode.NAP, result.mode)
         assertEquals(0, result.cycles)
         // Nothing caps a no-deadline nap, so it runs the full 20 min from the 07:40 return to sleep.
-        assertEquals("08:00", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("08:00", formatTime(result.wakeAt!!, testZone))
     }
 
     @Test fun `the total already exceeded with a deadline is a nap capped by that deadline`() {
         val result = plan(exceededTotalSegments(), settings(deadline = "2026-09-17T07:50", cycles = 5), "2026-09-17T07:41")
 
         assertEquals(AlarmMode.NAP, result.mode)
-        assertEquals("07:50", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("07:50", formatTime(result.wakeAt!!, testZone))
     }
 
-    @Test fun `a nap for an exceeded total that is already past becomes OVERDUE, not a second nap`() {
+    @Test fun `a nap for an exceeded total that is already past stays NAP, pulled forward to minAlarmLead`() {
         val previousNap = AlarmPlan(
-            AlarmMode.NAP, instant("2026-09-17T08:00"), null, 0, instant("2026-09-17T07:40"), false, "r"
+            AlarmMode.NAP, instant("2026-09-17T08:00"), 0, instant("2026-09-17T07:40"), false, "r"
         )
         val segments = listOf(
             segment("2026-09-16T23:00", "2026-09-17T07:30", SegmentKind.LIGHT),
@@ -179,14 +182,16 @@ class NightTotalCyclesTest {
 
         val result = plan(segments, settings(cycles = 5), "2026-09-17T08:05", previousNap)
 
-        assertEquals(AlarmMode.OVERDUE, result.mode)
-        assertEquals("08:07", formatTime(result.bandAlarm!!, testZone))
-        assertEquals("08:00", formatTime(result.overdueSince!!, testZone))
+        // Still asleep past the previous nap's own alarm: the raw nap alarm (08:00) is before now + minAlarmLead,
+        // so it is pulled forward to 08:07. D8 removed the OVERDUE mode that used to mark this; the mode stays
+        // NAP, only the time moves.
+        assertEquals(AlarmMode.NAP, result.mode)
+        assertEquals("08:07", formatTime(result.wakeAt!!, testZone))
     }
 
-    @Test fun `waking at or after the alarm still FINISHES the night even with nothing owed`() {
+    @Test fun `D3 waking at or after the alarm no longer FINISHES the night by itself, even with nothing owed`() {
         val previousNap = AlarmPlan(
-            AlarmMode.NAP, instant("2026-09-17T08:00"), null, 0, instant("2026-09-17T07:40"), false, "r"
+            AlarmMode.NAP, instant("2026-09-17T08:00"), 0, instant("2026-09-17T07:40"), false, "r"
         )
         val segments = listOf(
             segment("2026-09-16T23:00", "2026-09-17T07:30", SegmentKind.LIGHT),
@@ -195,8 +200,7 @@ class NightTotalCyclesTest {
 
         val result = plan(segments, settings(cycles = 5), "2026-09-17T08:05", previousNap)
 
-        assertEquals(AlarmMode.FINISHED, result.mode)
-        assertNull(result.bandAlarm)
+        assertEquals(AlarmMode.NAP, result.mode)
     }
 
     // ---- The deadline still caps what is owed ----------------------------------------------------------------
@@ -211,12 +215,12 @@ class NightTotalCyclesTest {
         // 3 cycles owed, 4 still fit before 08:30: the owed count binds.
         val owedBinds = plan(segments, settings(deadline = "2026-09-17T08:30", cycles = 5), "2026-09-17T02:11")
         assertEquals(3, owedBinds.cycles)
-        assertEquals("06:40", formatTime(owedBinds.bandAlarm!!, testZone))
+        assertEquals("06:40", formatTime(owedBinds.wakeAt!!, testZone))
 
         // 3 cycles owed, only 1 fits before 05:00: the deadline binds.
         val deadlineBinds = plan(segments, settings(deadline = "2026-09-17T05:00", cycles = 5), "2026-09-17T02:11")
         assertEquals(1, deadlineBinds.cycles)
-        assertEquals("03:40", formatTime(deadlineBinds.bandAlarm!!, testZone))
+        assertEquals("03:40", formatTime(deadlineBinds.wakeAt!!, testZone))
     }
 
     // ---- Only the total, never an earlier plan's alarm, ends a night with no deadline ------------------------
@@ -230,7 +234,7 @@ class NightTotalCyclesTest {
 
         assertEquals(AlarmMode.FULL_CYCLES, result.mode)
         assertEquals(1, result.cycles)
-        assertEquals("07:10", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("07:10", formatTime(result.wakeAt!!, testZone))
         // 6 h 30 slept plus the 1 h 30 cycle just started: 8 h, the closest whole-cycle landing to the picked 7.5 h.
         assertEquals(Duration.ofHours(8), totalSleepIfSleptToAlarm(Duration.ofMinutes(390), "2026-09-17T05:40", result))
     }
@@ -243,7 +247,7 @@ class NightTotalCyclesTest {
 
         assertEquals(AlarmMode.NAP, result.mode)
         // The nap would run to 06:00, 20 min after the 05:40 return to sleep; the deadline cuts it to 05:55.
-        assertEquals("05:55", formatTime(result.bandAlarm!!, testZone))
+        assertEquals("05:55", formatTime(result.wakeAt!!, testZone))
     }
 
     @Test fun `a whole no-deadline night with three awakenings sleeps the picked total, never napping early`() {
@@ -254,25 +258,25 @@ class NightTotalCyclesTest {
 
         val asleep = plan(listOf(segment("2026-09-16T23:00", "2026-09-16T23:05", SegmentKind.LIGHT)), setting, "2026-09-16T23:05")
         assertEquals(AlarmMode.FULL_CYCLES, asleep.mode)
-        assertEquals("06:30", formatTime(asleep.bandAlarm!!, testZone))
+        assertEquals("06:30", formatTime(asleep.wakeAt!!, testZone))
 
         // 1 h 30 slept, 6 h still owed: 4 whole cycles from the 01:00 onset.
         val afterFirst = plan(nightUpTo("2026-09-17T01:01"), setting, "2026-09-17T01:01", asleep)
         assertEquals(AlarmMode.FULL_CYCLES, afterFirst.mode)
         assertEquals(4, afterFirst.cycles)
-        assertEquals("07:00", formatTime(afterFirst.bandAlarm!!, testZone))
+        assertEquals("07:00", formatTime(afterFirst.wakeAt!!, testZone))
 
         // 4 h slept, 3 h 30 still owed, which rounds to 2 cycles from the 04:00 onset.
         val afterSecond = plan(nightUpTo("2026-09-17T04:01"), setting, "2026-09-17T04:01", afterFirst)
         assertEquals(AlarmMode.FULL_CYCLES, afterSecond.mode)
         assertEquals(2, afterSecond.cycles)
-        assertEquals("07:00", formatTime(afterSecond.bandAlarm!!, testZone))
+        assertEquals("07:00", formatTime(afterSecond.wakeAt!!, testZone))
 
         // 6 h slept, exactly 1 cycle still owed from the 06:15 onset - the case that used to become a nap.
         val afterThird = plan(nightUpTo("2026-09-17T06:16"), setting, "2026-09-17T06:16", afterSecond)
         assertEquals(AlarmMode.FULL_CYCLES, afterThird.mode)
         assertEquals(1, afterThird.cycles)
-        assertEquals("07:45", formatTime(afterThird.bandAlarm!!, testZone))
+        assertEquals("07:45", formatTime(afterThird.wakeAt!!, testZone))
         assertEquals(
             Duration.ofMinutes(450),
             totalSleepIfSleptToAlarm(Duration.ofHours(6), "2026-09-17T06:15", afterThird)

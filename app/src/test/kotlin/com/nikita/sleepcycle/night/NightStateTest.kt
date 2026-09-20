@@ -17,20 +17,16 @@ class NightStateTest {
     fun `round trips a full night state through JSON`() {
         val plan = AlarmPlan(
             mode = AlarmMode.FULL_CYCLES,
-            bandAlarm = Instant.parse("2026-09-17T05:00:00Z"),
-            phoneAlarm = Instant.parse("2026-09-17T05:15:00Z"),
+            wakeAt = Instant.parse("2026-09-17T05:00:00Z"),
             cycles = 5,
             referenceOnset = Instant.parse("2026-09-16T21:30:00Z"),
             onsetIsProjected = false,
-            reason = "Asleep since 00:30, 5 of 5 picked cycles fit, band alarm 05:00",
-            overdueSince = null
+            reason = "Asleep since 00:30, 5 of 5 picked cycles fit, alarm 05:00"
         )
         val state = NightState(
             startedAt = Instant.parse("2026-09-16T21:00:00Z"),
-            settings = NightSettings(deadline = Instant.parse("2026-09-17T05:30:00Z"), pickedCycles = 5, phoneBackupEnabled = true),
+            settings = NightSettings(deadline = Instant.parse("2026-09-17T05:30:00Z"), pickedCycles = 5),
             lastPlan = plan,
-            requestedBandAlarm = BandAlarmCommitment("SCA-B", 5, 0, Instant.parse("2026-09-17T04:50:00Z")),
-            confirmedBandAlarm = BandAlarmCommitment("SCA-A", 5, 15, Instant.parse("2026-09-17T04:30:00Z")),
             lastSyncAt = Instant.parse("2026-09-17T04:45:00Z"),
             lastSyncOk = true,
             lastSegments = listOf(
@@ -55,25 +51,6 @@ class NightStateTest {
     }
 
     @Test
-    fun `round trips a plan with overdueSince set`() {
-        val plan = AlarmPlan(
-            mode = AlarmMode.OVERDUE,
-            bandAlarm = Instant.parse("2026-09-17T08:07:00Z"),
-            phoneAlarm = Instant.parse("2026-09-17T08:15:00Z"),
-            cycles = 5,
-            referenceOnset = Instant.parse("2026-09-17T00:30:00Z"),
-            onsetIsProjected = false,
-            reason = "Still asleep past the planned alarm",
-            overdueSince = Instant.parse("2026-09-17T08:05:00Z")
-        )
-        val state = baseState().copy(lastPlan = plan)
-
-        val roundTripped = decodeNightState(encodeNightState(state))
-
-        assertEquals(Instant.parse("2026-09-17T08:05:00Z"), roundTripped.lastPlan?.overdueSince)
-    }
-
-    @Test
     fun `round trips a night with no plan yet and every optional field null`() {
         val state = baseState()
 
@@ -82,35 +59,31 @@ class NightStateTest {
         assertEquals(state, roundTripped)
         assertNull(roundTripped.lastPlan)
         assertNull(roundTripped.lastSyncOk)
-        assertNull(roundTripped.requestedBandAlarm)
-        assertNull(roundTripped.confirmedBandAlarm)
         assertNull(roundTripped.lastExportFileModifiedAt)
     }
 
     @Test
-    fun `round trips a FINISHED plan with a null band alarm`() {
+    fun `round trips a FINISHED plan with a null wake time`() {
         val plan = AlarmPlan(
             mode = AlarmMode.FINISHED,
-            bandAlarm = null,
-            phoneAlarm = Instant.parse("2026-09-17T05:30:00Z"),
+            wakeAt = null,
             cycles = 0,
             referenceOnset = null,
             onsetIsProjected = false,
-            reason = "Deadline passed",
-            overdueSince = null
+            reason = "Deadline passed"
         )
         val state = baseState().copy(lastPlan = plan, lastSyncAt = Instant.parse("2026-09-17T05:30:00Z"), lastSyncOk = true)
 
         val roundTripped = decodeNightState(encodeNightState(state))
 
         assertEquals(state, roundTripped)
-        assertNull(roundTripped.lastPlan?.bandAlarm)
+        assertNull(roundTripped.lastPlan?.wakeAt)
         assertNull(roundTripped.lastPlan?.referenceOnset)
     }
 
     @Test
     fun `round trips debug options`() {
-        val state = baseState().copy(debugOptions = DebugOptions(simulatedBandData = true, fastNight = true, bandCommandMode = BandCommandMode.DRY_RUN))
+        val state = baseState().copy(debugOptions = DebugOptions(simulatedBandData = true, fastNight = true))
 
         val roundTripped = decodeNightState(encodeNightState(state))
 
@@ -119,7 +92,7 @@ class NightStateTest {
 
     @Test
     fun `decodes a state saved before debugOptions existed as all-off, same as a normal night`() {
-        val json = fullStateJson() // debugOptions deliberately absent, per fullStateJson's own encoding path... see below
+        val json = fullStateJson()
         json.remove("debugOptions")
 
         val state = decodeNightState(json.toString())
@@ -138,45 +111,7 @@ class NightStateTest {
     }
 
     @Test
-    fun `round trips a band alarm commitment's blindResendCount`() {
-        val state = baseState().copy(requestedBandAlarm = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 0, Instant.parse("2026-09-17T04:00:00Z"), blindResendCount = 3))
-
-        val roundTripped = decodeNightState(encodeNightState(state))
-
-        assertEquals(3, roundTripped.requestedBandAlarm?.blindResendCount)
-    }
-
-    @Test
-    fun `a commitment saved before blindResendCount existed decodes it as 0 (C2)`() {
-        val json = fullStateJson()
-        json.getJSONObject("requestedBandAlarm").remove("blindResendCount")
-
-        val state = decodeNightState(json.toString())
-
-        assertEquals(0, state.requestedBandAlarm?.blindResendCount)
-    }
-
-    @Test
-    fun `round trips finishedCleanupTicksUsed (C4)`() {
-        val state = baseState().copy(finishedCleanupTicksUsed = 4)
-
-        val roundTripped = decodeNightState(encodeNightState(state))
-
-        assertEquals(4, roundTripped.finishedCleanupTicksUsed)
-    }
-
-    @Test
-    fun `a state saved before finishedCleanupTicksUsed existed decodes it as 0 (C4)`() {
-        val json = fullStateJson()
-        json.remove("finishedCleanupTicksUsed")
-
-        val state = decodeNightState(json.toString())
-
-        assertEquals(0, state.finishedCleanupTicksUsed)
-    }
-
-    @Test
-    fun `decodes a state saved before requestedBandAlarm and lastExportFileModifiedAt existed`() {
+    fun `decodes a state saved before lastExportFileModifiedAt existed`() {
         val json = JSONObject().apply {
             put("startedAt", "2026-09-16T21:00:00Z")
             put(
@@ -184,20 +119,17 @@ class NightStateTest {
                 JSONObject().apply {
                     put("deadline", JSONObject.NULL)
                     put("pickedCycles", 5)
-                    put("phoneBackupEnabled", false)
                 }
             )
             put("lastPlan", JSONObject.NULL)
             put("lastSyncAt", JSONObject.NULL)
             put("lastSyncOk", JSONObject.NULL)
             put("lastSegments", org.json.JSONArray())
-            // requestedBandAlarm, confirmedBandAlarm, lastExportFileModifiedAt deliberately absent.
+            // lastExportFileModifiedAt deliberately absent.
         }
 
         val state = decodeNightState(json.toString())
 
-        assertNull(state.requestedBandAlarm)
-        assertNull(state.confirmedBandAlarm)
         assertNull(state.lastExportFileModifiedAt)
         assertEquals(5, state.settings.pickedCycles)
     }
@@ -215,6 +147,17 @@ class NightStateTest {
     }
 
     @Test
+    fun `a plan whose mode is the deleted OVERDUE value is dropped without throwing (D8)`() {
+        val json = fullStateJson().apply {
+            getJSONObject("lastPlan").put("mode", "OVERDUE")
+        }
+
+        val state = decodeNightState(json.toString())
+
+        assertNull(state.lastPlan)
+    }
+
+    @Test
     fun `a malformed segment is dropped without losing the rest of the segments`() {
         val json = fullStateJson()
         val segments = json.getJSONArray("lastSegments")
@@ -223,17 +166,6 @@ class NightStateTest {
         val state = decodeNightState(json.toString())
 
         assertEquals(1, state.lastSegments.size)
-    }
-
-    @Test
-    fun `a malformed confirmed band alarm is dropped without losing the rest of the state`() {
-        val json = fullStateJson()
-        json.put("confirmedBandAlarm", JSONObject().apply { put("title", "SCA-A") }) // missing hour/minute/at
-
-        val state = decodeNightState(json.toString())
-
-        assertNull(state.confirmedBandAlarm)
-        assertEquals("SCA-B", state.requestedBandAlarm?.title)
     }
 
     @Test
@@ -246,35 +178,164 @@ class NightStateTest {
         )
     }
 
+    /**
+     * D2: a state file written by the old build can still carry the whole deleted band-alarm-machinery shape
+     * (requestedBandAlarm, confirmedBandAlarm, pendingDismissTitles, smartWakeupWarning, lastBandAlarmSet,
+     * singleSlotResendsUsed, finishedCleanupTicksUsed) plus the old plan's bandAlarm/phoneAlarm/overdueSince
+     * and the old settings' phoneBackupEnabled. None of those keys are read by the current decoder, so they
+     * are simply ignored rather than migrated - the state still loads without throwing.
+     */
     @Test
-    fun `round trips the last band alarm actually set and the re-send count`() {
-        val lastSet = BandAlarmCommitment(BAND_ALARM_TITLE, 8, 17, Instant.parse("2026-09-17T04:00:00Z"))
-        val state = baseState().copy(lastBandAlarmSet = lastSet, singleSlotResendsUsed = 3)
+    fun `a state file written by the old build decodes without throwing, ignoring the deleted band-alarm keys`() {
+        val json = JSONObject().apply {
+            put("startedAt", "2026-09-16T21:00:00Z")
+            put(
+                "settings",
+                JSONObject().apply {
+                    put("deadline", JSONObject.NULL)
+                    put("pickedCycles", 5)
+                    put("phoneBackupEnabled", true)
+                }
+            )
+            put(
+                "lastPlan",
+                JSONObject().apply {
+                    put("mode", "FULL_CYCLES")
+                    put("bandAlarm", "2026-09-17T05:00:00Z")
+                    put("phoneAlarm", "2026-09-17T05:15:00Z")
+                    put("cycles", 5)
+                    put("referenceOnset", "2026-09-16T21:30:00Z")
+                    put("onsetIsProjected", false)
+                    put("reason", "reason")
+                    put("overdueSince", JSONObject.NULL)
+                }
+            )
+            put("requestedBandAlarm", JSONObject().apply { put("title", "SCA-B"); put("hour", 5); put("minute", 0); put("at", "2026-09-17T04:50:00Z") })
+            put("confirmedBandAlarm", JSONObject.NULL)
+            put("lastSyncAt", JSONObject.NULL)
+            put("lastSyncOk", JSONObject.NULL)
+            put("lastSegments", org.json.JSONArray())
+            put("pendingDismissTitles", org.json.JSONArray().put("SCA-A"))
+            put("smartWakeupWarning", JSONObject.NULL)
+            put("lastBandAlarmSet", JSONObject.NULL)
+            put("singleSlotResendsUsed", 2)
+            put("finishedCleanupTicksUsed", 1)
+        }
 
-        val roundTripped = decodeNightState(encodeNightState(state))
+        // Calling decodeNightState directly, not through assertDoesNotThrow, is itself the "does not throw"
+        // assertion here: a thrown exception fails this test exactly as surely, and Kotlin's lambda-to-Unit
+        // conversion makes assertDoesNotThrow's generic, value-returning overload ambiguous with its
+        // Executable one.
+        val state = decodeNightState(json.toString())
 
-        assertEquals(lastSet, roundTripped.lastBandAlarmSet, "the morning report names the time the band is still armed at")
-        assertEquals(3, roundTripped.singleSlotResendsUsed, "a restart mid-night must not hand the band another full set of re-sends")
+        assertEquals(5, state.settings.pickedCycles)
+        // The old plan decodes structurally (mode/cycles/etc. all still present), but wakeAt is null: the
+        // old build never wrote that key, and no migration from the deleted `bandAlarm` key is attempted.
+        assertEquals(AlarmMode.FULL_CYCLES, state.lastPlan?.mode)
+        assertNull(state.lastPlan?.wakeAt)
     }
 
     @Test
-    fun `state saved before the last-set field existed decodes as nothing set yet and no re-sends spent`() {
+    fun `round trips awakeConfirmedAt and napAlarmsUsed`() {
+        val state = baseState().copy(awakeConfirmedAt = Instant.parse("2026-09-17T05:12:00Z"), napAlarmsUsed = 2)
+
+        val roundTripped = decodeNightState(encodeNightState(state))
+
+        assertEquals(state, roundTripped)
+        assertEquals(Instant.parse("2026-09-17T05:12:00Z"), roundTripped.awakeConfirmedAt)
+        assertEquals(2, roundTripped.napAlarmsUsed)
+    }
+
+    @Test
+    fun `F6 round trips wakeAlarmFiredAt`() {
+        val state = baseState().copy(wakeAlarmFiredAt = Instant.parse("2026-09-17T07:00:00Z"))
+
+        val roundTripped = decodeNightState(encodeNightState(state))
+
+        assertEquals(state, roundTripped)
+        assertEquals(Instant.parse("2026-09-17T07:00:00Z"), roundTripped.wakeAlarmFiredAt)
+    }
+
+    @Test
+    fun `H1 round trips morningAlarmAt`() {
+        val state = baseState().copy(morningAlarmAt = Instant.parse("2026-09-17T06:45:00Z"))
+
+        val roundTripped = decodeNightState(encodeNightState(state))
+
+        assertEquals(state, roundTripped)
+        assertEquals(Instant.parse("2026-09-17T06:45:00Z"), roundTripped.morningAlarmAt)
+    }
+
+    @Test
+    fun `H2 round trips lastNapAlarmFiredAt`() {
+        val state = baseState().copy(lastNapAlarmFiredAt = Instant.parse("2026-09-17T07:30:00Z"))
+
+        val roundTripped = decodeNightState(encodeNightState(state))
+
+        assertEquals(state, roundTripped)
+        assertEquals(Instant.parse("2026-09-17T07:30:00Z"), roundTripped.lastNapAlarmFiredAt)
+    }
+
+    @Test
+    fun `decodes a state saved before H1 H2 existed as no latched alarm and no nap fired, same as a new night`() {
         val json = fullStateJson()
-        json.remove("lastBandAlarmSet")
-        json.remove("singleSlotResendsUsed")
+        json.remove("morningAlarmAt")
+        json.remove("lastNapAlarmFiredAt")
 
-        val decoded = decodeNightState(json.toString())
+        val state = decodeNightState(json.toString())
 
-        assertNull(decoded.lastBandAlarmSet)
-        assertEquals(0, decoded.singleSlotResendsUsed)
+        assertNull(state.morningAlarmAt)
+        assertNull(state.lastNapAlarmFiredAt)
+    }
+
+    @Test
+    fun `F2 a napAlarmsUsed above the cap decodes clamped, never handed to the engine over the limit`() {
+        val json = fullStateJson()
+        json.put("napAlarmsUsed", 9)
+
+        val state = decodeNightState(json.toString())
+
+        assertEquals(com.nikita.sleepcycle.engine.MAX_NAP_ALARMS, state.napAlarmsUsed)
+    }
+
+    @Test
+    fun `G6 a napAlarmsUsed that is not a number decodes as 0 rather than throwing away the whole state`() {
+        val json = fullStateJson()
+        json.put("napAlarmsUsed", "not-a-number")
+
+        val state = decodeNightState(json.toString())
+
+        assertEquals(0, state.napAlarmsUsed)
+    }
+
+    @Test
+    fun `G6 an unparseable awakeConfirmedAt decodes as null rather than throwing away the whole state`() {
+        val json = fullStateJson()
+        json.put("awakeConfirmedAt", "not-an-instant")
+
+        val state = decodeNightState(json.toString())
+
+        assertNull(state.awakeConfirmedAt)
+    }
+
+    @Test
+    fun `decodes a state saved before D3 D5 F6 existed as unconfirmed with no naps used and no wake alarm fired, same as a new night`() {
+        val json = fullStateJson()
+        json.remove("awakeConfirmedAt")
+        json.remove("napAlarmsUsed")
+        json.remove("wakeAlarmFiredAt")
+
+        val state = decodeNightState(json.toString())
+
+        assertNull(state.awakeConfirmedAt)
+        assertEquals(0, state.napAlarmsUsed)
+        assertNull(state.wakeAlarmFiredAt)
     }
 
     private fun baseState(): NightState = NightState(
         startedAt = Instant.parse("2026-09-16T21:00:00Z"),
-        settings = NightSettings(deadline = null, pickedCycles = 3, phoneBackupEnabled = false),
+        settings = NightSettings(deadline = null, pickedCycles = 3),
         lastPlan = null,
-        requestedBandAlarm = null,
-        confirmedBandAlarm = null,
         lastSyncAt = null,
         lastSyncOk = null,
         lastSegments = emptyList(),
@@ -285,18 +346,14 @@ class NightStateTest {
     private fun fullStateJson(): JSONObject {
         val plan = AlarmPlan(
             mode = AlarmMode.FULL_CYCLES,
-            bandAlarm = Instant.parse("2026-09-17T05:00:00Z"),
-            phoneAlarm = Instant.parse("2026-09-17T05:15:00Z"),
+            wakeAt = Instant.parse("2026-09-17T05:00:00Z"),
             cycles = 5,
             referenceOnset = Instant.parse("2026-09-16T21:30:00Z"),
             onsetIsProjected = false,
-            reason = "reason",
-            overdueSince = null
+            reason = "reason"
         )
         val state = baseState().copy(
             lastPlan = plan,
-            requestedBandAlarm = BandAlarmCommitment("SCA-B", 5, 0, Instant.parse("2026-09-17T04:50:00Z")),
-            confirmedBandAlarm = BandAlarmCommitment("SCA-A", 5, 15, Instant.parse("2026-09-17T04:30:00Z")),
             lastSegments = listOf(SleepSegment(Instant.parse("2026-09-16T21:30:00Z"), Instant.parse("2026-09-17T01:00:00Z"), SegmentKind.LIGHT))
         )
         return JSONObject(encodeNightState(state))

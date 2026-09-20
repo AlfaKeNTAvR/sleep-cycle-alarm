@@ -7,7 +7,6 @@ package com.nikita.sleepcycle.ui
 
 import android.content.Context
 import com.nikita.sleepcycle.BuildConfig
-import com.nikita.sleepcycle.night.BandCommandMode
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import com.nikita.sleepcycle.night.SimulatedSleepEventKind
@@ -52,9 +51,6 @@ class DebugScreenController(private val context: Context, private val scope: Cor
 
     fun setSimulatedBandData(enabled: Boolean) = persistOptions { it.copy(simulatedBandData = enabled) }
     fun setFastNight(enabled: Boolean) = persistOptions { it.copy(fastNight = enabled) }
-    fun setDryRunBandCommands(enabled: Boolean) = persistOptions {
-        it.copy(bandCommandMode = if (enabled) BandCommandMode.DRY_RUN else BandCommandMode.SEND_TO_BAND)
-    }
 
     fun fellAsleepNow() = recordEvent(SimulatedSleepEventKind.FELL_ASLEEP)
     fun wokeUpNow() = recordEvent(SimulatedSleepEventKind.WOKE_UP)

@@ -13,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.ui.components.AmberWarningLine
 import com.nikita.sleepcycle.ui.components.CardDivider
 import com.nikita.sleepcycle.ui.components.HeroNumeral
 import com.nikita.sleepcycle.ui.components.SettingsCard
@@ -71,12 +70,6 @@ fun MorningReportBody(content: NightScreenContent.MorningReport, caption: String
                     }
                 }
             }
-        }
-        // The one thing the app cannot clean up for the owner: nothing in Gadgetbridge's Intent API disarms a
-        // band alarm slot, so the last time this app set is still armed. Named here so it is not a surprise
-        // tomorrow morning, and again whenever that night is reopened from the Logs screen.
-        content.bandAlarmLeftoverTimeLabel?.let { timeLabel ->
-            AmberWarningLine(text = stringResource(R.string.night_morning_band_alarm_leftover, timeLabel))
         }
     }
 }

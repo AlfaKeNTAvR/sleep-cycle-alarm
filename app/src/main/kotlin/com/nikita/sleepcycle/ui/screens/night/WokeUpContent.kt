@@ -50,17 +50,13 @@ fun WokeUpContent(content: NightScreenContent.WokeUp) {
                 LabeledValueRow(label = stringResource(R.string.night_tonight_so_far), value = content.tonightSoFarLabel)
                 CardDivider()
             }
-            if (content.bandAlarmTimeLabel != null) {
-                val bandAlarmValue = if (content.bandAlarmIsEstimate) {
-                    stringResource(R.string.night_band_alarm_estimate, content.bandAlarmTimeLabel)
+            if (content.alarmTimeLabel != null) {
+                val alarmValue = if (content.alarmIsEstimate) {
+                    stringResource(R.string.night_alarm_estimate, content.alarmTimeLabel)
                 } else {
-                    content.bandAlarmTimeLabel
+                    content.alarmTimeLabel
                 }
-                LabeledValueRow(label = stringResource(R.string.night_band_alarm), value = bandAlarmValue)
-                CardDivider()
-            }
-            if (content.phoneSafetyAlarmTimeLabel != null) {
-                LabeledValueRow(label = stringResource(R.string.night_phone_safety_alarm), value = content.phoneSafetyAlarmTimeLabel)
+                LabeledValueRow(label = stringResource(R.string.night_alarm), value = alarmValue)
             }
         }
     }
