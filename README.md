@@ -49,70 +49,107 @@ Then in our app's Setup screen:
 ## Try it at your desk (debug mode)
 
 A debug build (`./gradlew :app:assembleDebug`) has a Debug/simulation screen a release build never has. It
-lets you sit at the desk, drive a whole night by hand, and watch the plan, the phone alarm, the out-of-bed
-nudge and the night log all work without waiting for a real night. About 15 minutes end to end.
+lets you sit at the desk, run a whole night on a clock that moves faster than real time, and watch the plan,
+the phone alarm, the out-of-bed nudge and the night log all work without waiting for a real night.
+
+### How to use debug mode
+
+The Debug screen has three groups of controls, in the order they appear:
+
+- **Simulated band data** (switch): sleep segments come from the **Asleep** toggle further down instead of a
+  real Gadgetbridge sync. Turn this on first - the two clock controls below are both locked until it is,
+  since a warped clock against real band data makes no sense (the band's timestamps would always read hours
+  stale against a virtual "now").
+- **Simulated clock speed** (1x / 10x / 60x / 600x) and **Set simulated time**: the app's own idea of "now"
+  runs this many times faster than the real clock, or jumps straight to a chosen hour and minute. Everything
+  the app computes - the plan, the log, the alarms - is measured against that virtual time; only the instant
+  actually handed to Android's alarm system is converted back to a real one, so alarms genuinely ring, just
+  sooner in real time than the virtual gap suggests. Both controls are locked until Simulated band data is on,
+  and the time jump is locked outright while a night is running - pick your speed and starting time before
+  tapping Start night, not during. Changing speed never itself moves the clock, only how fast it runs from
+  then on. **Reset to real time** is the only thing that discards a jump.
+- **Asleep** toggle and **Clear simulated sleep**: flips the simulator between asleep and awake, the same way
+  the band would report it. Locked until Simulated band data is on. **Ring phone alarm**, lower down, is
+  unrelated to all of this: a standalone test alarm 5 real seconds out, always real time regardless of the
+  simulated clock, for checking the ring screen in daylight with no night running.
+
+**The banner**: once any control above is live, an amber banner reading **SIMULATED SLEEP DATA** and/or
+**SIMULATED HH:mm[, Nx]** appears on Before bed, the Night screen and the tracking notification. The time is
+the app's own current virtual time; the multiplier is left off at 1x, so a jump with no speed change just
+shows the time.
+
+**Order of operations for a full simulated night**: turn on Simulated band data, pick a speed (60x is a good
+balance - a 4.5 h night finishes in a few minutes and the UI is still easy to follow), start the night, then
+drive it entirely from the Debug screen's Asleep toggle. Keep the app open throughout: below one real minute
+of delay, a sync tick runs from a coroutine inside the app process rather than Android's alarm system, since
+the alarm system's own Doze throttling would otherwise swallow a tick that is only seconds away in real time -
+which means a simulated night dies if the app process is killed, unlike a real one.
+
+### Walkthrough
 
 1. Install the **debug** build (`app-debug.apk`, per the Build section above - not the release one).
 2. Open the app, go to **Setup** (gear icon), scroll to the bottom, tap **Debug**.
-3. Turn on both switches: **Simulated band data** and **Fast night**. With simulated data on, the app never
-   needs Gadgetbridge or the band configured at all for this walkthrough - the checklist below no longer
-   needs the band steps. There is no third "dry run" switch any more: the phone alarm is the only alarm this
-   app ever arms, so there is nothing left that a dry run would need to suppress - it always actually rings,
-   simulated night or not.
+3. Turn on **Simulated band data**. With it on, the app never needs Gadgetbridge or the band configured at
+   all for this walkthrough - the checklist below no longer needs the band steps. Pick **60x** on the
+   Simulated clock speed row.
 4. Tap back to **Setup**: only the phone-side items (Notifications, Full-screen alarms, Battery
    optimisation) should still be red. Grant any that are.
-5. Tap **Done** to reach **Before bed**. You should see the amber warning banner naming both active switches
-   (**SIMULATED SLEEP DATA**, **FAST NIGHT**) and **Start night** enabled with no band connected. Pick
-   **4.5 h** (3 cycles) on the "Sleep up to" row and leave the deadline switch off - there is no phone-backup
-   switch any more, since the phone alarm always rings, deadline or not.
+5. Tap **Done** to reach **Before bed**. You should see the amber banner reading **SIMULATED SLEEP DATA  ·
+   SIMULATED HH:mm, 60x** (the current virtual time) and **Start night** enabled with no band connected. Pick
+   **4.5 h** (3 cycles) on the "Sleep up to" row and leave the deadline switch off.
 6. Tap **Start night**. A **"This is a simulated night"** dialog appears - this confirmation exists so a
    simulated night can never start by accident at real bedtime. Tap **Start simulated night**.
 7. You land on the **Night screen**: amber banner, a gear icon top-right (only in a debug build) that takes
    you back to the Debug screen without leaving the running night.
-8. Tap that gear icon, then **I fell asleep now**. The **Simulated timeline** list grows a `LIGHT` entry
-   right there. Tap back - the Night screen now shows a real onset and an alarm about 15 minutes away
-   (fast night: 5 min per cycle, 3 picked cycles = 15 min).
-9. Wait a couple of minutes, reopen Debug, tap **I woke up now**, wait a few seconds, tap **Fell back asleep
-   now**. The picked length is the whole night's budget (3 cycles = 15 min here), so every minute you "slept"
-   is subtracted from it: the plan does not start a fresh count from the new onset, it counts only what is
-   still owed. Watch the Night screen's timeline lose an option each round, and the alarm land roughly 15
-   minutes after you first fell asleep however often you wake.
-10. Keep repeating wake / fell-back-asleep until about 13 of the 15 minutes have been slept in total (the
-    timeline is down to its last option, and the alarm is only a few minutes out). The next time you fall
-    back asleep, less than half a cycle is left of the budget, nothing whole is owed, and the Night screen
-    switches to the **nap** card: a short 3 min nap from that onset (rule 7 - this first nap is not yet
-    capped, since the main wake alarm has not rung even once this night). This is the way to reach the nap
-    card on a night with no deadline - using up the total is the only thing that ends such a night, so waking
-    near the previous alarm no longer produces a nap by itself. (With the deadline switch on instead, a nap
-    also appears as soon as less than one cycle fits before the deadline.) Keep the app open and do not press
-    anything else: the nap alarm actually reaches its own time and you can watch it fire.
+8. Tap that gear icon, then turn the **Asleep** toggle on. The **Simulated timeline** list grows a `LIGHT`
+   entry right there. Tap back - the Night screen now shows a real onset and an alarm 4.5 h away in virtual
+   time, which at 60x is a few real minutes out.
+9. Wait a few seconds, reopen Debug, turn **Asleep** off, wait a few seconds, turn it back on. The picked
+   length is the whole night's budget, so every stretch you "sleep" is subtracted from it: the plan does not
+   start a fresh count from the new onset, it counts only what is still owed. Watch the Night screen's
+   timeline lose an option each round, and the alarm keep landing 4.5 h after you first fell asleep however
+   often you wake.
+10. Keep repeating off / on until the timeline is down to its last option and the alarm is only moments out.
+    The next time you turn Asleep back on, less than half a cycle is left of the budget, nothing whole is
+    owed, and the Night screen switches to the **nap** card: a short 20-minute nap from that onset (rule 7).
+    This is the way to reach the nap card on a night with no deadline - using up the total is the only thing
+    that ends such a night, so waking near the previous alarm no longer produces a nap by itself. (With the
+    deadline switch on instead, a nap also appears as soon as less than one cycle fits before the deadline.)
+    This nap already counts toward the whole night's two-nap cap even though the main wake alarm has never
+    rung - the cap no longer waits for that. Keep the app open and do not press anything else: the nap alarm
+    actually reaches its own time and you can watch it fire.
 11. When that alarm rings, you land on the ring screen with two buttons - **Stop** (silences it, the night
     keeps running) and **I'm awake** (silences it and ends the night right there, landing on the morning
-    report). Tap **Stop**, then about 30 s later (fast night's shortened out-of-bed delay) a second alarm
-    rings on its own: the out-of-bed nudge, worded "Time to get up" - the same two buttons, same either-way
-    behaviour. Tap **Stop** there too. Now reopen Debug and drive **I woke up now** / **Fell back asleep now**
-    again: this return to sleep, and the one after it, are each a counted post-wake nap (capped at two), so
-    you get two more short nap alarms exactly like the first. The third time you drive the app back to sleep
-    after a nap alarm has rung, the night finishes immediately on its own - no fixed wait, unlike the old
-    band-only overdue snooze this replaced - and the screen shows **Night finished** with an **End night**
-    button, without you having to press "I'm awake" to get there.
-12. Tap **I'm up, end night** / **Stop night** / **End night** to see the morning report, built entirely from
-    what you just simulated. Ending the night also resets both Debug switches to off - the same happens on
-    its own if the app sits unopened for 2 h after they were last changed, so a desk test like this one can
-    never leak into a real bedtime by accident.
-13. Open **Logs**: the night you just ran carries a **simulated** tag, and its file is named
+    report). Tap **Stop**, then 15 virtual minutes later (about 15 real seconds at 60x) a second alarm rings on
+    its own: the out-of-bed nudge, worded "Time to get up" - the same two buttons, same either-way behaviour.
+    Tap **Stop** there too. Now reopen Debug and turn **Asleep** on again: this is the second nap this night,
+    and it spends the two-nap cap. If instead you turn Asleep back on before a pending nudge fires, watch it
+    for the nudge to disappear rather than ring - a nap armed after an alarm cancels that alarm's own still-
+    pending nudge (the new nap still arms a fresh nudge of its own, 15 minutes after it rings in turn).
+12. Let the second nap alarm ring, tap **Stop**, let its own nudge ring and tap **Stop** again. Now reopen
+    Debug and turn **Asleep** on a third time: with the cap already spent and no deadline left to fall back
+    on, the night finishes immediately on its own - no third nap, no fixed wait - and the screen shows
+    **Night finished** with an **End night** button, without you having to press "I'm awake" to get there.
+13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
+    night also resets every Debug switch and any active clock warp - the same happens on its own if the app
+    sits unopened for 2 h after they were last changed, so a desk test like this one can never leak into a
+    real bedtime by accident.
+14. Open **Logs**: the night you just ran carries a **simulated** tag, and its file is named
     `night-sim-<yyyyMMdd-HHmm>.jsonl` (a real night is always `night-<yyyyMMdd-HHmm>.jsonl`, so the two can
     never be confused). Tap the row to reopen that night's summary - the same report you just saw - or use its
     three-dot button to **Share** it, and see every `data` event tagged `source=simulated`, every
     `phone_alarm_fired` and `out_of_bed_alarm_fired` entry the simulated night actually rang, and `night_end`
     recording whether it ended by your own "I'm awake" tap or on its own. The same menu's **Delete** removes a
     night for good after one confirmation, which is how to clear desk-test logs out.
-14. Separately, any time no night is active (this button is disabled, with a reason shown underneath, while a
+15. Separately, any time no night is active (the button is disabled, with a reason shown underneath, while a
     night is running - it must never be able to replace the real night's own alarm): from the Debug screen,
-    tap **Ring phone alarm in 1 min** to check the full-screen alarm activity, the sound and the
-    notification's Stop button in daylight. This writes to `setup.jsonl`, not a night log - it is not a night.
+    tap **Ring phone alarm** to check the full-screen alarm activity, the sound and the notification's Stop
+    button in daylight, 5 real seconds later regardless of any simulated clock speed. This writes to
+    `setup.jsonl`, not a night log - it is not a night.
 
 ## Known limits
 
 - Reboot during the night (e.g. a system update): the phone alarm is restored only once the phone is unlocked once after the reboot (`BootReceiver` needs credential-protected storage). Direct Boot support, which would restore it before first unlock, is deferred - not fixed in this batch.
 - Without a deadline, if the band never reports sleep (e.g. it is taken off), the wake time keeps moving forward all night and nothing rings until the band eventually reports sleep or the owner ends the night by hand.
+- The night ending on its own (the deadline passing, or the two-nap cap spending itself with no deadline left) only closes the night's own bookkeeping - the persisted state, the tick alarm, the tracking notification. If an alarm happened to still be ringing, or an out-of-bed nudge still pending, at that exact moment, only your own "I'm awake" or "Stop night" silences it; the night reaching its own end does not.
+- A simulated night dies if the app process is killed - the fast in-process tick path a high simulation speed relies on has no reboot or process-death recovery of its own, unlike a real night's `AlarmManager` path. Debug-only, never a real night's concern.

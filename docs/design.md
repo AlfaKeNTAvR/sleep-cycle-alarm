@@ -21,12 +21,12 @@ One screen whose content depends on the moment you look at it. Opening it syncs 
 - **A. Going to bed:** "If you fall asleep by 00:25", big planned alarm, "7.5 h of sleep", timeline of possible wake-ups (time + hours), Stop night.
 - **B. Woke up, more sleep fits:** "You slept 1 h 59" (hours only, no from-to times, no cycles). Timeline "Fall back asleep by 02:45" with options, alarm estimate.
 - **C. Woke up, only a nap fits:** "You slept 3 h 35", "No full cycle fits before 08:30", nap card (alarm rings 20 min after you fall asleep), tonight-so-far total, "I'm up, end night".
-- **Night finished (the FINISHED amendment):** the deadline passed, or the two post-wake naps the night allows are both spent with no deadline left to fall back on - not band-detected wake by itself any more. Reason text plus an "End night" button; the alarm is not re-armed from here, it already rang. If the two naps are spent but a deadline is still ahead, the screen does not reach this state at all: it shows state B instead, with the alarm held at the deadline.
+- **Night finished (the FINISHED amendment):** the deadline passed, or the two nap alarms the whole night allows (mid-night or after the wake alarm alike) are both spent with no deadline left to fall back on - not band-detected wake by itself any more. Reason text plus an "End night" button; the alarm is not re-armed from here, it already rang. If the two naps are spent but a deadline is still ahead, the screen does not reach this state at all: it shows state B instead, with the alarm held at the deadline.
 - **D. Morning:** total slept, each stretch with from-to times, length and cycles in parentheses (one decimal), note that the night log was saved.
 
 ## Alarm ring screen
 
-Shown full-screen, over the lock screen, whichever alarm just rang (the main wake alarm, a post-wake nap alarm, or the out-of-bed nudge 10 min after either). Two buttons:
+Shown full-screen, over the lock screen, whichever alarm just rang (the main wake alarm, a nap alarm, or the out-of-bed nudge 15 min after either). Two buttons:
 
 - **Stop:** silences the sound and vibration only. The night keeps running - falling back asleep afterward still counts as a nap.
 - **I'm awake:** silences it and ends the night right there, landing on the morning report (D above).
