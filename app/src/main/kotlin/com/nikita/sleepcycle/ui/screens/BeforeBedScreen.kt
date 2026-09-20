@@ -16,7 +16,8 @@ import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.MenuLinesButton
+import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.MediumTimeText
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
@@ -53,8 +54,8 @@ fun BeforeBedScreen(
                 ok = state.bandReady,
             )
             Row {
-                IconGlyphButton(stringResource(R.string.glyph_logs), stringResource(R.string.content_description_open_logs), onOpenLogs)
-                IconGlyphButton(stringResource(R.string.glyph_setup), stringResource(R.string.content_description_open_setup), onOpenSetup)
+                MenuLinesButton(stringResource(R.string.content_description_open_logs), onOpenLogs)
+                SlidersButton(stringResource(R.string.content_description_open_setup), onOpenSetup)
             }
         }
         Text(text = stringResource(R.string.before_bed_title), style = MaterialTheme.typography.headlineLarge)
@@ -69,16 +70,6 @@ fun BeforeBedScreen(
                 contentDescription = stringResource(R.string.content_description_deadline_switch),
             )
             MediumTimeText(time = state.deadlineTime, enabled = state.deadlineEnabled, onTimeChange = onDeadlineTimeChange)
-            Text(
-                text = stringResource(R.string.before_bed_wake_me_by_description),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (!state.deadlineEnabled) {
-                Text(
-                    text = stringResource(R.string.before_bed_no_deadline_note),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
         }
 
         SettingsCard {

@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.DotsButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.state.LogsUiState
@@ -116,8 +116,7 @@ private fun LogActionsMenu(
     onDelete: () -> Unit,
 ) {
     Box {
-        IconGlyphButton(
-            glyph = stringResource(R.string.glyph_more),
+        DotsButton(
             contentDescription = stringResource(R.string.content_description_log_menu),
             onClick = onOpenMenu,
         )

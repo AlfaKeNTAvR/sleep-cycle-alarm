@@ -29,6 +29,3 @@ val MediumNumeralStyle = TextStyle(fontFamily = SerifNumeralFamily, fontWeight =
 
 /** A small serif numeral, used for alarm times inside a settings-style row. */
 val SmallNumeralStyle = TextStyle(fontFamily = SerifNumeralFamily, fontWeight = FontWeight.Normal, fontSize = 22.sp)
-
-/** The glyph size inside [com.nikita.sleepcycle.ui.components.IconGlyphButton]: visually close to a 28 dp icon, per the Material minimum of a 24 dp icon inside a 48 dp touch target - larger still, since these are the app's two most-tapped navigation icons. */
-val IconGlyphStyle = TextStyle(fontFamily = TextFamily, fontWeight = FontWeight.Medium, fontSize = 28.sp)

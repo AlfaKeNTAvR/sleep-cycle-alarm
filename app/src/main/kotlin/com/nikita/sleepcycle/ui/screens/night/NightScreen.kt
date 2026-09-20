@@ -17,7 +17,7 @@ import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
-import com.nikita.sleepcycle.ui.components.IconGlyphButton
+import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
@@ -42,8 +42,7 @@ fun NightScreen(
         // need to be reachable while a simulated night is actually running, not just before it starts.
         if (BuildConfig.DEBUG) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                IconGlyphButton(
-                    glyph = stringResource(R.string.glyph_setup),
+                SlidersButton(
                     contentDescription = stringResource(R.string.content_description_open_debug),
                     onClick = onOpenDebug,
                 )

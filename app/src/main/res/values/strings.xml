@@ -5,8 +5,6 @@
     <!-- Common -->
     <string name="action_cancel">Cancel</string>
     <string name="action_done">Done</string>
-    <string name="glyph_setup">⚙</string>
-    <string name="glyph_logs">≡</string>
     <string name="content_description_open_setup">Open setup</string>
     <string name="content_description_open_logs">Open night logs</string>
     <string name="content_description_back">Back</string>
@@ -60,7 +58,6 @@
     <string name="before_bed_band_connected">Band connected</string>
     <string name="before_bed_band_not_ready">Band setup incomplete</string>
     <string name="before_bed_wake_me_by">Wake me by</string>
-    <string name="before_bed_wake_me_by_description">The alarm rings at the end of a sleep cycle before this.</string>
     <string name="content_description_deadline_switch">Use a deadline</string>
     <string name="before_bed_sleep_up_to">Sleep up to</string>
     <string name="content_description_sleep_length_option">Sleep %1$s</string>
@@ -112,7 +109,6 @@
     <!-- Logs screen -->
     <string name="logs_title">Night logs</string>
     <string name="logs_empty">No night logs yet.</string>
-    <string name="glyph_more">⋮</string>
     <string name="content_description_log_menu">More actions for this night</string>
     <string name="logs_menu_share">Share</string>
     <string name="logs_menu_delete">Delete</string>
@@ -138,8 +134,6 @@
     <string name="alarm_notification_out_of_bed_title">Time to get up</string>
     <string name="alarm_notification_out_of_bed_text">Sleep cycle alarm</string>
 
-    <!-- Before bed: no-deadline note -->
-    <string name="before_bed_no_deadline_note">Without a deadline the wake time keeps moving until the band reports sleep, so nothing caps the night.</string>
 
     <!-- Night screen: state A, DEADLINE_ONLY -->
     <string name="night_a_deadline_only_note">Alarm rings at the deadline</string>
