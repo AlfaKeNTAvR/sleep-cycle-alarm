@@ -36,7 +36,18 @@ data class NightState(
     val lastSyncFailureCause: String?,
     /** The last phone alarm instant that has already fired (wake, nap, or a rule 7 mid-night nap alike), so armPhoneAlarmIfNeeded never re-arms a past instant Android would fire immediately. Null until the first firing. */
     val phoneAlarmFiredFor: Instant? = null,
-    /** F6: the MAIN wake alarm's own fired instant - never a nap's. The engine's `wakeAlarmFiredAt` input to computeWakeAlarm: G8 SUPERSEDES D5 - this no longer has anything to do with the nap cap (NightState.napAlarmsUsed alone decides that now); its one remaining job is G3's guard on rule 7's sliding AWAKE nap (see WakeAlarm.kt's `napAlarm`). A rule 7 mid-night nap firing must never set this. Null until the wake alarm fires. */
+    /**
+     * F6: the MAIN wake alarm's own fired instant - never a nap's. The engine's `wakeAlarmFiredAt` input to
+     * computeWakeAlarm: G8 SUPERSEDES D5 - this no longer has anything to do with the nap cap
+     * (NightState.napAlarmsUsed alone decides that now). A rule 7 mid-night nap firing must never set this.
+     * Null until the wake alarm fires.
+     *
+     * J5 CORRECTION (reviewer-reported, 2026-09-21): this doc said "its one remaining job is G3's guard on
+     * rule 7's sliding AWAKE nap". False since H8, and doubly so since J1.3. The engine has TWO readers:
+     * `awakeSlidingNapMustStop` (rule 7's sliding AWAKE nap, the job named above) and
+     * `morningAlarmAlreadyRang` (the spent-morning-target check), which since J1.3 reads it as one half of
+     * `laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor)`. See WakeAlarm.kt, where the same claim was corrected.
+     */
     val wakeAlarmFiredAt: Instant? = null,
     /** The debug options this night was started with (see DebugOptions.kt), captured once at startNight so toggling the Debug screen mid-night never changes a night already in progress. Defaults to all-off so state saved before this field existed still decodes as a normal night. */
     val debugOptions: DebugOptions = DebugOptions(),
@@ -67,6 +78,15 @@ data class NightState(
      * even when no firing was ever recorded for it (H1 superseded G3's `previousPlan?.wakeAt` reading, which
      * was unreachable in exactly the case it existed for - see WakeAlarm.kt's `napAlarm`). Null until the
      * first such plan exists.
+     *
+     * J5 CORRECTION (reviewer-reported, 2026-09-21): "LATCHED", and "a fixed instant for the whole night"
+     * wherever else this field gets described, are both too strong. [latchMorningAlarmAt] REPLACES this value
+     * on EVERY tick whose plan is FULL_CYCLES or DEADLINE_ONLY with a non-null `wakeAt`; it is not written
+     * once and then held. What it is actually protected from is narrower, and is the whole point of the field:
+     * a NAP or FINISHED plan never overwrites it, and a FULL_CYCLES/DEADLINE_ONLY plan with a NULL `wakeAt`
+     * never erases it (H8's own `?: previous`). So it tracks the morning target as the engine keeps
+     * recomputing it, and stops moving only once the morning plans stop producing one. Read this as "protected
+     * from nap overwrites and from erasure", never as "immutable".
      */
     val morningAlarmAt: Instant? = null,
     /**

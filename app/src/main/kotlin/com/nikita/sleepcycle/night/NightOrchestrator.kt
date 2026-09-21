@@ -1,7 +1,10 @@
 package com.nikita.sleepcycle.night
 
 // File purpose: runNightTick - the one function that runs a whole sync-plan-alarm cycle, per app-spec.md.
-// This is the app's main call site into the engine's plan computation (the other is NightUiSupport.kt).
+// This is the app's main call site into the engine's plan computation. J5 CORRECTION (reviewer-reported,
+// 2026-09-21): the only OTHER computeAlarmPlan call site in the app is NightController.startNight (the night's
+// own first plan), not NightUiSupport.kt, which this line named for several rounds and which has none - it
+// calls the engine's UI helpers (listWakeOptions and friends), never computeAlarmPlan.
 // The entire transaction runs under withNightTransactionLock so a service tick, an immediate UI tick, and
 // endNight can never interleave. D1/D2: the band is a sensor only now - every tick arms the phone alarm at
 // plan.wakeAt, and no alarm command is ever sent to the band.
@@ -49,10 +52,19 @@ private const val LOG_TAG = "NightOrchestrator"
 private fun currentZone(): ZoneId = ZoneId.systemDefault()
 
 /**
- * D1: the ONE guard for arming or re-arming the phone alarm - used by [armPhoneAlarmIfNeeded] (every tick),
- * `BootReceiver.handleBoot` (after a reboot) and `startNight` (the very first arm), so none of the three can
- * drift out of sync with the other two. Never arms a null alarm, one at or before [now] (Android fires a past
- * exact alarm immediately), or one that already fired ([phoneAlarmFiredFor]).
+ * D1: the guard all three arming paths SHARE - [armPhoneAlarmIfNeeded] (every tick),
+ * `BootReceiver.handleBoot` (after a reboot) and `startNight` (the very first arm). Never arms a null alarm,
+ * one at or before [now] (Android fires a past exact alarm immediately), or one that already fired
+ * ([phoneAlarmFiredFor]).
+ *
+ * J5 CORRECTION (reviewer-reported, 2026-09-21): this doc used to call itself "the ONE guard ... so none of
+ * the three can drift out of sync with the other two". They HAVE drifted, deliberately and correctly, and the
+ * claim was reading as a promise the code does not keep. What is actually true is weaker and still worth
+ * having: these three conditions are shared by all three paths, and no path may arm anything this function
+ * would refuse. Beyond that each path adds what it alone needs - [armPhoneAlarmIfNeeded] also re-reads the
+ * fired marker live at commit time (J3) and cancels a now-null target, which the boot path must NOT do (it has
+ * no previous plan of its own to compare against and no tick in flight to race). A future guard that belongs
+ * to only one path belongs in that path, not here.
  */
 fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Instant?): Boolean =
     wakeAt != null && wakeAt.isAfter(now) && wakeAt != phoneAlarmFiredFor
@@ -144,7 +156,11 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * other doc in this file, says can never happen), `napAlarmsUsed` never incremented, `lastNapAlarmFiredAt` left
  * null, and the NEXT tick recomputing the same now-"unspent" nap target, finding it overdue, and ringing it a
  * SECOND time - the exact re-ring shape H8 exists to prevent, reopened by the fix meant to hardened it. Back to
- * exact equality: [morningAlarmAt] is a fixed instant for the whole night (H1's own latch), `awakeNapTarget`
+ * exact equality: [morningAlarmAt] is the night's own morning target (H1's own latch - J5 CORRECTION: it is
+ * protected from nap overwrites and from erasure, NOT immutable, and this line used to call it "a fixed
+ * instant for the whole night"; see [latchMorningAlarmAt] and NightState.morningAlarmAt's own J5 note. The
+ * argument here is unaffected, because what it actually needs is that a deferred morning alarm is armed for
+ * and fires at whatever value this holds at that moment, not that the value never moved), `awakeNapTarget`
  * hands it back completely unchanged when it applies (WakeAlarm.kt's own doc: "leaves the phone armed exactly
  * at the instant it is already armed at, so nothing moves"), and J1.1 guarantees `pullForwardIfTooSoon` never
  * touches an already-future `raw` - so a firing that is genuinely the deferred morning alarm always arrives at
@@ -676,6 +692,14 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * MARKER, not the clock - see [phoneAlarmFiredForNow] and its own J3 doc below for the corrected mechanism. A
  * reader who stops at this paragraph gets the wrong model of the one function that decides whether the phone is
  * armed; read the J3 paragraphs below before trusting anything above this line about what gets re-read.
+ *
+ * J5 (owner-approved revert, 2026-09-21) CONFIRMS the J3 paragraph above, which was itself briefly FALSE and
+ * is true again. Between J4 and J5 this function did read the real clock once more, at the point of arming, to
+ * feed `shouldRefuseStaleRearm` - so "J3 removed every clock read from this function" described the code for
+ * exactly one round, stopped being true when J4 landed, and was never updated. The J5 revert removed that read
+ * along with the guard, so [now] (`decisionNow`) really is the only instant every decision in this function
+ * compares against again. Recorded here rather than silently re-asserted: a claim this doc has now been wrong
+ * about once should be checked against the code, not trusted from the comment.
  *
  * F2 SUPERSEDES the original spec: this function no longer touches [NightState.napAlarmsUsed] at all - that
  * counter is now PhoneAlarmReceiver's own bookkeeping, incremented only when a nap alarm actually FIRES (see

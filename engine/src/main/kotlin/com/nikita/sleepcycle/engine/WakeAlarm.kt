@@ -19,7 +19,18 @@ fun computeWakeAlarm(
     cycles: Int,
     now: Instant,
     config: EngineConfig,
-    /** F5: the wake (or nap) alarm's fired instant (NightState.wakeAlarmFiredAt), null until the main wake alarm has fired this night. Only [napAlarm]'s AWAKE branch reads this - see its own doc. G8: this is the ONE job wakeAlarmFiredAt still has - it plays no part in the D5/G8 nap cap any more (see PlanSteps.kt's isPostWakeNapCapSpent). */
+    /**
+     * F5: the wake (or nap) alarm's fired instant (NightState.wakeAlarmFiredAt), null until the main wake alarm
+     * has fired this night. G8 removed its ONE original job here, the D5/G8 nap cap (see PlanSteps.kt's
+     * `isPostWakeNapCapSpent`, which counts `napAlarmsUsed` instead).
+     *
+     * J5 CORRECTION (reviewer-reported, 2026-09-21): this doc claimed, from G8 through J4, that the AWAKE
+     * branch of [napAlarm] is the only remaining reader. That has been false since H8 and doubly so since
+     * J1.3 - [morningAlarmAlreadyRang] reads it too, twenty-odd lines below this very comment (see the
+     * `rule != PlanRule.NAP` line in [computeWakeAlarm]), and since J1.3 it does so as one half of
+     * `laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor)`. Two readers, then: [awakeSlidingNapMustStop] (rule 7's
+     * sliding AWAKE nap) and [morningAlarmAlreadyRang] (the spent-morning-target check).
+     */
     wakeAlarmFiredAt: Instant?,
     /** H1 SUPERSEDES G3's `previousWakeAt`: the night's own morning alarm time, LATCHED by the app layer (NightState.morningAlarmAt) and never overwritten by a NAP plan's own slid `wakeAt` - see computeAlarmPlan's own doc for why the earlier "previous tick's own wakeAt" reading was unreachable. Only [napAlarm]'s AWAKE branch reads this. */
     morningAlarmAt: Instant?,
@@ -107,8 +118,16 @@ private fun laterOf(a: Instant?, b: Instant?): Instant? = when {
  * H1 SUPERSEDES G3: G3 tried to close this gap with `previousWakeAt`, the PREVIOUS TICK's own `plan.wakeAt` -
  * but in the exact sliding-AWAKE-nap case this guard exists for, that previous plan IS the slid nap itself
  * (`now + napLength` from one tick ago), which by construction always sits ~15 min ahead of `now` (ticks run
- * every 5 min, the nap is 20). `previousWakeAt.isAfter(now)` could therefore never be true on the path it was
- * written for, and the guard was dead code - see WakeAlarm.kt's H1 failure trace in phone-only-fixes-3.md.
+ * every 5 min, the nap is 20).
+ *
+ * J5 CORRECTION (reviewer-reported, 2026-09-21): the sentence that used to follow had the comparison exactly
+ * backwards. It said `previousWakeAt.isAfter(now)` "could therefore never be true on the path it was written
+ * for" - but a target sitting ~15 min AHEAD of `now` satisfies `isAfter(now)` ALWAYS, never never. The
+ * conclusion that G3's guard was useless here is unchanged and still correct, only its reason: the guard was
+ * meant to detect a previous target that had already lapsed, and on this path the previous target is a freshly
+ * slid nap that by construction has not, so the guard was always satisfied and never stopped anything. Dead in
+ * effect either way - see WakeAlarm.kt's H1 failure trace in phone-only-fixes-3.md - but a reader must not take
+ * the old wording as a fact about how [Instant.isAfter] behaves.
  * [morningAlarmAt] fixes this by being a fact the plan never carried before: the morning's real alarm time,
  * LATCHED once (from whichever tick last produced a FULL_CYCLES or DEADLINE_ONLY plan) and never rewritten by
  * a NAP plan's own slid value - so once `now` reaches it, the stop is permanent, not good for one tick.
@@ -219,12 +238,30 @@ private fun awakeSlidingNapMustStop(wakeAlarmFiredAt: Instant?, morningAlarmAt: 
  * even though it was the MAIN wake alarm, not a nap. Restored or quarantined state can widen that gap much
  * further than one tick's worth.
  *
- * What actually keeps this safe is not exclusion but DIRECTION: [laterOf] can only push the effective anchor
- * later than or equal to [referenceOnset], never earlier, and this function always returns a real instant
- * (never null) - so the worst this can do is hand the owner a nap measured from a later start than the true
- * onset (a shorter effective nap, bounded by [napLength] itself), never an earlier one, and never nothing at
- * all. A spurious ring or a missed one would require an EARLIER target than the genuine onset; this can only
- * produce a later one, and D4's own 15-minute out-of-bed nudge already covers a nap that turns out short.
+ * J5 CORRECTION (reviewer-reported, 2026-09-21) REPLACES the safety paragraph that used to stand here. It had
+ * the arithmetic backwards in both directions and drew a conclusion that does not follow, so it is restated
+ * rather than patched. What it got right: [laterOf] can only push the effective anchor later than or equal to
+ * [referenceOnset], never earlier, and this function always returns a real instant, never null.
+ *
+ * What it got WRONG, and what the real property is. A LATER anchor makes the nap LONGER as measured from the
+ * owner's actual onset, not shorter: in this function's own worked example above (onset 06:29:30, the morning
+ * alarm firing at 06:30) the anchor moves from 06:29:30 to 06:30 and the target returned is 06:50, where a nap
+ * measured from the true onset would have been 06:49:30 - twenty minutes and thirty seconds of sleep, not
+ * nineteen and a half. The old text claimed a "shorter effective nap, bounded by [napLength] itself"; the
+ * opposite is true, and the overshoot is bounded instead by `latestFired - referenceOnset`, the gap between
+ * this stretch's own onset and whatever firing the anchor jumped to.
+ *
+ * The old text also argued that "a spurious ring or a missed one would require an EARLIER target". That is not
+ * a safety argument. A later target IS a later ring, which on a nap is precisely the thing that can be missed -
+ * the owner sleeps past the twenty minutes they were promised, by that same gap. The honest statement of the
+ * property is narrower: this function can never ring EARLY (it can only move the anchor forward), it can never
+ * return nothing at all, and it can ring LATE by exactly `latestFired - referenceOnset`.
+ *
+ * And the old text's fallback does not hold unconditionally either: it said D4's own 15-minute out-of-bed
+ * nudge "already covers a nap that turns out short". The nudge belonging to the FIRING this anchor jumped to
+ * can itself be cancelled by nap supersession before it ever rings (NightOrchestrator.napSupersedesPendingNudge,
+ * and the two orderings J4 and J5 had to close in it), so it is a real backstop but not a guaranteed one. The
+ * overshoot above is the bound worth relying on; the nudge is what usually shortens it in practice.
  */
 private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?, config: EngineConfig): Instant {
     val latestFired = laterOf(lastNapAlarmFiredAt, phoneAlarmFiredFor)

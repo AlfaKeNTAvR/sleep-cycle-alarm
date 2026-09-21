@@ -6,7 +6,11 @@ package com.nikita.sleepcycle.night
 //     armPhoneAlarmIfNeeded's own re-arm guard, so it never re-arms an instant Android would fire immediately.
 //   - F6 wakeAlarmFiredAt: the instant the MAIN wake alarm fired, never a nap's own firing (NightState.
 //     wakeAlarmFiredAt, the engine's wakeAlarmFiredAt input) - G8 SUPERSEDES D5: no longer has anything to do
-//     with the nap cap, its one remaining job is G3's guard on rule 7's sliding AWAKE nap.
+//     with the nap cap. J5 CORRECTION (reviewer-reported, 2026-09-21): this line used to add "its one
+//     remaining job is G3's guard on rule 7's sliding AWAKE nap", which has been false since H8 and doubly so
+//     since J1.3 - the engine has TWO readers, awakeSlidingNapMustStop AND morningAlarmAlreadyRang (the latter
+//     via laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor) since J1.3). See WakeAlarm.kt and NightState.kt, where
+//     the same claim was corrected.
 //   - F2/G8 napAlarmsUsed: how many nap alarms have actually FIRED this night, mid-night (rule 7) or post-wake
 //     (D5) alike, clamped at MAX_NAP_ALARMS - this alone is what the nap cap counts against now.
 //   - H2 lastNapAlarmFiredAt: the most recent nap alarm's own fired instant, mid-night or post-wake alike -
