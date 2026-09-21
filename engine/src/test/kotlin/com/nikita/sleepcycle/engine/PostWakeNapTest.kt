@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
  * every tick between a nap being armed and that same nap's own wakeAt actually arriving), to walk the whole
  * capped sequence through the pure engine alone. F5 is exercised as a side effect: every AWAKE-state tick
  * below arms nothing (`wakeAt == null`) once the wake alarm has fired, whatever the cap says. Separate from
- * rule 7's own mid-night nap (ChooseModeTest, ExtraNightScenariosTest's "survives a second awakening" case),
+ * rule 7's own pre-wake nap (ChooseModeTest, ExtraNightScenariosTest's "survives a second awakening" case),
  * which this does not touch.
  */
 class PostWakeNapTest {

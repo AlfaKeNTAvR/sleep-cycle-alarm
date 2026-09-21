@@ -34,12 +34,12 @@ data class NightState(
     val lastExportFileModifiedAt: Instant?,
     /** Set only when the last sync itself failed (a step timed out or errored); null when it succeeded, even if the data it returned was stale. Lets the UI say which of the two happened. */
     val lastSyncFailureCause: String?,
-    /** The last phone alarm instant that has already fired (wake, nap, or a rule 7 mid-night nap alike), so armPhoneAlarmIfNeeded never re-arms a past instant Android would fire immediately. Null until the first firing. */
+    /** The last phone alarm instant that has already fired (wake, nap, or a rule 7 pre-wake nap alike), so armPhoneAlarmIfNeeded never re-arms a past instant Android would fire immediately. Null until the first firing. */
     val phoneAlarmFiredFor: Instant? = null,
     /**
      * F6: the MAIN wake alarm's own fired instant - never a nap's. The engine's `wakeAlarmFiredAt` input to
      * computeWakeAlarm: G8 SUPERSEDES D5 - this no longer has anything to do with the nap cap
-     * (NightState.napAlarmsUsed alone decides that now). A rule 7 mid-night nap firing must never set this.
+     * (NightState.napAlarmsUsed alone decides that now). A rule 7 pre-wake nap firing must never set this.
      * Null until the wake alarm fires.
      *
      * J5 CORRECTION (reviewer-reported, 2026-09-21): this doc said "its one remaining job is G3's guard on
@@ -90,7 +90,7 @@ data class NightState(
      */
     val morningAlarmAt: Instant? = null,
     /**
-     * H2: the most recent nap alarm's own fired instant, mid-night (rule 7) or post-wake (D5) alike - null
+     * H2: the most recent nap alarm's own fired instant, pre-wake (rule 7) or post-wake (D5) alike - null
      * until the first nap alarm ever fires this night. The engine's `lastNapAlarmFiredAt` input to
      * computeAlarmPlan: lets it tell "a nap alarm already rang for THIS stretch, the owner slept through it"
      * apart from "this target is merely overdue" (a nap detected late, or an alarm computed in the past after

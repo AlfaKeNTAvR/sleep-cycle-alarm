@@ -106,7 +106,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
                 lastExportFileModifiedAt = null,
                 lastSyncFailureCause = null,
                 debugOptions = debugOptions,
-                // H1: latched from this very first plan too, so a sliding AWAKE nap (rule 7, mid-night) later
+                // H1: latched from this very first plan too, so a sliding AWAKE nap (rule 7, pre-wake) later
                 // this same night has a real morning alarm time to stop against from tick 1 onward.
                 morningAlarmAt = latchMorningAlarmAt(previous = null, initialPlan)
             )

@@ -115,7 +115,7 @@ private fun isPastDeadline(deadline: Instant?, now: Instant): Boolean = deadline
  * tick is unambiguously a new return to sleep - keeping the guard only defeated the cap on a night where the
  * owner never has a further awakening for it to re-check against (the exact case it exists for).
  *
- * G8: no longer reads wakeAlarmFiredAt at all - the cap counts every nap alarm that fires, mid-night (rule 7)
+ * G8: no longer reads wakeAlarmFiredAt at all - the cap counts every nap alarm that fires, pre-wake (rule 7)
  * or post-wake alike, whether or not the main wake alarm has ever rung this night. Only whether the owner is
  * asleep again after an awakening decides when the cap can bite: `state == AWAKE` (e.g. the window right after
  * a nap alarm fires, before the owner falls back asleep) never triggers it - see PostWakeNapTest's `thirdAwake`

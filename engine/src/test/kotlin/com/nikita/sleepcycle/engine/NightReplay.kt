@@ -447,7 +447,7 @@ internal class NightReplay(
      * NightOrchestrator.firedAlarmIsWakeAlarm - J2 must-fix 2 REVERTS this mirror back to H8's original exact
      * equality, matching the production function's own revert: a NAP-mode firing is the wake alarm only when it
      * fires at EXACTLY the latched morning alarm time. See NightOrchestrator.kt's own doc for why the J1.2
-     * window this used to mirror was itself a regression (a genuine mid-night nap landing inside the window by
+     * window this used to mirror was itself a regression (a genuine pre-wake nap landing inside the window by
      * coincidence, misattributed as the wake alarm) rather than a real fix for anything - delivery jitter can
      * never move [firedFor], which is read from the alarm's own armed-for extra, not from when it was delivered.
      */

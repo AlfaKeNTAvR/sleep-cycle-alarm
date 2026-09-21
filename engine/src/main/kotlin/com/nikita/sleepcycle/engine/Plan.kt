@@ -29,8 +29,8 @@ fun computeAlarmPlan(
     config: EngineConfig,
     /**
      * D5/F6: the MAIN wake alarm's fired instant (NightState.wakeAlarmFiredAt), null until it fires this
-     * night. Never a mid-night rule 7 nap's own firing - only the wake alarm itself sets this, so rule 7's
-     * mid-night nap can never switch on the D5 cap machinery by itself.
+     * night. Never a pre-wake rule 7 nap's own firing - only the wake alarm itself sets this, so rule 7's
+     * pre-wake nap can never switch on the D5 cap machinery by itself.
      */
     wakeAlarmFiredAt: Instant?,
     /**
@@ -40,7 +40,7 @@ fun computeAlarmPlan(
      */
     napAlarmsUsed: Int,
     /**
-     * H2: the most recent nap alarm's own fired instant, mid-night (rule 7) or post-wake (D5) alike - null
+     * H2: the most recent nap alarm's own fired instant, pre-wake (rule 7) or post-wake (D5) alike - null
      * until the first nap alarm ever fires this night. Lets [computeWakeAlarm]'s ASLEEP branch tell "a nap
      * alarm already rang for THIS stretch, the owner slept through it" (compare against `referenceOnset`) apart
      * from "this target just happens to be overdue" (a nap detected late, or an alarm computed in the past
@@ -50,7 +50,7 @@ fun computeAlarmPlan(
     lastNapAlarmFiredAt: Instant?,
     /**
      * J1.3 (owner-reported, 2026-09-21): NightState.phoneAlarmFiredFor, the last phone alarm instant that
-     * fired at all (wake, nap, or a rule 7 mid-night nap alike) - null until the first firing this night.
+     * fired at all (wake, nap, or a rule 7 pre-wake nap alike) - null until the first firing this night.
      * Written unconditionally by PhoneAlarmReceiver.markPhoneAlarmFired, even on the one race where the SAME
      * firing's attribution to [wakeAlarmFiredAt] gets skipped (a stale `state.lastPlan` read beating the
      * in-flight tick's own save to disk) - see WakeAlarm.kt's own `morningAlarmAlreadyRang` for why a spent

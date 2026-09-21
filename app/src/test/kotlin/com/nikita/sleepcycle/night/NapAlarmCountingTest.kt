@@ -4,7 +4,7 @@ package com.nikita.sleepcycle.night
 // armPhoneAlarmIfNeeded no longer touches this bookkeeping at all) to attribute a just-fired real alarm to
 // the main wake alarm. Mirrors PhoneAlarmArmingTest's style for shouldArmPhoneAlarm (D1/D2's equivalent
 // guard). G8 SUPERSEDES F2: the matching nap-side guard, firedAlarmIsPostWakeNap, is gone - a NAP firing
-// always counts toward napAlarmsUsed now, mid-night (rule 7) or post-wake (D5) alike, so there is nothing
+// always counts toward napAlarmsUsed now, pre-wake (rule 7) or post-wake (D5) alike, so there is nothing
 // left to test separately from "not the wake alarm" below.
 
 import com.nikita.sleepcycle.alarm.AlarmLabel
@@ -33,7 +33,7 @@ class NapAlarmCountingTest {
     }
 
     @Test
-    fun `F6 a NAP firing at its own instant is never the wake alarm, mid-night or post-wake alike`() {
+    fun `F6 a NAP firing at its own instant is never the wake alarm, pre-wake or post-wake alike`() {
         assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, napFiredAt, morningAlarmAt))
     }
 
@@ -57,7 +57,7 @@ class NapAlarmCountingTest {
     // EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI - the instant the alarm was ARMED for - never from when the intent
     // was actually delivered, so ordinary delivery jitter can never move it, and J1.1 already removed the one
     // thing (pullForwardIfTooSoon) that legitimately could. The window instead let a genuine, unrelated
-    // mid-night nap (asleepNapTarget, nothing to do with awakeNapTarget's deferral) get misattributed as the
+    // pre-wake nap (asleepNapTarget, nothing to do with awakeNapTarget's deferral) get misattributed as the
     // wake alarm purely by landing inside it by coincidence - see NightOrchestrator.kt's own doc for the full
     // re-ring trace this caused. These four cases now pin exact equality instead, so nobody re-introduces the
     // window later. -----------------------------------------------------------------------------------------

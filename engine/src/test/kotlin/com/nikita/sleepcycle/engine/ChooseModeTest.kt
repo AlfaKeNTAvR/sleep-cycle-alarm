@@ -98,7 +98,7 @@ class ChooseModeTest {
         // all - reachable on a night that uses up the picked total through repeated waking, where the FIRST
         // nap is entered without any FULL_CYCLES/DEADLINE_ONLY alarm ever having rung. chooseMode itself does
         // not even take wakeAlarmFiredAt as a parameter any more: the cap counts every nap alarm that fires,
-        // mid-night or post-wake alike (see PlanSteps.kt's isPostWakeNapCapSpent).
+        // pre-wake or post-wake alike (see PlanSteps.kt's isPostWakeNapCapSpent).
         assertEquals(
             PlanRule.FINISHED,
             rule(afterAwakening = true, cycles = 0, owedCycles = 0, napAlarmsUsed = MAX_NAP_ALARMS)
