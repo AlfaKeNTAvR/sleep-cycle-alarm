@@ -208,3 +208,31 @@ Full verify (`:engine:test :app:testDebugUnitTest :app:lintDebug :app:assembleDe
 530 total tests (398 app + 132 engine), zero failures, zero Kotlin compiler warnings, once the other agent's
 concurrent `WakeAlarm.kt`/`NightReplay.kt` work had landed cleanly (it was mid-flight with 6 failing engine
 tests at the start of this session - not this agent's files, not touched).
+
+## Round 3 (09/21/2026) - third Opus review, verdict SATISFIED, clearing the should-fix list
+
+Verdict was SATISFIED - all four should-fixes are non-blocking but real and cheap per the task. Baseline before
+this round: 536 tests green (`./gradlew :engine:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`).
+Same ownership split as rounds 1/2. Worked in the order the task specified (fix 2 first - the only one with a
+runtime cost), verified green after each.
+
+### Fix 2: the ticker's file read moved off the main thread
+
+`readOutOfBedNudgePendingAt` (`OutOfBedNudgeStore.kt`) is a synchronous `File.exists()` + `readText()`, called
+from `NightViewModel.watchScreenVisibilityTicker`'s 500 ms-floored loop and once more from `refreshStatuses()`
+on resume - both run on `viewModelScope`, i.e. `Dispatchers.Main.immediate`. At the debug screen's 600x speed
+that is two blocking main-thread disk reads a second, on every screen, not just the Night screen.
+
+Extracted one `private suspend fun refreshPendingOutOfBedNudge()` that wraps the read in
+`withContext(Dispatchers.IO)`, called from both sites: directly in the ticker's own coroutine, and via
+`viewModelScope.launch { }` from `refreshStatuses()` (which is not itself suspend - it is called from
+`onResumed()`, a plain Activity-lifecycle callback). `resolveInitialScreen()` (the other caller of
+`refreshStatuses()`) does not wait for this launch to finish: the screen it resolves does not depend on
+`pendingOutOfBedNudgeAt`, so firing it off async is safe.
+
+Also deleted the KDoc's "the same pattern `currentPermissionStatus`/`isGadgetbridgeInstalled` already use"
+claim on `pendingOutOfBedNudgeAt` (the review's own note: it was wrong - those two are PackageManager/
+AlarmManager queries run only on resume, never on a ticker) and replaced it with the actual reasoning: a disk
+read, on a ticker, needs `Dispatchers.IO` in a way a one-shot system-service query does not.
+
+Verify: BUILD SUCCESSFUL, 536 tests, 0 failures, 0 Kotlin compiler warnings.

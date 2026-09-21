@@ -148,12 +148,15 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val cachedMorningReport = MutableStateFlow<CachedMorningReport?>(null)
     private val errorMessage = MutableStateFlow<String?>(null)
     /**
-     * Round 2 of the 09/21 review, must-fix 1: the out-of-bed nudge's own pending fire instant
+     * Round 3 of the 09/21 review, should-fix 2: the out-of-bed nudge's own pending fire instant
      * (`OutOfBedNudgeStore.kt`), re-read alongside [now] on the same ticker cadence (see
      * [watchScreenVisibilityTicker]) and once more in [refreshStatuses] on resume - it is armed by
      * `PhoneAlarmReceiver` in the background, outside any Flow this ViewModel already observes, so this is the
-     * only way the Night screen finds out. A plain synchronous file read, the same pattern
-     * [currentPermissionStatus] and [isGadgetbridgeInstalled] already use for other Android-only reads.
+     * only way the Night screen finds out. Both reads go through [refreshPendingOutOfBedNudge], off the main
+     * thread: unlike [currentPermissionStatus]/[isGadgetbridgeInstalled] (a PackageManager/AlarmManager query,
+     * read only once per resume), this is a disk read (`File.exists()` + `readText()`,
+     * `readOutOfBedNudgePendingAt`) on the 500 ms-floored ticker - at the debug screen's 600x speed that is two
+     * blocking main-thread file reads a second, on every screen, not just the Night screen.
      */
     private val pendingOutOfBedNudgeAt = MutableStateFlow<Instant?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
@@ -307,7 +310,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                         now.value = nowInstant()
                         // Round 2 of the 09/21 review, must-fix 1: re-read alongside now so the nudge shows up
                         // (and disappears once cancelled/fired) on the same cadence as everything else on screen.
-                        pendingOutOfBedNudgeAt.value = readOutOfBedNudgePendingAt(context)
+                        // Round 3, should-fix 2: off the main thread - see refreshPendingOutOfBedNudge's own doc.
+                        refreshPendingOutOfBedNudge()
                         delay(interval)
                     }
                 }
@@ -328,7 +332,20 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private fun refreshStatuses() {
         permissionStatus.value = currentPermissionStatus(context)
         gadgetbridgeInstalled.value = isGadgetbridgeInstalled(context)
-        pendingOutOfBedNudgeAt.value = readOutOfBedNudgePendingAt(context)
+        // Not read inline: unlike the two reads above, this one is disk I/O - see refreshPendingOutOfBedNudge's
+        // own doc. resolveInitialScreen (the other caller of refreshStatuses) does not need to wait for it: the
+        // screen it resolves does not depend on this value.
+        viewModelScope.launch { refreshPendingOutOfBedNudge() }
+    }
+
+    /**
+     * Round 3 of the 09/21 review, should-fix 2: [readOutOfBedNudgePendingAt] is a synchronous `File.exists()`
+     * plus `readText()` (`OutOfBedNudgeStore.kt`), so it must never run on `viewModelScope`'s own
+     * `Dispatchers.Main.immediate` - shared by both call sites ([watchScreenVisibilityTicker]'s ticker and
+     * [refreshStatuses]'s resume) so there is exactly one place that reads this file off the main thread.
+     */
+    private suspend fun refreshPendingOutOfBedNudge() {
+        pendingOutOfBedNudgeAt.value = withContext(Dispatchers.IO) { readOutOfBedNudgePendingAt(context) }
     }
 
     /** Called from the Activity on every resume: re-checks permissions/Gadgetbridge, re-syncs if the night screen is showing, and resets idle debug switches (A1) - this is the app's own definition of "opened". */
