@@ -60,7 +60,7 @@ fun MorningReportBody(content: NightScreenContent.MorningReport, caption: String
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
                                 modifier = Modifier.alignByBaseline(),
-                                text = "${stretch.startTimeLabel} – ${stretch.endTimeLabel}",
+                                text = "${stretch.startTimeLabel} - ${stretch.endTimeLabel}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = NightOnSurfaceMuted,
                             )
