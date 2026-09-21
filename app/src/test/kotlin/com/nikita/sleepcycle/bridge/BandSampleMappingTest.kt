@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle.bridge
 
 import com.nikita.sleepcycle.engine.SegmentKind
+import com.nikita.sleepcycle.engine.SleepSegment
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -105,4 +106,67 @@ class BandSampleMappingTest {
 
     private fun sample(start: Long, end: Long, rawKind: Int, source: Int, deviceId: Int = DEVICE_ID) =
         RawActivitySample(timestampSeconds = start, otherTimestampSeconds = end, rawKind = rawKind, source = source, deviceId = deviceId)
+
+    // ---- clipSegmentsToNightStart (J1.6): a segment straddling the night's own start is clipped to it, not
+    // dropped whole or kept whole - see the function's own doc for the 40-minutes-late bug this closes. -------
+
+    @Test
+    fun `J1_6 the owner's own traced case - dozed off at 22-50, tapped Start night at 23-05, the segment is clipped to 23-05, not dropped or kept whole`() {
+        val nightStartedAt = Instant.parse("2026-09-17T23:05:00Z")
+        val segments = listOf(SleepSegment(Instant.parse("2026-09-17T22:50:00Z"), Instant.parse("2026-09-17T23:30:00Z"), SegmentKind.LIGHT))
+
+        val clipped = clipSegmentsToNightStart(segments, nightStartedAt)
+
+        assertEquals(1, clipped.size)
+        assertEquals(nightStartedAt, clipped[0].start)
+        assertEquals(Instant.parse("2026-09-17T23:30:00Z"), clipped[0].end)
+    }
+
+    @Test
+    fun `a segment entirely before the night's own start is dropped, not clipped to a zero-length remainder`() {
+        val nightStartedAt = Instant.parse("2026-09-17T23:05:00Z")
+        val segments = listOf(SleepSegment(Instant.parse("2026-09-17T21:00:00Z"), Instant.parse("2026-09-17T22:00:00Z"), SegmentKind.LIGHT))
+
+        assertTrue(clipSegmentsToNightStart(segments, nightStartedAt).isEmpty())
+    }
+
+    @Test
+    fun `a segment entirely after the night's own start is returned unchanged`() {
+        val nightStartedAt = Instant.parse("2026-09-17T23:05:00Z")
+        val segment = SleepSegment(Instant.parse("2026-09-17T23:10:00Z"), Instant.parse("2026-09-17T23:40:00Z"), SegmentKind.LIGHT)
+
+        val clipped = clipSegmentsToNightStart(listOf(segment), nightStartedAt)
+
+        assertEquals(listOf(segment), clipped)
+    }
+
+    @Test
+    fun `a segment ending exactly at the night's own start is dropped - nothing of it falls inside the night`() {
+        val nightStartedAt = Instant.parse("2026-09-17T23:05:00Z")
+        val segments = listOf(SleepSegment(Instant.parse("2026-09-17T22:50:00Z"), nightStartedAt, SegmentKind.LIGHT))
+
+        assertTrue(clipSegmentsToNightStart(segments, nightStartedAt).isEmpty())
+    }
+
+    @Test
+    fun `a segment starting exactly at the night's own start is returned unchanged, not re-copied`() {
+        val nightStartedAt = Instant.parse("2026-09-17T23:05:00Z")
+        val segment = SleepSegment(nightStartedAt, Instant.parse("2026-09-17T23:30:00Z"), SegmentKind.LIGHT)
+
+        assertEquals(listOf(segment), clipSegmentsToNightStart(listOf(segment), nightStartedAt))
+    }
+
+    @Test
+    fun `multiple segments are each clipped independently - only the straddling one changes`() {
+        val nightStartedAt = Instant.parse("2026-09-17T23:05:00Z")
+        val before = SleepSegment(Instant.parse("2026-09-17T22:00:00Z"), Instant.parse("2026-09-17T22:30:00Z"), SegmentKind.AWAKE)
+        val straddling = SleepSegment(Instant.parse("2026-09-17T22:50:00Z"), Instant.parse("2026-09-17T23:30:00Z"), SegmentKind.LIGHT)
+        val after = SleepSegment(Instant.parse("2026-09-17T23:30:00Z"), Instant.parse("2026-09-18T00:00:00Z"), SegmentKind.DEEP)
+
+        val clipped = clipSegmentsToNightStart(listOf(before, straddling, after), nightStartedAt)
+
+        assertEquals(2, clipped.size)
+        assertEquals(nightStartedAt, clipped[0].start)
+        assertEquals(after, clipped[1])
+    }
 }

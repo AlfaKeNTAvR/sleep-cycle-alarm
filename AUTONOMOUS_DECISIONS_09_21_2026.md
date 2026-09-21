@@ -213,3 +213,46 @@ in the meantime - untouched here, no reason to touch them).
   few times) trace to the concurrent UI-review agent's own commits landing test files on `ui/` in between my
   own runs - never anything under `night/` or `engine/`, confirmed by `git status` before every commit in this
   session.
+
+## J1.6 (landed)
+
+- `syncAndReadBandData`/`readBandData`'s own `since` parameter is used for TWO genuinely different purposes
+  across its two call sites: NightOrchestrator.kt's real per-tick sync (where `since` means "the night's own
+  official start", and the finding's own bug lives) and SetupCheck.kt's pre-night connectivity check (where
+  `since` means "how far back to look for any recent data at all", a 1-day lookback already, unrelated to any
+  particular night). Kept `readBandData`'s own signature and behaviour completely untouched and made BOTH the
+  widened query window and the clip specific to the NightOrchestrator.kt path (`syncOrFail`/`resolveSyncOutcome`)
+  - the smallest fix that does not touch the setup-check path's own, already-correct 1-day lookback at all.
+- Split the fix into two pure pieces on purpose, one per file, per their own natural owners: `BAND_QUERY_LOOKBACK`
+  (2 hours, the audit's own suggested figure) widens `syncOrFail`'s own query in NightOrchestrator.kt;
+  `clipSegmentsToNightStart` (BandSampleMapping.kt, next to the file's other pure row/segment functions) does
+  the actual clipping, called once in `resolveSyncOutcome`'s fresh-success branch. The failed/stale branches
+  reuse `state.lastSegments`, which is always ALREADY the clipped output of an earlier pass through the success
+  branch - clipping again there would be harmless but redundant, so left out.
+- Checked `clipToNow` (Intervals.kt, engine) and `followsAwakening` (Stretches.kt, engine) first, per the
+  brief's own instruction. Neither double-handles this: `clipToNow` clips the OTHER end of a segment (to `now`,
+  the ceiling) and runs entirely inside the engine, with no floor-side equivalent at all - this fix adds
+  exactly that missing floor clip (to the night's own start), one layer earlier, in the app's own band-reading
+  code, before segments ever reach the engine. `followsAwakening` is about how an ALREADY-BUILT stretch gets
+  interpreted (rule 6 eligibility), unrelated to which raw segments get INCLUDED in the first place.
+- Regression coverage: 6 new cases in `BandSampleMappingTest.kt`, including the owner's own exact traced numbers
+  (dozed at 22:50, tapped Start night at 23:05 - clips to 23:05-23:30, not dropped and not left at 22:50 or
+  23:30) plus the boundary cases (entirely before, entirely after, ending exactly at the start, starting
+  exactly at the start, multiple segments clipped independently). `clipSegmentsToNightStart` is a brand new
+  function, so - like J1.5's `shouldKeepPreviousPlan` - these tests exercise its own logic directly rather than
+  pinning a prior defect; there is no "before" version of this specific function to revert to and compare
+  against. Did not attempt to test the SQL query's own widened `since` value end to end: that needs a real (or
+  in-memory) SQLite database this environment has no Robolectric to provide, and the mechanism itself -
+  `TIMESTAMP >= ?` against an epoch-seconds cutoff - is simple, deterministic SQL with no branch or edge case
+  of its own to hide a bug in; the actual behavioural contract worth testing is entirely in the clip, which is
+  covered.
+- Final verify: `BUILD SUCCESSFUL`, 536 tests, 0 failures, 0 skipped.
+
+## All six findings landed
+
+J1.1 through J1.6 are all committed on `nikita/fix/overnight-hardening`: d594204, 7e73145, 12c9e51, ee9db3e,
+8d1e74e, and the J1.6 commit right after this file's own update. Nothing was left undone or deferred. Two scope
+notes are recorded above rather than silently expanded into: the mid-night nap side of J1.3's own stale-load
+race (asleepNapTarget has no equivalent of morningAlarmAlreadyRang, noted under J1.3), and the honest relabeling
+of two of J1.4's four regression tests once reverting the guard they were meant to pin left them passing
+unchanged (noted under J1.4, with the real pinning tests named).

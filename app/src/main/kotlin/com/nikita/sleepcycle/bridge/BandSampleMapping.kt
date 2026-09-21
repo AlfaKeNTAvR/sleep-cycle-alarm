@@ -54,3 +54,23 @@ fun newestHeartRateSampleAt(samples: List<RawActivitySample>, deviceId: Int): In
         .filter { it.source == SOURCE_HEART_RATE && it.deviceId == deviceId }
         .maxOfOrNull { it.timestampSeconds }
         ?.let(Instant::ofEpochSecond)
+
+/**
+ * J1.6 (owner-reported, 2026-09-21): clips every segment in [segments] so none of them starts before
+ * [nightStartedAt] - crediting only the part of a segment that actually falls inside the night, never the
+ * part from before the owner tapped Start night, and never dropping a straddling segment outright either. A
+ * segment that ENDS at or before [nightStartedAt] (none of it falls inside the night at all) is dropped, since
+ * there is nothing left of it to clip. Pairs with NightOrchestrator.kt's own BAND_QUERY_LOOKBACK, which widens
+ * the SQL query far enough back to retrieve a straddling row in the first place - see that constant's own doc
+ * for the 40-minutes-late bug this closes. `clipToNow` (Intervals.kt) is the engine's own matching clip at the
+ * OTHER end of a segment (to `now`, the ceiling); this is the same idea at the START (to [nightStartedAt], the
+ * floor) - the two never overlap, so nothing here duplicates `clipToNow`'s own job.
+ */
+fun clipSegmentsToNightStart(segments: List<SleepSegment>, nightStartedAt: Instant): List<SleepSegment> =
+    segments.mapNotNull { segment ->
+        when {
+            !segment.end.isAfter(nightStartedAt) -> null
+            segment.start.isBefore(nightStartedAt) -> segment.copy(start = nightStartedAt)
+            else -> segment
+        }
+    }

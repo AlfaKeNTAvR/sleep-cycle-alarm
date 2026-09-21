@@ -24,6 +24,7 @@ import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
+import com.nikita.sleepcycle.bridge.clipSegmentsToNightStart
 import com.nikita.sleepcycle.bridge.syncAndReadBandData
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
@@ -312,6 +313,18 @@ private fun cancelNudgeIfSupersededByNap(
     )
 }
 
+/**
+ * J1.6 (owner-reported, 2026-09-21): how far before [NightState.startedAt] the real sync queries for sleep
+ * data. A Huawei row is a whole stage segment (20-60 min), keyed by its own START timestamp - querying with
+ * `since` exactly at `startedAt` would drop an ENTIRE row whose stage began before the owner tapped Start
+ * night even when the stage runs well past it (dozing off at 22:50, tapping Start night at 23:05: the SQL
+ * `TIMESTAMP >= 23:05` excludes the whole 22:50-23:30 row, not just its first 15 minutes, and the next row
+ * becomes the first one seen - the onset becomes whenever THAT starts, 40 minutes late, undercounting sleep).
+ * Querying from this far back instead retrieves that row again; [clipSegmentsToNightStart] then turns it into
+ * the RIGHT clipped remainder (23:05-23:30) once it reaches the engine - see that function's own doc.
+ */
+private val BAND_QUERY_LOOKBACK: Duration = Duration.ofHours(2)
+
 /** `internal`, not `private`: DebugBandDataSource.kt's readBandDataForTick also calls this for every case that needs a real sync, and OutOfBedPreNudgeCheck.kt's own re-sync (unconditionally, see its own U4 audit note). */
 internal suspend fun syncOrFail(context: Context, appSettings: AppSettings, state: NightState, now: Instant): BandDataResult {
     val deviceMac = appSettings.deviceMac
@@ -319,7 +332,11 @@ internal suspend fun syncOrFail(context: Context, appSettings: AppSettings, stat
     if (deviceMac == null || exportUri == null) {
         return BandDataResult.Failure("settings", "device MAC or export file not configured")
     }
-    return syncAndReadBandData(context, exportUri, deviceMac, state.startedAt) { event ->
+    // J1.6: queried from BAND_QUERY_LOOKBACK before the night's own start, not state.startedAt itself - see
+    // BAND_QUERY_LOOKBACK's own doc. resolveSyncOutcome clips the result back to state.startedAt afterward, so
+    // every OTHER caller of this function (the pre-nudge check's own re-sync, which only ever reads the
+    // LATEST sleep state and never the night's own onset) is unaffected either way.
+    return syncAndReadBandData(context, exportUri, deviceMac, state.startedAt.minus(BAND_QUERY_LOOKBACK)) { event ->
         appendNightLog(context, state.startedAt, event, state.debugOptions.isAnyEnabled)
     }
 }
@@ -368,7 +385,10 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
                 )
                 SyncOutcome(state.lastSegments, syncResult.newestSampleAt, false, syncResult.exportFileModifiedAt, null)
             } else {
-                SyncOutcome(syncResult.segments, syncResult.newestSampleAt, true, syncResult.exportFileModifiedAt, null)
+                // J1.6: clipped to the night's own start here, once, right where fresh segments first reach
+                // the app - state.lastSegments (the failed/stale branches above) is always already-clipped
+                // output from an earlier pass through this same branch, so it never needs clipping again.
+                SyncOutcome(clipSegmentsToNightStart(syncResult.segments, state.startedAt), syncResult.newestSampleAt, true, syncResult.exportFileModifiedAt, null)
             }
         }
     }
