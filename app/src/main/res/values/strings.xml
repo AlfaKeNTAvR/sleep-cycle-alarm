@@ -56,7 +56,9 @@
     <string name="setup_grant">Allow</string>
     <string name="setup_check_passed_headline">Setup check passed</string>
     <string name="setup_check_failed_headline">Setup check failed</string>
-    <string name="start_blocked_setup_check_stale">Run \"Test connection\" in Setup again; the last pass is over 24 h old.</string>
+    <!-- W17 (owner request): one line, so it does not wrap under the button. How old the last pass is was the
+         half that wrapped, and it is already implied by the line appearing at all. -->
+    <string name="start_blocked_setup_check_stale">Run \"Test connection\" in Setup.</string>
 
     <!-- Before bed screen -->
     <string name="before_bed_title">Tonight</string>

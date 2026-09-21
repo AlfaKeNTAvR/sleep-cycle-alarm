@@ -30,7 +30,6 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.BackArrowButton
-import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
@@ -103,6 +102,10 @@ fun SetupScreen(
             state.items.forEach { item -> SetupItemStatusRow(item) }
         }
 
+        // W16 (owner request): the test sits right under the checklist it reports against, above "Run setup
+        // again" - it is the thing actually reached for on a re-check, so it should not be at the far bottom.
+        ConnectionTestSection(state = state, onRunConnectionTest = onRunConnectionTest)
+
         SecondaryActionButton(text = stringResource(R.string.setup_run_wizard_again_button), onClick = onRunSetupAgain)
 
         SettingsCard {
@@ -148,10 +151,5 @@ fun SetupScreen(
             }
         }
 
-        ConnectionTestSection(state = state, onRunConnectionTest = onRunConnectionTest)
-
-        if (state.allComplete) {
-            PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onBack)
-        }
     }
 }

@@ -14,7 +14,6 @@ import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.BackArrowButton
-import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsMenuRow
 import com.nikita.sleepcycle.ui.state.SettingsMenuEntry
@@ -23,8 +22,9 @@ import com.nikita.sleepcycle.ui.state.settingsMenuEntries
 /**
  * The Settings menu. [isDebugBuild] defaults to the real [BuildConfig.DEBUG] flag and is a parameter only so a
  * preview/test can force either list; [settingsMenuEntries] (X4) is what actually decides whether Debug shows.
- * [onBack] is used for both the back arrow and the "Done" button - X1 makes Done the primary action at the
- * bottom, returning to the same place the back arrow does.
+ *
+ * W17 (owner request): there is no "Done" button. X1 gave this screen one, but it went exactly where the back
+ * arrow already goes, so it was a second control for a job one already did.
  *
  * W12/W14 (owner request): the connection test is not here. It was briefly a row opening a screen of its own,
  * then a button on this menu, and now sits back inside Setup with the readiness checklist it reports against.
@@ -51,8 +51,6 @@ fun SettingsScreen(
                 onClick = settingsMenuEntryAction(entry, onOpenSetup, onOpenDebug),
             )
         }
-
-        PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onBack)
     }
 }
 
