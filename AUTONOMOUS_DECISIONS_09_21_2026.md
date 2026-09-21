@@ -96,3 +96,79 @@ worked.
   function that calls real Android `AlarmManager`/Context APIs and the project has no Robolectric, so (per the
   environment brief) only pure functions are unit-testable here - it is exercised only indirectly, through the
   app-level integration-style sequence tests, none of which broke.
+
+## J1.4 (landed) - session resumed after a usage-limit reset; J1.1-J1.3 were already committed
+
+Picked up after the limit reset. Re-ran the verify command first, per the resumed instructions, confirming the
+512-test baseline (another agent's two commits, 32c03e0 and 67394d2, had landed on `ui/`/`res/`/docs files only
+in the meantime - untouched here, no reason to touch them).
+
+- Re-anchored `NightReplay.kt`: `startNight(at)` is now the one explicit first tick; `markAsleep`/`markAwake`
+  only record the mark and no longer trigger a tick of their own (previously `mark()` called `runTick()`
+  immediately after recording). Added an optional per-call `syncDuration: Duration` to `advanceTo`/`openApp`:
+  a tick that becomes due during that call reads its own input snapshot (segments, wakeAlarmFiredAt,
+  phoneAlarmFiredFor, etc.) at the instant it starts, via a new `PendingTick` holding pattern, but does not
+  commit (arm/latch/save/reschedule) until `syncDuration` later - mirroring FIX1's own real trade-off (state
+  loaded and decisionNow sampled before the sync's own I/O runs). Added `openApp(at, syncDuration)` for an
+  immediate, off-schedule tick (NightController.runImmediateTick's own equivalent).
+- Verified the re-anchoring alone does not change `AlarmSequenceReplayTest.kt`'s own 5 existing tests: updated
+  its `nightAsleepAtEleven` helper to call `startNight` then `markAsleep` (same instant), reran, all 5 still
+  pass. Traced why by hand first: the very FIRST mark's own old "immediate tick" always saw a ZERO-LENGTH
+  segment (the mark's own instant to itself), which `normalizeSegments`/`clipToNow` already drop - so that
+  first auto-tick was already a no-op for every existing test, and removing it changes nothing. Later marks'
+  own auto-ticks were NOT no-ops (they saw real, non-zero segments) - removing THOSE is J1.4's real behavioural
+  change, and it did not break any assertion because every existing test only asserts AFTER a further
+  `advanceTo` call, which naturally reaches the next real scheduled tick anyway.
+- Added `TickScheduleRaceTest.kt` with the four regression cases the brief asked for. Getting deterministic,
+  non-coincidental numbers for each required hand-tracing the real `nextSyncDelay` schedule (normalSyncDelay 15
+  min, frequentSyncDelay 5 min once inside `nearAlarmSyncWindow`) rather than picking round numbers - a tick
+  grid anchored at a clean instant (e.g. exactly on the hour) tends to land EXACTLY on a target that is itself a
+  multiple of 5 minutes away (cycles are 90 min, naps 20 min, both multiples of 5), which is precisely the
+  "lattice" trap J1.4 exists to get away from. The owner's own traced numbers (night started 22:53:30, onset
+  23:00, 5 cycles) reproduce a genuine 06:28:30 tick, 90 s before the 06:30 target, directly from the real
+  schedule - no manual grid needed.
+- **A test that cannot fail is worse than no test - found one of my own, fixed it rather than shipping it.**
+  While satisfying the resumed instructions' explicit requirement to verify each test against a reverted guard,
+  I found that my own "the same lead-window tick with a slow sync rings twice, but never a third time" test
+  (aimed at pinning J1.3's own `phoneAlarmFiredFor` threading in `morningAlarmAlreadyRang`) PASSED UNCHANGED
+  when I reverted ONLY that guard (keeping J1.1 applied). Root cause: in this scenario attribution never
+  actually fails - `lastPlan.wakeAt` always matches whatever fires, because a stale, mid-sync tick's own
+  computed value never actually DIVERGES from what is already armed (H1/H8's own "defer to the still-pending
+  target" design, working exactly as intended, keeps the VALUE identical across ticks right up until it is
+  known to be spent) - so the PRE-EXISTING `wakeAlarmFiredAt`-only check (H8, predating J1.3 entirely) already
+  bounds the loop to two rings on its own, with no need for `phoneAlarmFiredFor` in this specific case. I spent
+  real effort trying to construct a scenario with a genuine ATTRIBUTION MISMATCH (a firing whose `lastPlan.wakeAt`
+  actually differs from `firedFor`, not just a stale re-arm of the same value) - the literal case
+  `recordWakeOrNapFired`'s own mismatch-and-skip branch exists for - and concluded it cannot be built
+  deterministically at the whole-sequence level in this harness: every code path in this codebase that could
+  produce a DIFFERENT value while a target is still future-dated is deliberately guarded against by H1/H8
+  (returning the SAME pending value instead), so a genuine mismatch needs the RECEIVER's own disk read to race
+  a concurrent tick's save at sub-instant granularity - true concurrency an instant-ordered, single-threaded
+  replay cannot express without inventing a second "in-flight, undoable" channel this task did not ask for.
+  Renamed the test from "J1_3 replay" to "J1_1 replay" and rewrote its docstring to say exactly this, in the
+  test file itself, not just here - so the test's own name never claims more than what was verified. J1.3's own
+  `phoneAlarmFiredFor` threading remains directly and unambiguously pinned by the two `ComputeWakeAlarmTest.kt`
+  tests added during J1.3's own commit (`J1_3 a morning target is still spent when only phoneAlarmFiredFor
+  recorded the firing` and its LATER-of-the-two sibling), both already verified to fail pre-J1.3 at that time.
+- Same check on the "waking 4 minutes before the alarm, opens the app 90 s before it" test: it was meant to
+  also pin J1.2's window-widening in `firedAlarmIsWakeAlarm` (the firing here is NAP-mode, going through that
+  exact check), but reverting J1.2 alone (J1.1 still applied) also left it passing unchanged - because J1.1
+  keeps the firing landing EXACTLY at `morningAlarmAt`, and H8's ORIGINAL exact-equality check already succeeds
+  on an exact match; J1.2's window only matters once there is an actual few-seconds-to-few-minutes SHIFT, which
+  J1.1 is precisely what prevents. Renamed from "J1_1 and J1_2 replay" to "J1_1 replay" and said so in its own
+  comment, pointing at `NapAlarmCountingTest.kt`'s own direct J1.2 regression tests instead. Verified both
+  renamed tests still genuinely fail when J1.1 itself is reverted (they do - see the run before this one).
+  Confirmed the OTHER two tests ("a scheduled tick landing inside minAlarmLead before the morning alarm" and
+  "the nap equivalent") are exactly what their names say: both fail when J1.1 is reverted, both pass with it
+  restored, no relabeling needed.
+- The nap-equivalent test needed `pickedCycles=1`, which `validateSettings` rejects (`allowedCycleCounts` is
+  {3,4,5,6} only) - switched to `cycles=3` with a deadline placed close enough that `isNapEligible`'s own
+  deadline branch (`referenceOnset + cycleLength` overruns the deadline) makes the return-to-sleep NAP-eligible
+  regardless of `owedCycles`, without needing an invalid picked-cycle count.
+- Every revert-and-verify in this section was done the same way each time: save the fixed file to a scratch
+  path outside the repo, apply the minimal revert (kept the J1.3-era signature/parameter so only the ONE guard
+  under test changed, everything else still compiled), ran the specific test(s), captured the pass/fail result,
+  then restored the saved fixed file and re-ran the full `:engine:test` to confirm the repo was back to a clean
+  state before moving on.
+- Final verify: `BUILD SUCCESSFUL`, 517 tests, 0 failures, 0 skipped, no Kotlin compiler warnings from
+  `compileKotlin`/`compileTestKotlin` in either module.

@@ -21,6 +21,7 @@ class AlarmSequenceReplayTest {
     /** 23:00, five cycles, no deadline: the morning alarm lands at 06:30. */
     private fun nightAsleepAtEleven(deadline: String? = null): NightReplay {
         val replay = NightReplay(settings(deadline = deadline, cycles = 5))
+        replay.startNight("2026-09-20T23:00")
         replay.markAsleep("2026-09-20T23:00")
         return replay
     }
