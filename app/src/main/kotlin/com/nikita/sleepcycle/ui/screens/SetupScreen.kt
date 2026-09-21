@@ -5,11 +5,14 @@ package com.nikita.sleepcycle.ui.screens
 // again" on the checklist re-enters). Both share the same SetupUiState and the same underlying actions - this
 // is a presentation split only, see ui/screens/setup/ for the wizard's page model and page composables.
 //
-// X2: the checklist lost ConnectionTestSection and SetupDebugRow - Settings carries both now, the test as its
-// own button and Debug as a row (see SettingsScreen.kt). The wizard's own last page (TestConnectionPage.kt) still
-// shows both; it is explicitly out of scope for this rework and behaves exactly as before. That split is also
-// why this screen now takes two distinct exit callbacks: [onExitWizard] (wizard mode, unchanged destination)
-// and [onBack] (checklist mode, now returns to Settings instead of Before bed/Night - X5).
+// X2: the checklist lost SetupDebugRow - Debug is a Settings row now (see SettingsScreen.kt). The wizard's own
+// last page (TestConnectionPage.kt) still shows it; it is explicitly out of scope for this rework and behaves
+// exactly as before. That split is also why this screen now takes two distinct exit callbacks: [onExitWizard]
+// (wizard mode, unchanged destination) and [onBack] (checklist mode, now returns to Settings instead of Before
+// bed/Night - X5).
+//
+// W14 (owner request): the connection test stayed here. It briefly moved out to Settings, but it belongs with
+// the readiness checklist it reports against, not one level above it.
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +36,7 @@ import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.permissions.batteryOptimizationSettingsIntent
 import com.nikita.sleepcycle.ui.permissions.fullScreenIntentSettingsIntent
+import com.nikita.sleepcycle.ui.screens.setup.ConnectionTestSection
 import com.nikita.sleepcycle.ui.screens.setup.SetupItemStatusRow
 import com.nikita.sleepcycle.ui.screens.setup.SetupWizardActions
 import com.nikita.sleepcycle.ui.screens.setup.SetupWizardContent
@@ -143,6 +147,8 @@ fun SetupScreen(
                 Text(text = "• $line", style = MaterialTheme.typography.bodyMedium)
             }
         }
+
+        ConnectionTestSection(state = state, onRunConnectionTest = onRunConnectionTest)
 
         if (state.allComplete) {
             PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onBack)

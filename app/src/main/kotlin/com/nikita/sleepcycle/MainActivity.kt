@@ -70,9 +70,7 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when (uiState.screen) {
                     is Screen.Settings -> SettingsScreen(
-                        state = uiState.setup,
                         onOpenSetup = viewModel::openSetup,
-                        onRunConnectionTest = viewModel::runSetupCheckAction,
                         onOpenDebug = viewModel::openDebug,
                         onBack = viewModel::closeSettings,
                     )

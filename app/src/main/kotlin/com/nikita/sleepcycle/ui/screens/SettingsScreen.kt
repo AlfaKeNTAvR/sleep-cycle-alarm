@@ -1,10 +1,9 @@
 package com.nikita.sleepcycle.ui.screens
 
 // File purpose: the Settings menu (X1) - a short top-level list: a navigation row per destination (Setup,
-// Debug), the connection test's own button, and Done. Every status line, checklist, warning and count that
-// used to live on Setup's one long scroll moved down into the screen its row opens; this screen only routes
-// and runs the one test. Replaces Setup as the destination of the Before-bed gear - see MainActivity.kt and
-// NightViewModel.openSettings.
+// Debug) and Done, nothing else. Every status line, checklist, warning and count that used to live on Setup's
+// one long scroll moved down into the screen its row opens; this screen only routes. Replaces Setup as the
+// destination of the Before-bed gear - see MainActivity.kt and NightViewModel.openSettings.
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
@@ -18,9 +17,7 @@ import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsMenuRow
-import com.nikita.sleepcycle.ui.screens.setup.ConnectionTestSection
 import com.nikita.sleepcycle.ui.state.SettingsMenuEntry
-import com.nikita.sleepcycle.ui.state.SetupUiState
 import com.nikita.sleepcycle.ui.state.settingsMenuEntries
 
 /**
@@ -29,15 +26,12 @@ import com.nikita.sleepcycle.ui.state.settingsMenuEntries
  * [onBack] is used for both the back arrow and the "Done" button - X1 makes Done the primary action at the
  * bottom, returning to the same place the back arrow does.
  *
- * W12 (owner request): the connection test runs from here directly, rather than behind a row of its own. It
- * keeps the unchanged [ConnectionTestSection], so a test run from Settings behaves exactly as it did when it
- * lived on Setup, and it sits below the navigation rows because it is an action, not a destination.
+ * W12/W14 (owner request): the connection test is not here. It was briefly a row opening a screen of its own,
+ * then a button on this menu, and now sits back inside Setup with the readiness checklist it reports against.
  */
 @Composable
 fun SettingsScreen(
-    state: SetupUiState,
     onOpenSetup: () -> Unit,
-    onRunConnectionTest: () -> Unit,
     onOpenDebug: () -> Unit,
     onBack: () -> Unit,
     isDebugBuild: Boolean = BuildConfig.DEBUG,
@@ -57,8 +51,6 @@ fun SettingsScreen(
                 onClick = settingsMenuEntryAction(entry, onOpenSetup, onOpenDebug),
             )
         }
-
-        ConnectionTestSection(state = state, onRunConnectionTest = onRunConnectionTest)
 
         PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onBack)
     }
