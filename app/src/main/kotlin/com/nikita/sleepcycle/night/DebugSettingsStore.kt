@@ -151,10 +151,30 @@ fun readSimulatedSleepEvents(context: Context): Flow<List<SimulatedSleepEvent>> 
         preferences[KEY_SIMULATED_EVENTS]?.let(::decodeSimulatedSleepEventsTolerant) ?: emptyList()
     }
 
-/** Saves the simulated sleep event timeline, overwriting whatever was there before. */
+/** Saves the simulated sleep event timeline, overwriting whatever was there before. FIX3: still used directly by [clearedSimulatedSleepEvents]'s own callers (clearing has no prior value that a stale snapshot could clobber) and, going forward, for any write that is a genuine unconditional replacement rather than an append - see [updateSimulatedSleepEvents] for the read-modify-write case. */
 suspend fun writeSimulatedSleepEvents(context: Context, events: List<SimulatedSleepEvent>) {
     context.debugSettingsStore.edit { preferences ->
         preferences[KEY_SIMULATED_EVENTS] = encodeSimulatedSleepEvents(events)
+    }
+}
+
+/**
+ * FIX3 (owner-reported, 2026-09-21): applies [transform] to the CURRENTLY persisted simulated sleep event
+ * timeline, inside DataStore's own `edit {}` transaction - the same V6 pattern [updateDebugOptions] already
+ * uses, for the same class of bug. [ui.DebugScreenController.recordEvent] used to append to
+ * `simulatedSleepEvents.value` - a StateFlow snapshot of this same timeline that can lag a just-committed
+ * write - and write the result back unconditionally; [appendSimulatedSleepEvent] returns its input unchanged
+ * when the transition is not allowed (see its own doc), so two quick taps of the Asleep toggle could compute
+ * the second append against a snapshot still missing the first tap's own event, then write that stale snapshot
+ * back and permanently erase it (the seed value is `emptyList()`, so a tap before the first DataStore emission
+ * could wipe the whole timeline the same way). Routing the append through this function instead means
+ * [transform] always sees what is actually on disk at write time, never a stale snapshot taken before the call
+ * started.
+ */
+suspend fun updateSimulatedSleepEvents(context: Context, transform: (List<SimulatedSleepEvent>) -> List<SimulatedSleepEvent>) {
+    context.debugSettingsStore.edit { preferences ->
+        val stored = preferences[KEY_SIMULATED_EVENTS]?.let(::decodeSimulatedSleepEventsTolerant) ?: emptyList()
+        preferences[KEY_SIMULATED_EVENTS] = encodeSimulatedSleepEvents(transform(stored))
     }
 }
 

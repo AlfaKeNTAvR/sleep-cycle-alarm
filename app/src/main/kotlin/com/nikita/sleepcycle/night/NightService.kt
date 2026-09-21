@@ -92,13 +92,12 @@ class NightService : Service() {
         }
     }
 
-    /** Publishes every committed state to [observedNightState] (D1) - the ViewModel must never miss a tick that ran from the service rather than from an immediate UI-requested tick. */
+    /** FIX1: no longer publishes to [observedNightState] itself - runNightTick now does that from INSIDE its own transaction lock (see NightOrchestrator.kt's own doc), so this only has the notification and FINISHED bookkeeping left to do with the result. */
     private suspend fun handleTickResult(newState: NightState?, startId: Int) {
         if (newState == null) {
             stopTracking(startId)
             return
         }
-        publishNightState(newState)
         updateNotification(this, newState.lastPlan?.wakeAt, newState.debugOptions)
         if (newState.lastPlan?.mode == AlarmMode.FINISHED) {
             // G1 SUPERSEDES F7: FINISHED ends the night's own bookkeeping - clears the persisted state, stops

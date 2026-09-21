@@ -111,6 +111,29 @@ class BandDataSimulatorTest {
         assertTrue(clearedSimulatedSleepEvents().isEmpty())
     }
 
+    // ---- FIX3: appending against the STORED list, not a stale StateFlow snapshot ------------------------
+
+    @Test
+    fun `appending against a stale snapshot can silently erase an already-stored event - the regression FIX3's stored-not-snapshot merge avoids`() {
+        // Models two quick taps of the Debug screen's Asleep toggle: a concurrent write commits an ASLEEP
+        // event that `staleSnapshot` (a StateFlow value read before that write landed) never saw.
+        val staleSnapshot = emptyList<SimulatedSleepEvent>()
+        val stored = appendSimulatedSleepEvent(staleSnapshot, SimulatedSleepEventKind.ASLEEP, t0)
+
+        // The bug (what DebugScreenController.recordEvent used to do): appending AWAKE against the STALE
+        // snapshot treats it as the very first press (null counts as AWAKE, see isSimulatedSleepEventAllowed),
+        // a no-op that returns the snapshot itself - writing that back would erase the already-committed
+        // ASLEEP event permanently.
+        val buggyMerge = appendSimulatedSleepEvent(staleSnapshot, SimulatedSleepEventKind.AWAKE, t1)
+        assertTrue(buggyMerge.isEmpty())
+
+        // The fix (updateSimulatedSleepEvents, DebugSettingsStore.kt): appending against the STORED list -
+        // read inside DataStore's own edit{} at write time, never a stale snapshot - keeps the ASLEEP event
+        // and correctly closes it with the new AWAKE one.
+        val fixedMerge = appendSimulatedSleepEvent(stored, SimulatedSleepEventKind.AWAKE, t1)
+        assertEquals(listOf(SimulatedSleepEventKind.ASLEEP, SimulatedSleepEventKind.AWAKE), fixedMerge.map { it.kind })
+    }
+
     @Test
     fun `isSimulatedSleepEventAllowed agrees with appendSimulatedSleepEvent's own no-op behaviour`() {
         val events = appendSimulatedSleepEvent(emptyList(), SimulatedSleepEventKind.ASLEEP, t0)

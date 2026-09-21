@@ -49,6 +49,7 @@ import com.nikita.sleepcycle.night.resolveDebugOptions
 import com.nikita.sleepcycle.night.scheduleDebugTestAlarm
 import com.nikita.sleepcycle.night.shouldAutoResetDebugOptions
 import com.nikita.sleepcycle.night.updateDebugOptions
+import com.nikita.sleepcycle.night.updateSimulatedSleepEvents
 import com.nikita.sleepcycle.night.virtualNow
 import com.nikita.sleepcycle.night.writeClockWarp
 import com.nikita.sleepcycle.night.writeSimulatedSleepEvents
@@ -110,9 +111,13 @@ class DebugScreenController(private val context: Context, private val scope: Cor
         // opened at (say) virtual 03:00 with a real afternoon instant and invents hours of sleep; and the
         // clock must be back to real time before the switch itself is persisted, since the switch is what
         // unlocks the controls that would then act on the clock.
+        //
+        // FIX3: appends through [updateSimulatedSleepEvents] rather than reading `simulatedSleepEvents.value`
+        // (a StateFlow snapshot that can lag a just-committed write) and writing the result back unconditionally
+        // - see [updateSimulatedSleepEvents]'s own doc for the class of bug this avoids.
         scope.launch {
-            val awakened = appendSimulatedSleepEvent(simulatedSleepEvents.value, SimulatedSleepEventKind.AWAKE, nowInstant())
-            if (awakened != simulatedSleepEvents.value) writeSimulatedSleepEvents(context, awakened)
+            val at = nowInstant()
+            updateSimulatedSleepEvents(context) { stored -> appendSimulatedSleepEvent(stored, SimulatedSleepEventKind.AWAKE, at) }
             writeClockWarp(context, null)
             updateDebugOptions(context, Instant.now()) { it.copy(simulatedBandData = false) }
             requestImmediateTick(context)
@@ -252,13 +257,18 @@ class DebugScreenController(private val context: Context, private val scope: Cor
      * saw: the switch only ever took effect on a sync line, and waiting a fixed number of SIMULATED minutes
      * meant the lag shrank with speed (about 10 real seconds at 60x, about 1 at 600x). Awaiting the tick puts
      * the debounce re-tick last, so it is the one that survives.
+     *
+     * FIX3 (owner-reported, 2026-09-21): appends through [updateSimulatedSleepEvents] rather than reading
+     * `simulatedSleepEvents.value` (a StateFlow snapshot that can lag a just-committed write) and writing the
+     * result back unconditionally - two quick taps of this same toggle used to be able to compute the second
+     * tap's append against a snapshot still missing the first tap's own event, then write that stale snapshot
+     * back and permanently erase it. See [updateSimulatedSleepEvents]'s own doc.
      */
     private fun recordEvent(kind: SimulatedSleepEventKind) {
         scope.launch {
             // T4: virtual - this becomes a SleepSegment boundary the engine plans against (BandDataSimulator.kt).
             val at = nowInstant()
-            val updated = appendSimulatedSleepEvent(simulatedSleepEvents.value, kind, at)
-            writeSimulatedSleepEvents(context, updated)
+            updateSimulatedSleepEvents(context) { stored -> appendSimulatedSleepEvent(stored, kind, at) }
             runImmediateTick(context)
             if (kind == SimulatedSleepEventKind.AWAKE) {
                 scheduleTick(context, at + resolveEngineConfig(effectiveOptions()).minAwakening + DEBOUNCE_RETICK_MARGIN)

@@ -5,6 +5,16 @@ package com.nikita.sleepcycle.night
 // The entire transaction runs under withNightTransactionLock so a service tick, an immediate UI tick, and
 // endNight can never interleave. D1/D2: the band is a sensor only now - every tick arms the phone alarm at
 // plan.wakeAt, and no alarm command is ever sent to the band.
+//
+// FIX1 (owner-reported, 2026-09-21): the clock is now re-sampled ONCE, inside the lock, and that single
+// `decisionNow` drives the data path (segment build), the plan, phone-alarm arming, nudge supersession,
+// lastSyncAt and next-tick scheduling alike - see runNightTickLocked's own doc for the bug this replaces
+// (an older tick committing after a newer one, on its own stale pre-lock `now`) and the one accepted
+// trade-off it carries on a real sync (up to ~2 min of real band I/O no longer gets a fresher post-sync
+// clock read for the plan - bounded by the sync's own worst case, and worth it to remove the data-integrity
+// bug). FIX1 also makes this function the one publisher of a committed tick's state - see publishNightState's
+// own call at the bottom of runNightTickLocked. FIX2 is the next-tick scheduling half - see nextTickAt.
+// FIX4 is napSupersedesPendingNudge's own tightened guard - see its own doc.
 
 import android.content.Context
 import android.util.Log
@@ -19,8 +29,11 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.SleepSegment
+import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.engine.computeAlarmPlan
+import com.nikita.sleepcycle.engine.detectSleepState
 import com.nikita.sleepcycle.engine.nextSyncDelay
+import com.nikita.sleepcycle.engine.normalizeSegments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -80,7 +93,11 @@ suspend fun runNightTick(context: Context, now: Instant, scheduledFor: Instant? 
 
 private suspend fun runNightTickLocked(context: Context, now: Instant, scheduledFor: Instant?, receivedAt: Instant?): NightState? {
     // T4: virtual, like scheduledFor/receivedAt (both already virtual - see TickScheduling.kt/TickReceiver.kt)
-    // - all three must be apples-to-apples for the "tick" log line's own lateness diagnosis to mean anything.
+    // - all three are the CALLER's own entry-time readings (sampled before this tick even reached the lock -
+    // see NightService.onStartCommand/NightController.runImmediateTick), kept ONLY for the "tick" log line's
+    // own lateness diagnosis below (how late this tick fired against its own schedule, how long it then waited
+    // for the lock). FIX1: never used for anything written into state or handed to the engine any more - see
+    // decisionNow below.
     val startedAt = nowInstant()
     val state = withContext(Dispatchers.IO) { loadNightState(context) }
     if (state == null) {
@@ -101,35 +118,53 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         debugNight
     )
 
+    // FIX1 (owner-reported, 2026-09-21) SUPERSEDES C1's own two-instant version of this: C1 re-read the clock
+    // only after the data sync's own I/O, and only for the PLAN - the data path (segment build, right below)
+    // still ran on the caller's stale pre-lock `now`. withNightTransactionLock serializes COMMITS, not ENTRY
+    // order, so a tick that entered earlier could still win the lock LAST; acting on its own stale `now` then
+    // rebuilt this tick's segments (buildSimulatedSegments depends purely on `now` - see BandDataSimulator.kt)
+    // and plan from an OLDER instant than whatever the tick that already committed used - silently reverting a
+    // freshly-detected AWAKE interval back to ASLEEP and walking lastSyncAt backwards with it (the owner's own
+    // visible bug: the screen flips back to the asleep view with no input). Re-sampled HERE instead, once,
+    // now that the lock is actually held and before either the data path or the plan runs, and reused for
+    // BOTH - the data path (segment build) and the plan alike, so two ticks racing for the lock always commit
+    // in non-decreasing `now` order.
+    //
+    // Accepted trade-off, real (unwarped) nights only: a real sync can itself take up to ~2 min (see
+    // syncOrFail's own doc); the plan below no longer gets a SEPARATE, fresher post-sync clock read the way
+    // C1 gave it. Bounded by the sync's own worst case, and it buys a single consistent instant across data
+    // and plan instead of two that can disagree - worth it, since the sync-in-progress case this trades away
+    // is only ever this reachable when simulatedBandData is off, and U1 guarantees the clock is never warped
+    // then, so the two readings would have differed by at most that same real sync duration anyway.
+    val decisionNow = nowInstant()
+
     val config = resolveEngineConfig(state.debugOptions)
     val appSettings = readAppSettings(context).first()
     val simulatedEvents = if (state.debugOptions.simulatedBandData) readSimulatedSleepEvents(context).first() else emptyList()
-    val outcome = readBandDataForTick(context, state.debugOptions, appSettings, state, simulatedEvents, now)
+    val outcome = readBandDataForTick(context, state.debugOptions, appSettings, state, simulatedEvents, decisionNow)
 
-    // C1: the clock is re-read here, after the (up to ~2 min) Gadgetbridge I/O above, and used for the plan
-    // itself - `now` at entry can already be stale by the time the I/O finishes. `now` (the tick's entry time)
-    // still drives only this tick's own scheduledFor/receivedAt/startedAt log fields above, for diagnosing
-    // tick lateness. T4: virtual - this is the instant the plan itself is computed against.
-    val decisionNow = nowInstant()
     val plan = computeAlarmPlan(
         outcome.segments, state.settings, decisionNow, state.morningAlarmAt, currentZone(), config,
         state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt
     )
     logDataAndPlan(context, state, outcome, plan, decisionNow)
 
-    armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, decisionNow)
-    // H7.2: right after arming (or not) the phone alarm for this tick's own plan - a nap the tick just armed
-    // supersedes any nudge still pending from an earlier alarm.
-    cancelNudgeIfSupersededByNap(context, state, plan, decisionNow)
+    val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, decisionNow)
+    // H7.2/FIX4: right after arming (or not) the phone alarm for this tick's own plan - a nap the tick just
+    // armed supersedes any nudge still pending from an earlier alarm, but only once it is CONFIRMED - see
+    // napSupersedesPendingNudge's own doc for what changed and why.
+    cancelNudgeIfSupersededByNap(context, state, plan, outcome.segments, config, napAlarmArmed, decisionNow)
 
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are
     // PhoneAlarmReceiver's own bookkeeping (see PhoneAlarmFiredStore.kt) - a tick only ever reads them
     // (already the freshest values, merged in by loadNightState above) and carries them through unchanged; it
     // never writes them itself. H1: morningAlarmAt IS this tick's own bookkeeping - latched here, from THIS
-    // plan, for the next tick to read.
+    // plan, for the next tick to read. FIX1: lastSyncAt is decisionNow now, never the caller's stale entry
+    // `now` - decisionNow is the single fresh in-lock instant this whole tick's data and plan were built from,
+    // so (unlike the stale entry `now`) it can never be older than an already-committed tick's own lastSyncAt.
     val newState = state.copy(
         lastPlan = plan,
-        lastSyncAt = now,
+        lastSyncAt = decisionNow,
         lastSyncOk = outcome.syncOk,
         lastSegments = outcome.segments,
         lastExportFileModifiedAt = outcome.exportFileModifiedAt,
@@ -147,7 +182,16 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         // as late as what came before it, or a reader would see a "later" line with an earlier timestamp.
         appendNightLog(context, state.startedAt, NightLogEvent(decisionNow, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist state after this tick")), debugNight)
     }
-    scheduleNextTick(context, plan, now, config)
+    // FIX2: booked from decisionNow - the instant this tick's own decision was actually made at - never the
+    // caller's stale entry `now`. See nextTickAt's own doc for why, and TickScheduling.kt's own in-process
+    // skip-arming guard for the defence-in-depth this pairs with.
+    scheduleNextTick(context, plan, decisionNow, config)
+    // FIX1: published from INSIDE this same lock - the one seam every committed tick's result now reaches
+    // observedNightState through, whether it ran from NightService's own tick or an immediate UI-requested
+    // one. NightService.handleTickResult and NightController.runImmediateTick used to each publish their own
+    // snapshot AFTER the lock had already released, which could publish out of commit order for the exact same
+    // reason the segment/plan mismatch above could commit out of order.
+    publishNightState(newState)
     return newState
 }
 
@@ -172,18 +216,27 @@ internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? 
  * premise is that the owner is awake and not getting up; once a tick has detected them asleep again and armed
  * a nap, that premise is false, and letting the nudge ring anyway would wake them mid-nap at full alarm
  * volume ([com.nikita.sleepcycle.alarm.AlarmRingService.startRinging] is deliberately non-idempotent, F1).
- * `internal`, not `private`: the one pure decision seam, JVM-testable directly without a Context.
  *
- * H8 ADDS `!plan.onsetIsProjected`, the missing half of "a tick has detected them asleep again": a NAP plan
- * is rule 7, which covers the owner lying AWAKE too, and such a plan carries a real alarm of its own now (the
- * still-pending morning alarm - see WakeAlarm.kt's `awakeNapTarget`; before H8 it was a slid nap, equally
- * non-null). Either way the nudge was being cancelled while the owner was awake and not getting up, which is
- * the exact situation the nudge exists for. A NAP plan measured from a REAL onset (`onsetIsProjected` false)
- * is the only one that means the owner is actually asleep again - a projected onset is `now + fallAsleepEstimate`,
- * a guess made precisely because they are not.
+ * FIX4 (predates this branch, live on real nights - handle with care): the original version of this predicate
+ * fired for ANY NAP-mode plan with a `wakeAt` and a pending nudge, without requiring the owner to actually be
+ * ASLEEP. An awake tick can legitimately produce a NAP plan (rule 7 also covers "lying awake after an
+ * awakening" states in its own reasoning, and a mis-synced/stale read could too) - cancelling the nudge and its
+ * pre-check there means the nudge that should have got the owner out of bed never rings, with nothing left to
+ * replace it. Now requires BOTH: [sleepState] is a confirmed [SleepState.ASLEEP] (the same data this tick's own
+ * plan was computed from, per H7.2's own accepted staleness - the stronger, freshly-re-synced check is
+ * [shouldCancelNudgeForPreCheck]'s own job, not this one's), AND [napAlarmArmed] is true - the replacement nap
+ * this predicate is trading the nudge away for must itself be a real, successfully armed (or already fired)
+ * phone alarm, not a plan whose own arm attempt silently failed (exact-alarm permission revoked) or never ran
+ * (F5's AWAKE safety net gap, wakeAt == null - already excluded below). `internal`, not `private`: the one pure
+ * decision seam, JVM-testable directly without a Context.
+ *
+ * H8 reached this same defect from the other side and guarded on `!plan.onsetIsProjected`. That guard is
+ * subsumed here and deliberately not kept as well: a projected onset is `now + fallAsleepEstimate`, produced
+ * precisely because the owner is NOT asleep, so a confirmed [SleepState.ASLEEP] already implies a real onset.
+ * One reason for this predicate is worth more than two overlapping ones.
  */
-internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?): Boolean =
-    plan.mode == AlarmMode.NAP && plan.wakeAt != null && !plan.onsetIsProjected && pendingNudgeAt != null
+internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?, sleepState: SleepState, napAlarmArmed: Boolean): Boolean =
+    plan.mode == AlarmMode.NAP && plan.wakeAt != null && pendingNudgeAt != null && sleepState == SleepState.ASLEEP && napAlarmArmed
 
 /**
  * H7.2: cancels a still-pending out-of-bed nudge once a tick arms a nap - see [napSupersedesPendingNudge]'s
@@ -191,10 +244,23 @@ internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?
  * alarm rings, its nudge is armed 15 minutes after that. App-layer only, per the owner's own framing - the
  * engine's plan already says everything it needs to (NAP, non-null wakeAt); it does not need to know the
  * nudge exists.
+ *
+ * FIX4: [segments]/[config] recompute the same [SleepState] this tick's own plan was built from (the identical
+ * `detectSleepState(normalizeSegments(...))` pair [computeAlarmPlan] itself runs internally, but [AlarmPlan]
+ * does not carry the state back out) - cheap and pure, no extra I/O, reusing data already in hand this tick.
  */
-private fun cancelNudgeIfSupersededByNap(context: Context, state: NightState, plan: AlarmPlan, now: Instant) {
+private fun cancelNudgeIfSupersededByNap(
+    context: Context,
+    state: NightState,
+    plan: AlarmPlan,
+    segments: List<SleepSegment>,
+    config: EngineConfig,
+    napAlarmArmed: Boolean,
+    now: Instant
+) {
     val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
-    if (!napSupersedesPendingNudge(plan, pendingNudgeAt)) return
+    val sleepState = detectSleepState(normalizeSegments(segments, now, config))
+    if (!napSupersedesPendingNudge(plan, pendingNudgeAt, sleepState, napAlarmArmed)) return
     cancelOutOfBedAlarm(context)
     cancelPreNudgeCheck(context)
     clearOutOfBedNudgePendingAt(context)
@@ -279,16 +345,23 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * F2 SUPERSEDES the original spec: this function no longer touches [NightState.napAlarmsUsed] at all - that
  * counter is now PhoneAlarmReceiver's own bookkeeping, incremented only when a nap alarm actually FIRES (see
  * PhoneAlarmReceiver.recordWakeOrNapFired), never at arm time here.
+ *
+ * FIX4: returns whether, after this call, [plan]'s own `wakeAt` is backed by a real armed (or already-fired)
+ * phone alarm - true when [schedulePhoneAlarm] itself succeeds this tick, or when it already fired for this
+ * exact instant ([NightState.phoneAlarmFiredFor], which means D4 already armed a fresh nudge of its own for
+ * it); false when there is nothing to arm (`wakeAt == null`) or arming did not happen (already overdue) or
+ * failed (exact-alarm permission revoked). [cancelNudgeIfSupersededByNap]'s own guard reads this, so a plan
+ * whose own alarm attempt failed never counts as a replacement for the nudge it would otherwise cancel.
  */
-private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousPlan: AlarmPlan?, plan: AlarmPlan, now: Instant) {
+private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousPlan: AlarmPlan?, plan: AlarmPlan, now: Instant): Boolean {
     val debugNight = state.debugOptions.isAnyEnabled
     val wakeAt = plan.wakeAt
     if (wakeAt == null) {
         if (previousPlan?.wakeAt != null) cancelPhoneAlarm(context)
-        return
+        return false
     }
     if (wakeAt == state.phoneAlarmFiredFor) {
-        return
+        return true
     }
     if (!shouldArmPhoneAlarm(wakeAt, now, state.phoneAlarmFiredFor)) {
         appendNightLog(
@@ -296,7 +369,7 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
             NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "planned phone alarm $wakeAt is at or before now, not arming - Android fires a past exact alarm immediately")),
             debugNight
         )
-        return
+        return false
     }
     val armed = schedulePhoneAlarm(context, wakeAt, alarmLabelFor(plan.mode, wakeAt, state.morningAlarmAt))
     val changed = wakeAt != previousPlan?.wakeAt
@@ -306,14 +379,42 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         else -> null
     }
     event?.let { appendNightLog(context, state.startedAt, it, debugNight) }
+    return armed
 }
 
-/** null from [nextSyncDelay] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig. */
-private fun scheduleNextTick(context: Context, plan: AlarmPlan, now: Instant, config: EngineConfig) {
-    val delay = nextSyncDelay(plan, now, config)
-    if (delay == null) {
+/**
+ * FIX2 (owner-reported, 2026-09-21): the virtual instant to book the next tick at, computed from
+ * [decisionNow] - the instant THIS tick's own decision was actually made at (see runNightTickLocked's own
+ * FIX1 doc) - rather than a tick's stale entry instant, which the original version of [scheduleNextTick] used.
+ * At 600x a tick's own disk work costs 1 to 4 virtual minutes; booking from an instant that old meant
+ * `nextTickAt` was frequently already in the virtual past by the time it was actually converted and armed,
+ * which [inProcessTickDelay] then floored to [IN_PROCESS_TICK_MIN_DELAY] and armed anyway - a tight 250 ms
+ * disk-IO loop where every iteration is itself an overlapping tick (the exact precondition FIX1 guards
+ * against). [nextSyncDelay] always returns a strictly positive [config]-derived duration (or null, meaning the
+ * night is over - see its own doc), so `decisionNow.plus(delay)` is always strictly after [decisionNow] by
+ * construction; the `isAfter` check below is a defensive invariant, not dead code - it is what this function's
+ * own test pins down, and it is what protects this call site if that guarantee about [nextSyncDelay] ever
+ * changes. `internal`, not `private`: JVM-testable directly without a Context. See TickScheduling.kt's own
+ * in-process skip-arming guard for the second, independent line of defence this pairs with (residual
+ * real-time drift between this decision and the moment [scheduleTick] actually arms it - disk saves, logging -
+ * that no choice of virtual instant alone can fully absorb).
+ */
+internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineConfig): Instant? {
+    val delay = nextSyncDelay(plan, decisionNow, config) ?: return null
+    val candidate = decisionNow.plus(delay)
+    // Defensive floor only - unreachable today since nextSyncDelay's own duration is always strictly positive
+    // (see this function's own doc) - the smallest possible strictly-after instant, not a meaningful duration
+    // in its own right (contrast TickScheduling.kt's IN_PROCESS_TICK_MIN_DELAY, a real-time floor for a
+    // different problem - see this function's own doc for how the two relate).
+    return if (candidate.isAfter(decisionNow)) candidate else decisionNow.plusNanos(1)
+}
+
+/** null from [nextTickAt] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig. */
+private fun scheduleNextTick(context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig) {
+    val at = nextTickAt(plan, decisionNow, config)
+    if (at == null) {
         cancelTick(context)
     } else {
-        scheduleTick(context, now.plus(delay))
+        scheduleTick(context, at)
     }
 }
