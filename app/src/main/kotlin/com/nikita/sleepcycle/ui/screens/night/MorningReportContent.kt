@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
@@ -56,15 +55,23 @@ fun MorningReportBody(content: NightScreenContent.MorningReport, caption: String
                 SettingsCard {
                     content.stretches.forEachIndexed { index, stretch ->
                         if (index > 0) CardDivider()
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                        // The three texts here are three different sizes, so bottom-aligning their boxes made the
+                        // small ones sit visibly low - owner-reported. One shared baseline instead.
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
+                                modifier = Modifier.alignByBaseline(),
                                 text = "${stretch.startTimeLabel} – ${stretch.endTimeLabel}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = NightOnSurfaceMuted,
                             )
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text(text = stretch.durationLabel, style = SmallNumeralStyle)
-                                Text(text = " (${stretch.cyclesLabel})", style = MaterialTheme.typography.bodyMedium, color = NightOnSurfaceMuted)
+                            Row(modifier = Modifier.alignByBaseline()) {
+                                Text(modifier = Modifier.alignByBaseline(), text = stretch.durationLabel, style = SmallNumeralStyle)
+                                Text(
+                                    modifier = Modifier.alignByBaseline(),
+                                    text = " (${stretch.cyclesLabel})",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = NightOnSurfaceMuted,
+                                )
                             }
                         }
                     }

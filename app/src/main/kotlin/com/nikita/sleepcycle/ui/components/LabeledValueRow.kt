@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.nikita.sleepcycle.ui.theme.DividerThickness
 import com.nikita.sleepcycle.ui.theme.NightOnBackground
@@ -22,13 +21,14 @@ import com.nikita.sleepcycle.ui.theme.SmallNumeralStyle
 /** One "label ... value" row, the value in the small serif numeral style. */
 @Composable
 fun LabeledValueRow(label: String, value: String, modifier: Modifier = Modifier) {
+    // Label and value are different sizes, so bottom-aligning their boxes left the label sitting low. They share
+    // one baseline instead, the same rule the morning report's stretch rows follow.
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom,
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyLarge, color = NightOnSurfaceMuted)
-        Text(text = value, style = SmallNumeralStyle, color = NightOnBackground)
+        Text(modifier = Modifier.alignByBaseline(), text = label, style = MaterialTheme.typography.bodyLarge, color = NightOnSurfaceMuted)
+        Text(modifier = Modifier.alignByBaseline(), text = value, style = SmallNumeralStyle, color = NightOnBackground)
     }
 }
 
