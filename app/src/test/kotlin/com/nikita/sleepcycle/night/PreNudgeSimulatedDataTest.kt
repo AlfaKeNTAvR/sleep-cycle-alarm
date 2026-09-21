@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.night
 // never be exercised in debug mode at all (a virtual `now` against real band timestamps always reads stale).
 // See OutOfBedPreNudgeCheck.simulatedSleepStateAt and its caller.
 
+import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.SleepState
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -25,23 +26,26 @@ class PreNudgeSimulatedDataTest {
     private fun awakeAt(minutesAgo: Long) =
         SimulatedSleepEvent(SimulatedSleepEventKind.AWAKE, now.minus(Duration.ofMinutes(minutesAgo)))
 
+    // L2.2: none of these tests are about the night's own plan mode, so they all pass a plain non-FINISHED
+    // mode (FULL_CYCLES) - see OutOfBedNudgeSupersessionTest.kt's own L2.2 section for the mode half.
+
     @Test
     fun `an untouched simulator reads as nothing known, so the nudge still rings`() {
         assertNull(simulatedSleepStateAt(emptyList(), now, config))
-        assertFalse(shouldCancelNudgeForPreCheck(simulatedSleepStateAt(emptyList(), now, config)))
+        assertFalse(shouldCancelNudgeForPreCheck(simulatedSleepStateAt(emptyList(), now, config), AlarmMode.FULL_CYCLES))
     }
 
     @Test
     fun `an open asleep segment reads as ASLEEP, which cancels the nudge`() {
         val state = simulatedSleepStateAt(listOf(asleepAt(30)), now, config)
         assertEquals(SleepState.ASLEEP, state)
-        assertTrue(shouldCancelNudgeForPreCheck(state))
+        assertTrue(shouldCancelNudgeForPreCheck(state, AlarmMode.FULL_CYCLES))
     }
 
     @Test
     fun `an open awake segment does not cancel the nudge`() {
         val state = simulatedSleepStateAt(listOf(asleepAt(60), awakeAt(10)), now, config)
-        assertFalse(shouldCancelNudgeForPreCheck(state))
+        assertFalse(shouldCancelNudgeForPreCheck(state, AlarmMode.FULL_CYCLES))
     }
 
     @Test
@@ -50,6 +54,6 @@ class PreNudgeSimulatedDataTest {
         val events = listOf(asleepAt(300), awakeAt(40), asleepAt(25))
         val state = simulatedSleepStateAt(events, now, config)
         assertEquals(SleepState.ASLEEP, state)
-        assertTrue(shouldCancelNudgeForPreCheck(state))
+        assertTrue(shouldCancelNudgeForPreCheck(state, AlarmMode.FULL_CYCLES))
     }
 }

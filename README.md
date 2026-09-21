@@ -162,14 +162,18 @@ which means a simulated night dies if the app process is killed, unlike a real o
     Debug and turn **Asleep** on a third time: with the cap already spent and no deadline left to fall back
     on, the night finishes immediately on its own - no third nap, no fixed wait - and the screen shows
     **Night finished** with an **End night** button, without you having to press "I'm awake" to get there.
-    L1 detail worth seeing here: the nudge chain does NOT repeat past this point. Reaching **Night finished**
-    clears the night's own state, and the receiver needs that state to arm the next nudge - so whichever nudge
-    was already armed rings one last time and the chain stops. Do not read that as a general safety net: this
-    walkthrough only gets there because turning **Asleep** on forces the one state that ends a no-deadline
-    night (asleep again, both naps spent). On a real no-deadline night where you are up and about, or your
-    band is off, that state never happens and the chain keeps ringing every 15 minutes until you press
-    "I'm awake". See the L1 record in `docs/decisions.md`, where that is carried as an open question rather
-    than a decided rule.
+    L2 detail worth seeing here (decided 2026-09-21, superseding what this step used to say): the nudge chain
+    does NOT stop at this point either. Before L2 the reasoning below was true in the OTHER direction -
+    reaching **Night finished** cleared the night's own state immediately, and the receiver needs that state
+    to arm the next nudge, so whichever nudge was already armed would ring one last time and the chain would
+    stop. That turned out to be an accident of structure rather than the owner's intent (it also meant a
+    deadline night's chain stopped one ring after the deadline, which he had not asked for either), so
+    `finishNightIfNeeded` now defers its bookkeeping - state, tick alarm, tracking notification, all of it -
+    for as long as a nudge is still pending. Wait 15 more virtual minutes right here on the **Night finished**
+    screen and watch the same nudge ring again; tap **Stop** and it arms yet another one. Only **End night**
+    (or "I'm awake" on a ring screen, had one still been up) actually silences it. See the L2 record in
+    `docs/decisions.md` for the owner's reasoning and what he accepted in exchange (the notification and tick
+    alarm staying up past the point the night would otherwise have closed).
 13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
     night also resets every Debug switch and any active clock warp - the same happens on its own if the app
     sits unopened for 2 h after they were last changed, so a desk test like this one can never leak into a
@@ -191,5 +195,5 @@ which means a simulated night dies if the app process is killed, unlike a real o
 
 - Reboot during the night (e.g. a system update): the phone alarm is restored only once the phone is unlocked once after the reboot (`BootReceiver` needs credential-protected storage). Direct Boot support, which would restore it before first unlock, is deferred - not fixed in this batch.
 - Without a deadline, if the band never reports sleep (e.g. it is taken off), the wake time keeps moving forward all night and nothing rings until the band eventually reports sleep or the owner ends the night by hand.
-- The night ending on its own (the deadline passing, or the two-nap cap spending itself with no deadline left) only closes the night's own bookkeeping - the persisted state, the tick alarm, the tracking notification. If an alarm happened to still be ringing, or an out-of-bed nudge still pending, at that exact moment, only your own "I'm awake" or "Stop night" silences it; the night reaching its own end does not.
+- The night ending on its own (the deadline passing, or the two-nap cap spending itself with no deadline left) closes the night's own bookkeeping - the persisted state, the tick alarm, the tracking notification - only once there is nothing left pending; a still-ringing alarm is left alone either way. L2 (decided 2026-09-21): if an out-of-bed nudge is pending at that exact moment, closing the bookkeeping is deferred, not merely skipped for the nudge alone - state, the tick alarm and the notification all stay exactly as they are, and the chain keeps repeating, until your own "I'm awake" or "Stop night" silences it. The night reaching its own end does not.
 - A simulated night dies if the app process is killed - the fast in-process tick path a high simulation speed relies on has no reboot or process-death recovery of its own, unlike a real night's `AlarmManager` path. Debug-only, never a real night's concern.

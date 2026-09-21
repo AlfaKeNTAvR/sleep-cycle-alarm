@@ -296,6 +296,14 @@ suspend fun runImmediateTick(context: Context) = withContext(Dispatchers.Default
 }
 
 /**
+ * L2.1 (owner decision, 2026-09-21): the one pure decision behind [finishNightIfNeeded]'s deferral - whether a
+ * pending out-of-bed nudge instant means the FINISHED bookkeeping should not run yet. `internal`, not
+ * `private`, mirroring [shouldRearmPendingNudge]/[shouldResumeNightServiceOnBoot]: JVM-testable directly
+ * without a Context, even though [finishNightIfNeeded] itself still needs one for the store read and the lock.
+ */
+internal fun shouldDeferFinishForPendingNudge(pendingNudgeAt: Instant?): Boolean = pendingNudgeAt != null
+
+/**
  * G1 SUPERSEDES the first fix round's own instruction that a plan reaching FINISHED must run the full
  * end-of-night path (F7) - that instruction was wrong. Reaching FINISHED means only that there is nothing
  * left for the engine to PLAN: it ends the night's own bookkeeping (persisted state, the tick alarm, the
@@ -308,6 +316,18 @@ suspend fun runImmediateTick(context: Context) = withContext(Dispatchers.Default
  * it. Only the owner ending the night themselves ([endNight], via "I'm awake" on the ring screen or ending it
  * from the Night screen) cancels a live ring and a pending nudge - their tap means "I am up", FINISHED does
  * not.
+ *
+ * L2.1 (owner decision, 2026-09-21) SUPERSEDES this doc's own EXACTLY THREE THINGS END A CHAIN item 3 (see
+ * PhoneAlarmReceiver.armOutOfBedNudge's own L1/L2 doc, and docs/decisions.md's L2 record, for the owner's full
+ * reasoning): a deadline night's chain used to stop one nudge after FINISHED, because this function used to
+ * clear the persisted night state unconditionally, and PhoneAlarmReceiver.onReceive needs a night state to arm
+ * the NEXT link (`if (state != null) recordRealAlarmFired(...)`). The owner chose to keep the chain alive
+ * instead, so a deadline night behaves exactly like a no-deadline one: while a nudge is still pending, this
+ * function now defers its ENTIRE bookkeeping (state, tick alarm, tracking notification all stay exactly as
+ * they are) rather than running it. It runs again on whatever later trigger calls it (the app being opened
+ * re-ticks, which can reach FINISHED again) - not on a schedule of its own, since [nextSyncDelay] already
+ * returns null for FINISHED and books no further tick. The owner's own [endNight] is unaffected and still the
+ * one thing that actually cleans up a deferred night - see its own doc.
  *
  * Deliberately NOT routed through [endNight]'s own single-flight guard: that guard exists so two OWNER
  * actions (or a UI double-tap) collapse into one run sharing one intent (stop the ring, cancel the nudge).
@@ -337,6 +357,19 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
         val loaded = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock
         // T4: virtual - see nightEndFields/logNightClosingSummary/MorningReportSnapshot's own doc.
         val now = nowInstant()
+        // L2.1: read through the same store BootReceiver and the orchestrator already use, inside this same
+        // lock (after the state load above, so this never races a concurrent nudge arm/clear). See this
+        // function's own L2.1 doc above for why a pending nudge defers ALL of the bookkeeping below rather than
+        // only the parts that would touch the nudge directly.
+        val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
+        if (shouldDeferFinishForPendingNudge(pendingNudgeAt)) {
+            appendNightLog(
+                context, loaded.startedAt,
+                NightLogEvent(now, "night_end_deferred", mapOf("cause" to "out_of_bed_nudge_pending", "pendingNudgeAt" to pendingNudgeAt.toString())),
+                loaded.debugOptions.isAnyEnabled
+            )
+            return@withNightTransactionLock
+        }
         appendNightLog(context, loaded.startedAt, NightLogEvent(now, "night_end", nightEndFields(loaded, now)), loaded.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, loaded, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(loaded, now)) }

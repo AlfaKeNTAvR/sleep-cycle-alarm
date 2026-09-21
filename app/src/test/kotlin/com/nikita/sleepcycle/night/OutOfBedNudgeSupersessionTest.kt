@@ -229,21 +229,47 @@ class OutOfBedNudgeSupersessionTest {
 
     @Test
     fun `H7_3 the pre-nudge check cancels the nudge only on a confirmed ASLEEP reading`() {
-        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP))
+        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.FULL_CYCLES))
     }
 
     @Test
     fun `H7_3 the pre-nudge check rings when the sync failed, timed out, or returned stale data (represented as null)`() {
-        assertFalse(shouldCancelNudgeForPreCheck(null))
+        assertFalse(shouldCancelNudgeForPreCheck(null, AlarmMode.FULL_CYCLES))
     }
 
     @Test
     fun `H7_3 the pre-nudge check rings when the owner is still awake`() {
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.AWAKE))
+        assertFalse(shouldCancelNudgeForPreCheck(SleepState.AWAKE, AlarmMode.FULL_CYCLES))
     }
 
     @Test
     fun `H7_3 the pre-nudge check rings when there is no sleep data at all yet`() {
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.NOT_YET_ASLEEP))
+        assertFalse(shouldCancelNudgeForPreCheck(SleepState.NOT_YET_ASLEEP, AlarmMode.FULL_CYCLES))
+    }
+
+    // ---- L2.2 (owner decision, 2026-09-21): the pre-check must not silence a FINISHED night's chain --------
+
+    @Test
+    fun `L2_2 a confirmed ASLEEP reading on a FINISHED night does NOT cancel - past the deadline that is the reason to ring`() {
+        assertFalse(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.FINISHED))
+    }
+
+    @Test
+    fun `L2_2 a confirmed ASLEEP reading still cancels on every mode that is not FINISHED - unchanged from H7_3`() {
+        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.FULL_CYCLES))
+        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.DEADLINE_ONLY))
+        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.NAP))
+    }
+
+    @Test
+    fun `L2_2 a null mode (no plan loaded) is treated as not-FINISHED - an ASLEEP reading still cancels`() {
+        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, null))
+    }
+
+    @Test
+    fun `L2_2 a FINISHED night still rings for every other reading, same as before - FINISHED only changes the ASLEEP case`() {
+        assertFalse(shouldCancelNudgeForPreCheck(null, AlarmMode.FINISHED))
+        assertFalse(shouldCancelNudgeForPreCheck(SleepState.AWAKE, AlarmMode.FINISHED))
+        assertFalse(shouldCancelNudgeForPreCheck(SleepState.NOT_YET_ASLEEP, AlarmMode.FINISHED))
     }
 }

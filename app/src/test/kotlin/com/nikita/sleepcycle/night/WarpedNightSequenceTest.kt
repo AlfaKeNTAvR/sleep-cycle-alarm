@@ -117,10 +117,10 @@ class WarpedNightSequenceTest {
             pendingNudgeAt = firedFor.plus(config.outOfBedDelay)
         }
 
-        /** Simulates the pre-nudge check (U6): reads the simulated timeline exactly like [simulatedSleepStateAt] does in production, and cancels the nudge on a confirmed ASLEEP reading, per [shouldCancelNudgeForPreCheck]. Returns whether it cancelled. */
-        fun preNudgeCheck(virtualNow: Instant): Boolean {
+        /** Simulates the pre-nudge check (U6): reads the simulated timeline exactly like [simulatedSleepStateAt] does in production, and cancels the nudge on a confirmed ASLEEP reading, per [shouldCancelNudgeForPreCheck] - unless (L2.2) [mode] is already FINISHED. Returns whether it cancelled. */
+        fun preNudgeCheck(virtualNow: Instant, mode: AlarmMode?): Boolean {
             val now = nowAt(virtualNow)
-            val cancels = shouldCancelNudgeForPreCheck(simulatedSleepStateAt(events, now, config))
+            val cancels = shouldCancelNudgeForPreCheck(simulatedSleepStateAt(events, now, config), mode)
             if (cancels) pendingNudgeAt = null
             return cancels
         }
@@ -144,7 +144,7 @@ class WarpedNightSequenceTest {
 
         // ---- The pre-nudge check fires first (H7.3, 2 min before the nudge) and finds the owner still AWAKE - it must NOT cancel the nudge. ----
         val preCheck1At = requireNotNull(pendingNudgeAt).minus(config.preNudgeCheckLead)
-        assertFalse(preNudgeCheck(preCheck1At))
+        assertFalse(preNudgeCheck(preCheck1At, wakePlan.mode))
 
         // ---- One minute after the pre-nudge check (still chronologically before the nudge's own due instant,
         // +15 min), the owner falls back asleep: rule 7's nap. ----
