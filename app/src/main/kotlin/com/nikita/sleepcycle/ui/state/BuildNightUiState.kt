@@ -71,12 +71,12 @@ fun buildNightUiState(
         // Asleep again for the nap: asleep-style wording, not "you slept" - there is no completed
         // stretch to report yet, just the short nap alarm ahead.
         AlarmMode.NAP -> when (engineView.sleepState) {
-            SleepState.ASLEEP -> buildNapAsleepContent(plan, zone) to EndNightAction.IM_UP
-            SleepState.AWAKE, SleepState.NOT_YET_ASLEEP -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = true, state.debugOptions) to EndNightAction.IM_UP
+            SleepState.ASLEEP -> buildNapAsleepContent(plan, zone, state.morningAlarmAt) to EndNightAction.IM_UP
+            SleepState.AWAKE, SleepState.NOT_YET_ASLEEP -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = true, state.debugOptions, state.morningAlarmAt) to EndNightAction.IM_UP
         }
         AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> when (engineView.sleepState) {
-            SleepState.AWAKE -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = false, state.debugOptions) to EndNightAction.STOP
-            SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(state.settings, plan, engineView, zone, state.debugOptions) to EndNightAction.STOP
+            SleepState.AWAKE -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = false, state.debugOptions, state.morningAlarmAt) to EndNightAction.STOP
+            SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(state.settings, plan, engineView, zone, state.debugOptions, state.morningAlarmAt) to EndNightAction.STOP
         }
     }
     return NightUiState(

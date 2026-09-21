@@ -31,8 +31,6 @@ val HatchLineSpacing = 6.dp
 /** Hatch stroke width on disabled sleep-length chips: about as thin as the chip label's text strokes. */
 val HatchLineWidth = 1.dp
 
-val TimelineBarHeight = 8.dp
-val TimelineBarCornerRadius = 4.dp
 val StatusDotSize = 8.dp
 
 val DividerThickness = 1.dp

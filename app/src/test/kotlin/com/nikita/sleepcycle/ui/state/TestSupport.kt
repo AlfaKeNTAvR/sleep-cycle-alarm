@@ -71,6 +71,7 @@ internal fun testNightState(
     lastSyncOk: Boolean? = null,
     lastSyncFailureCause: String? = null,
     debugOptions: DebugOptions = DebugOptions(),
+    morningAlarmAt: String? = null,
 ): NightState = NightState(
     startedAt = instant(startedAt),
     settings = settings,
@@ -81,6 +82,7 @@ internal fun testNightState(
     lastExportFileModifiedAt = null,
     lastSyncFailureCause = lastSyncFailureCause,
     debugOptions = debugOptions,
+    morningAlarmAt = morningAlarmAt?.let(::instant),
 )
 
 internal fun testEngineView(

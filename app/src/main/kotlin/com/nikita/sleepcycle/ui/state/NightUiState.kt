@@ -1,14 +1,7 @@
 package com.nikita.sleepcycle.ui.state
 
+import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
-
-/** One tick of the "possible wake-ups" timeline: a cycle count, its clock time and hour label, and whether it is the planned one. */
-data class WakeTimelineEntry(
-    val cycles: Int,
-    val timeLabel: String,
-    val hoursLabel: String,
-    val isPlanned: Boolean,
-)
 
 /** One stretch line in the morning report: its from-to span, its duration, and its cycle count to one decimal. */
 data class StretchLine(
@@ -26,29 +19,55 @@ enum class EndNightAction { STOP, IM_UP, END }
 
 /**
  * The night screen's content, one variant per engine mode (spec states A-D plus the FINISHED amendment; D2/D8
- * removed the band alarm status line and the OVERDUE amendment along with it). Every field is either
- * already-formatted data (a time, a duration) or a plain enum; screen-only wording (captions, labels) lives in
- * `strings.xml`, keyed by the enums here.
+ * removed the band alarm status line and the OVERDUE amendment along with it; a later owner request removed
+ * the "possible wake-ups" bar timeline states A and B used to carry - see the removed `WakeTimelineEntry` and
+ * `WakeTimeline.kt` in git history - the owner found a list of candidate wake times not worth reading at 3am).
+ * Every field is either already-formatted data (a time, a duration) or a plain enum; screen-only wording
+ * (captions, labels) lives in `strings.xml`, keyed by the enums here.
  */
 sealed interface NightScreenContent {
-    /** State A: going to bed, or still/again asleep with no awakening yet counted against this stretch. [isDeadlineOnly] shows "alarm rings at the deadline" instead of a sleep-length subtitle, since no whole cycle fits before it. */
+    /**
+     * State A: going to bed, or still/again asleep with no awakening yet counted against this stretch.
+     * [isDeadlineOnly] shows "alarm rings at the deadline" instead of a sleep-length subtitle, since no whole
+     * cycle fits before it. [modeLabel] and [reasonText] (owner request, W18-adjacent) are the engine's own
+     * mode and one-sentence explanation, surfaced so a 3am glance says which alarm is coming and why - see
+     * BuildNightScreenContent.kt's `alarmModeLabel`. [alarmAlreadyRang] is H8's one legitimate case for
+     * [MISSING_TIME_LABEL]: true when the morning alarm has already rung while the band still reads ASLEEP, in
+     * which case [alarmTimeLabel] carries the real rung time (from NightState.morningAlarmAt) instead of a
+     * blank dash - honest AND readable, rather than the plain "--:--" this used to show with no explanation.
+     */
     data class GoingToBedOrAsleep(
         val onsetPhase: OnsetPhase,
         val onsetTimeLabel: String,
         val alarmTimeLabel: String,
         val sleepLengthHoursLabel: String,
         val isDeadlineOnly: Boolean,
-        val timeline: List<WakeTimelineEntry>,
-        val deadlineTimeLabel: String?,
+        val modeLabel: AlarmLabel,
+        val reasonText: String,
+        val alarmAlreadyRang: Boolean,
     ) : NightScreenContent
 
-    /** NAP mode while asleep again for the nap: asleep-style wording (onset caption, the nap alarm as the hero number), not the "you slept" wording of [WokeUp]. */
+    /**
+     * NAP mode while asleep again for the nap: asleep-style wording (onset caption, the nap alarm as the hero
+     * number), not the "you slept" wording of [WokeUp]. [modeLabel] and [reasonText]: see [GoingToBedOrAsleep]'s
+     * own doc - always [AlarmLabel.NAP] here, since this state is only reached with a genuine fresh nap onset
+     * (buildNightUiState's own NAP/ASLEEP branch), never the H8 sliding-nap case that can mislabel a still-
+     * pending morning alarm as a nap (that case surfaces AWAKE, in [WokeUp] instead).
+     */
     data class NapAsleep(
         val onsetTimeLabel: String,
         val alarmTimeLabel: String,
+        val modeLabel: AlarmLabel,
+        val reasonText: String,
     ) : NightScreenContent
 
-    /** States B and C: awake after a stretch. [napOnly] selects C's nap card over B's timeline. */
+    /**
+     * States B and C: awake after a stretch. [napOnly] selects C's nap card over B's single "fall back asleep
+     * by" header. [modeLabel] and [reasonText]: see [GoingToBedOrAsleep]'s own doc; unlike [NapAsleep], the NAP
+     * case here (state C) genuinely can be rule 7's sliding AWAKE nap carrying the still-pending morning alarm
+     * (see AlarmLabel.kt's own H8 note on `alarmLabelFor`), so [modeLabel] is derived the same careful way, not
+     * assumed constant.
+     */
     data class WokeUp(
         val napOnly: Boolean,
         val sleptDurationLabel: String,
@@ -59,11 +78,12 @@ sealed interface NightScreenContent {
          * since the "wake boundary" it used to be named after no longer exists anywhere in the engine.
          */
         val headerTimeLabel: String?,
-        val timeline: List<WakeTimelineEntry>,
         val napLengthLabel: String?,
         val tonightSoFarLabel: String?,
         val alarmTimeLabel: String?,
         val alarmIsEstimate: Boolean,
+        val modeLabel: AlarmLabel,
+        val reasonText: String,
     ) : NightScreenContent
 
     /**

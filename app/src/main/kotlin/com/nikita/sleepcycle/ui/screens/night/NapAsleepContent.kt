@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.AlarmModeHeader
 import com.nikita.sleepcycle.ui.components.HeroNumeral
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.theme.ScreenContentGap
@@ -15,6 +16,8 @@ import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 @Composable
 fun NapAsleepContent(content: NightScreenContent.NapAsleep) {
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
+        // Owner request: which alarm is coming and why, glanceable above the hero number - see AlarmModeHeader.kt.
+        AlarmModeHeader(modeLabel = content.modeLabel, reasonText = content.reasonText)
         HeroNumeral(
             value = content.alarmTimeLabel,
             caption = stringResource(R.string.night_nap_asleep_caption, content.onsetTimeLabel),
