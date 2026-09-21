@@ -7,11 +7,12 @@ package com.nikita.sleepcycle.night
 // check, never changed speed mid-sequence, and never ran a tick after the night ended.
 //
 // This version drives a whole simulated morning - before sleep, the wake alarm, the out-of-bed nudge armed and
-// then cancelled by a confirmed-asleep pre-nudge check, a return to sleep (rule 7's nap), that nap firing, a
-// SECOND nap (exercising the D5/G8 cap), and the night finally reaching FINISHED - through the SAME pure
-// decision functions the app's own Context-bound code calls at each of those points:
+// then left ringing by a pre-nudge check that (M1) finds nothing else armed to take over, a return to sleep
+// (rule 7's nap), that nap firing, a SECOND nap (exercising the D5/G8 cap), and the night finally reaching
+// FINISHED - through the SAME pure decision functions the app's own Context-bound code calls at each of those
+// points:
 //   computeAlarmPlan, shouldArmPhoneAlarm, firedAlarmIsWakeAlarm, napSupersedesPendingNudge,
-//   shouldCancelNudgeForPreCheck, simulatedSleepStateAt, latchMorningAlarmAt
+//   shouldCancelNudgeForPreCheck, latchMorningAlarmAt
 // scheduleTick/armPhoneAlarmIfNeeded/PhoneAlarmReceiver/the pre-nudge check's own AlarmManager plumbing
 // themselves cannot be driven from a JVM unit test in this repository - there is no Robolectric (or other
 // Android test harness) dependency here to fake a Context with (`app/build.gradle.kts`'s test deps are JUnit
@@ -117,10 +118,10 @@ class WarpedNightSequenceTest {
             pendingNudgeAt = firedFor.plus(config.outOfBedDelay)
         }
 
-        /** Simulates the pre-nudge check (U6): reads the simulated timeline exactly like [simulatedSleepStateAt] does in production, and cancels the nudge on a confirmed ASLEEP reading, per [shouldCancelNudgeForPreCheck] - unless (L2.2) [mode] is already FINISHED. Returns whether it cancelled. */
-        fun preNudgeCheck(virtualNow: Instant, mode: AlarmMode?): Boolean {
+        /** Simulates the pre-nudge check (M1): cancels the nudge only when the night's own current plan still has a live target ahead of [virtualNow], per [shouldCancelNudgeForPreCheck] - this harness never models `phoneAlarmFiredFor` (see [tick]'s own note), so `null` throughout, matching production's own freshest-marker read whenever nothing has fired since. Returns whether it cancelled. */
+        fun preNudgeCheck(virtualNow: Instant, plannedWakeAt: Instant?): Boolean {
             val now = nowAt(virtualNow)
-            val cancels = shouldCancelNudgeForPreCheck(simulatedSleepStateAt(events, now, config), mode)
+            val cancels = shouldCancelNudgeForPreCheck(now, plannedWakeAt, phoneAlarmFiredFor = null)
             if (cancels) pendingNudgeAt = null
             return cancels
         }
@@ -142,9 +143,11 @@ class WarpedNightSequenceTest {
         // ---- Owner reports awake right after the wake alarm - closes the first stretch, so sleptSoFar reaches the full picked total and owedCycles drops to 0. ----
         events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, wakeAt.plusMinutes(1))
 
-        // ---- The pre-nudge check fires first (H7.3, 2 min before the nudge) and finds the owner still AWAKE - it must NOT cancel the nudge. ----
+        // ---- The pre-nudge check fires first (H7.3, 2 min before the nudge). M1: it finds no live target still
+        // ahead of it (the wake alarm's own wakeAt has already fired and passed, and nothing else is armed yet)
+        // - it must NOT cancel the nudge. ----
         val preCheck1At = requireNotNull(pendingNudgeAt).minus(config.preNudgeCheckLead)
-        assertFalse(preNudgeCheck(preCheck1At, wakePlan.mode))
+        assertFalse(preNudgeCheck(preCheck1At, wakePlan.wakeAt))
 
         // ---- One minute after the pre-nudge check (still chronologically before the nudge's own due instant,
         // +15 min), the owner falls back asleep: rule 7's nap. ----

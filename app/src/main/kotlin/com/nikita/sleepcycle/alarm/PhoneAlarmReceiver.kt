@@ -259,14 +259,19 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      *  1. The owner - "I'm awake" on the ring screen, or ending the night from the app. Both go through
      *     NightController.endNight, which cancels the pending nudge, its H7.3 pre-check and its record
      *     together. This is the intended one.
-     *  2. The H7.3 pre-check, on a confirmed-ASLEEP re-sync, and ONLY on a night whose plan is not already
-     *     FINISHED: OutOfBedPreNudgeCheck.runPreNudgeCheck cancels the alarm and clears the record, which ends
-     *     the WHOLE chain, not just the one nudge. It restarts only if a nap alarm is armed and actually fires.
-     *     Correct by intent (the owner is asleep again and the nap logic owns the wake-up), but it does mean
-     *     the chain is not unconditional. L2.2 (OutOfBedPreNudgeCheck.shouldCancelNudgeForPreCheck) carves out
-     *     a FINISHED night from this item: past the deadline, "he is confirmed asleep" is the reason to keep
-     *     ringing, not the reason to go quiet, and nothing is left to restart the chain if this cancelled it
-     *     (no nap can arm on a FINISHED plan).
+     *  2. The H7.3 pre-check, when another alarm is actually armed and still ahead: OutOfBedPreNudgeCheck.
+     *     runPreNudgeCheck cancels the alarm and clears the record, which ends the WHOLE chain, not just the
+     *     one nudge. It restarts only if that armed alarm actually fires. Correct by intent (something else is
+     *     genuinely going to take the wake-up over), but it does mean the chain is not unconditional. M1
+     *     (owner-reported, 2026-09-21) REPLACES what this item used to say - a confirmed-ASLEEP band reading,
+     *     carved out for a FINISHED night by L2.2 - after a real night showed that premise false: being asleep
+     *     is only ever a proxy for "something else will take over", and the owner silenced the wake alarm
+     *     without pressing "I'm awake" and never registered an awakening, so the pre-check's old ASLEEP test
+     *     cancelled the nudge into total silence with no nap ever able to arm. `shouldCancelNudgeForPreCheck`
+     *     now asks the real question - does the night's own current plan (`NightState.lastPlan`) still have a
+     *     live target ahead of now - which also subsumes L2.2's FINISHED carve-out outright: a FINISHED plan's
+     *     `wakeAt` is always null, so there is never anything armed to cancel for. See docs/decisions.md's M1
+     *     record.
      *
      * What used to be a third item - G1's FINISHED bookkeeping clearing night state, which on a deadline night
      * let the chain ring once more past the deadline and then stop by starving [onReceive] of a night state to
