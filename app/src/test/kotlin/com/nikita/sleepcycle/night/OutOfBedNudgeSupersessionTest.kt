@@ -136,6 +136,50 @@ class OutOfBedNudgeSupersessionTest {
         )
     }
 
+    // ---- J5 (reviewer-reported, 2026-09-21): awakeNapCancellationNeedsNudge, the other end of a supersession -
+
+    private val armedNap = plan(AlarmMode.NAP, Instant.parse("2026-09-21T06:53:00Z"))
+    private val cancellingNap = plan(AlarmMode.NAP, wakeAt = null)
+
+    @Test
+    fun `J5 a nap cancelled by the AWAKE branch with no nudge left pending re-arms one`() {
+        // The composed sequence: a nap superseded the nudge, and now the AWAKE branch cancels that same nap -
+        // leaving no alarm, no nudge and no pre-check, with nothing in the app able to re-arm any of them.
+        assertTrue(awakeNapCancellationNeedsNudge(cancellingNap, armedNap, SleepState.AWAKE, pendingNudgeAt = null))
+    }
+
+    @Test
+    fun `J5 a nudge that is already pending is left exactly as it is`() {
+        // The ordinary tick right after the wake alarm fires: rule 7's AWAKE branch has nothing to arm, so the
+        // morning alarm itself is cancelled - but its own D4 nudge is still pending and must not be replaced by
+        // a later one measured from this tick instead of from the firing.
+        assertFalse(awakeNapCancellationNeedsNudge(cancellingNap, armedNap, SleepState.AWAKE, nudgeAt))
+    }
+
+    @Test
+    fun `J5 nothing is re-armed when this tick did not actually cancel anything`() {
+        // Every tick after the cancelling one carries the same null-wakeAt NAP plan; only the transition tick,
+        // whose previous plan still had a target, is a cancellation.
+        assertFalse(awakeNapCancellationNeedsNudge(cancellingNap, cancellingNap, SleepState.AWAKE, pendingNudgeAt = null))
+        assertFalse(awakeNapCancellationNeedsNudge(cancellingNap, previousPlan = null, sleepState = SleepState.AWAKE, pendingNudgeAt = null))
+    }
+
+    @Test
+    fun `J5 an asleep owner is never given a nudge here - only the AWAKE branch's own cancellation counts`() {
+        assertFalse(awakeNapCancellationNeedsNudge(cancellingNap, armedNap, SleepState.ASLEEP, pendingNudgeAt = null))
+        assertFalse(awakeNapCancellationNeedsNudge(cancellingNap, armedNap, SleepState.NOT_YET_ASLEEP, pendingNudgeAt = null))
+    }
+
+    @Test
+    fun `J5 a FINISHED night is left alone - the night is over, not waiting on the owner to get up`() {
+        assertFalse(awakeNapCancellationNeedsNudge(plan(AlarmMode.FINISHED, wakeAt = null), armedNap, SleepState.AWAKE, pendingNudgeAt = null))
+    }
+
+    @Test
+    fun `J5 a nap that still has a target to arm needs no replacement nudge`() {
+        assertFalse(awakeNapCancellationNeedsNudge(armedNap, armedNap, SleepState.AWAKE, pendingNudgeAt = null))
+    }
+
     // ---- H7.3: shouldCancelNudgeForPreCheck --------------------------------------------------------------
 
     @Test

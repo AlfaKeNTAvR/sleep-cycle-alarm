@@ -276,6 +276,9 @@ internal class NightReplay(
         pendingTick = null
         val napAlarmArmed = armPhoneAlarmIfNeeded(pending.plan, pending.startedAt)
         cancelNudgeIfSupersededByNap(pending.plan, pending.segments, pending.startedAt, napAlarmArmed)
+        // J5: mirrors NightOrchestrator's own call right after the supersede check, and like it reads [lastPlan]
+        // BEFORE the assignment below overwrites it.
+        rearmNudgeIfNapCancelledWhileAwake(pending.plan, pending.segments, pending.startedAt)
         morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, pending.plan)
         lastPlan = pending.plan
         plans.add(pending.plan)
@@ -302,6 +305,19 @@ internal class NightReplay(
         val supersedes = plan.mode == AlarmMode.NAP && sleepState == SleepState.ASLEEP && napAlarmArmed &&
             nudgeAt.isBefore(napWakeAt)
         if (supersedes) pendingNudgeAt = null
+    }
+
+    /**
+     * NightOrchestrator.rearmNudgeIfNapCancelledWhileAwake / awakeNapCancellationNeedsNudge, reimplemented here
+     * (same reason as every other mirror in this class). A tick that cancels a rule 7 nap because the AWAKE
+     * branch gave it nothing to arm, with no nudge left pending, puts one back at [now] + outOfBedDelay - see
+     * NightOrchestrator's own J5 doc for the composed silence this closes.
+     */
+    private fun rearmNudgeIfNapCancelledWhileAwake(plan: AlarmPlan, segments: List<SleepSegment>, now: Instant) {
+        val sleepState = detectSleepState(normalizeSegments(segments, now, config))
+        val needed = plan.mode == AlarmMode.NAP && plan.wakeAt == null && lastPlan?.wakeAt != null &&
+            sleepState == SleepState.AWAKE && pendingNudgeAt == null
+        if (needed) pendingNudgeAt = now.plus(config.outOfBedDelay)
     }
 
     /**

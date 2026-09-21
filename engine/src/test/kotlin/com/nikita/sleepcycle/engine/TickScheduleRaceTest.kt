@@ -1,6 +1,8 @@
 package com.nikita.sleepcycle.engine
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
@@ -206,6 +208,37 @@ class TickScheduleRaceTest {
         // guards are still pinned, just not both by this one test - the J5 ordering has its own direct unit
         // tests in `OutOfBedNudgeSupersessionTest.kt`, which is where a reverted J5 shows up as a failure.
         assertEquals(instant("2026-09-21T01:21:30"), replay.pendingNudgeAt, replay.trace())
+    }
+
+    @Test fun `J5 replay - a nap cancelled while awake leaves a nudge behind, not a silent night`() {
+        // The composed hole (reviewer-reported, 2026-09-21, NightOrchestrator.awakeNapCancellationNeedsNudge's
+        // own doc): the 06:30 wake alarm fires and arms its own 06:45 nudge, the owner dozes off at 06:33, a
+        // tick arms a rule 7 nap and correctly supersedes that nudge, then the owner stirs awake again and the
+        // next tick's AWAKE branch cancels the nap. Pre-J5 the night was left with no alarm, no nudge and no
+        // pre-check, and nothing re-arms a nudge except a firing, a boot restore or a speed change - so nothing
+        // ever rang again.
+        val replay = NightReplay(settings(cycles = 5))
+        replay.startNight("2026-09-20T23:00:00")
+        replay.markAsleep("2026-09-20T23:00:00")
+
+        // The wake alarm rings at 06:30 and arms its own nudge for 06:45; the owner is awake briefly, then
+        // dozes off again at 06:33.
+        replay.markAwake("2026-09-21T06:30:30")
+        replay.markAsleep("2026-09-21T06:33:00")
+
+        // A tick in here sees the confirmed ASLEEP after an awakening, arms the rule 7 nap, and supersedes the
+        // 06:45 nudge - the correct H7.2 behaviour this test is NOT challenging.
+        replay.advanceTo("2026-09-21T06:46:00")
+        assertNull(replay.pendingNudgeAt, replay.trace())
+
+        // The owner stirs. The next tick's AWAKE branch has nothing to arm (the wake alarm already fired), so
+        // it cancels the nap it just armed.
+        replay.markAwake("2026-09-21T06:47:00")
+        replay.advanceTo("2026-09-21T07:10:00")
+
+        // The assertion that fails without the fix: something is still coming. No alarm is armed at this point
+        // by design (rule 7 is finished with this night), so the nudge is the whole safety net.
+        assertNotNull(replay.pendingNudgeAt, replay.trace())
     }
 
     @Test fun `J1_1 replay - waking 4 minutes before the alarm and opening the app 90 s before it still rings correctly, once, attributed to the wake alarm`() {

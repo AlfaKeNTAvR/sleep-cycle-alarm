@@ -21,6 +21,7 @@ import android.util.Log
 import com.nikita.sleepcycle.alarm.cancelOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.cancelPhoneAlarm
 import com.nikita.sleepcycle.alarm.alarmLabelFor
+import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
@@ -258,6 +259,9 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // armed supersedes any nudge still pending from an earlier alarm, but only once it is CONFIRMED - see
     // napSupersedesPendingNudge's own doc for what changed and why.
     cancelNudgeIfSupersededByNap(context, state, plan, outcome.segments, config, napAlarmArmed, decisionNow)
+    // J5: the mirror image of the line above - a supersession must never end up being the LAST word while the
+    // owner is still awake in bed with nothing armed at all. See rearmNudgeIfNapCancelledWhileAwake's own doc.
+    rearmNudgeIfNapCancelledWhileAwake(context, state, plan, outcome.segments, config, decisionNow)
 
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are
     // PhoneAlarmReceiver's own bookkeeping (see PhoneAlarmFiredStore.kt) - a tick only ever reads them
@@ -405,6 +409,90 @@ private fun cancelNudgeIfSupersededByNap(
         ),
         state.debugOptions.isAnyEnabled
     )
+}
+
+/**
+ * J5 must-fix (reviewer-reported, 2026-09-21): whether this tick, having just CANCELLED the phone alarm
+ * because rule 7's AWAKE branch gave it nothing to arm, must put an out-of-bed nudge back. True exactly when
+ * all four hold: [plan] is a NAP plan with a null `wakeAt` (rule 7's AWAKE branch returned null - see
+ * WakeAlarm.kt's `awakeSlidingNapMustStop`), [previousPlan] DID have a `wakeAt` (so [armPhoneAlarmIfNeeded]
+ * really did cancel a live alarm on this tick, rather than there having been nothing armed for several ticks
+ * already), [sleepState] is [SleepState.AWAKE], and NO nudge is currently pending.
+ *
+ * The composed hole this closes, traced end to end: the 06:30 wake alarm fires and arms its own nudge for
+ * 06:45. The band reads awake 06:30 to 06:33, then asleep from 06:33 (the owner dozed off). The 06:38:30 tick
+ * sees a confirmed ASLEEP after an awakening, arms a rule 7 nap for 06:53 (`asleepNapTarget`, onset 06:33 plus
+ * napLength) and - correctly, by H7.2 - supersedes the 06:45 nudge, cancelling it, its pre-check, and its
+ * record. The owner then stirs and the band reads awake at 06:47. The 06:48:30 tick takes rule 7's AWAKE
+ * branch, `awakeSlidingNapMustStop` returns null because the wake alarm has already fired, and
+ * [armPhoneAlarmIfNeeded]'s own `wakeAt == null` branch cancels the 06:53 nap. The night is now left with NO
+ * alarm, NO nudge and NO pre-check, and nothing re-arms a nudge except a firing, a boot restore or a speed
+ * change - so if the band keeps reading awake (or reads light dozing as awake), nothing ever rings again. With
+ * a deadline set the night reaches FINISHED in silence.
+ *
+ * What makes this worse than its parts: `napAlarm`'s own doc justifies ending the sliding nap by saying "D4's
+ * own nudge covers the follow-up", and [napSupersedesPendingNudge]'s doc justifies cancelling the nudge by
+ * saying the nap replaces it. Each is locally true; composed, the second removes exactly the safety net the
+ * first is relying on. Re-arming here restores the invariant both comments already assume: after a wake alarm
+ * has rung, an awake owner with nothing armed always has a nudge coming.
+ *
+ * This predates the whole J series - neither half is new, only their composition was never traced. `internal`,
+ * not `private`: the one pure decision, JVM-testable directly without a Context.
+ */
+internal fun awakeNapCancellationNeedsNudge(plan: AlarmPlan, previousPlan: AlarmPlan?, sleepState: SleepState, pendingNudgeAt: Instant?): Boolean =
+    plan.mode == AlarmMode.NAP && plan.wakeAt == null && previousPlan?.wakeAt != null &&
+        sleepState == SleepState.AWAKE && pendingNudgeAt == null
+
+/**
+ * J5: arms a replacement out-of-bed nudge [EngineConfig.outOfBedDelay] after [now] when this tick's own
+ * cancellation of a rule 7 nap would otherwise leave the night with nothing armed at all - see
+ * [awakeNapCancellationNeedsNudge]'s own doc for the traced sequence.
+ *
+ * Deliberately mirrors PhoneAlarmReceiver.armOutOfBedNudge rather than sharing with it: that one is measured
+ * from the FIRING it follows up, this one from this tick's own [now] (`decisionNow`), and it logs against a
+ * state this function already holds. Two call sites is under this project's own "abstract at three" line; if a
+ * third ever appears, they belong in one function in OutOfBedNudgeStore.kt's own neighbourhood. The H7.3
+ * pre-check is armed here too, exactly as a firing would, so an owner who actually dozed off again in the
+ * meantime still gets the nudge cancelled by the check's own re-sync rather than rung at full volume.
+ */
+private fun rearmNudgeIfNapCancelledWhileAwake(
+    context: Context,
+    state: NightState,
+    plan: AlarmPlan,
+    segments: List<SleepSegment>,
+    config: EngineConfig,
+    now: Instant
+) {
+    val sleepState = detectSleepState(normalizeSegments(segments, now, config))
+    if (!awakeNapCancellationNeedsNudge(plan, state.lastPlan, sleepState, readOutOfBedNudgePendingAt(context))) return
+    val at = now.plus(config.outOfBedDelay)
+    if (!scheduleOutOfBedAlarm(context, at)) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(now, "error", mapOf("step" to "out_of_bed_alarm", "cause" to "could not re-arm the nudge at $at after cancelling this night's nap - exact alarm permission was likely revoked")),
+            state.debugOptions.isAnyEnabled
+        )
+        return
+    }
+    appendNightLog(
+        context, state.startedAt,
+        NightLogEvent(now, "out_of_bed_nudge_rearmed", mapOf("at" to at.toString(), "cause" to "rule 7's AWAKE branch cancelled this night's nap and no nudge was left pending")),
+        state.debugOptions.isAnyEnabled
+    )
+    if (!saveOutOfBedNudgePendingAt(context, at)) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist the re-armed out-of-bed nudge instant")),
+            state.debugOptions.isAnyEnabled
+        )
+    }
+    if (!schedulePreNudgeCheck(context, at.minus(config.preNudgeCheckLead))) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(now, "error", mapOf("step" to "pre_nudge_check", "cause" to "exact alarm permission was likely revoked - the re-armed nudge will still ring on schedule")),
+            state.debugOptions.isAnyEnabled
+        )
+    }
 }
 
 /**
