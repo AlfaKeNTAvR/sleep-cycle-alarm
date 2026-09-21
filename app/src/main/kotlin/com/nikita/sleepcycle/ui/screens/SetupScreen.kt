@@ -5,8 +5,8 @@ package com.nikita.sleepcycle.ui.screens
 // again" on the checklist re-enters). Both share the same SetupUiState and the same underlying actions - this
 // is a presentation split only, see ui/screens/setup/ for the wizard's page model and page composables.
 //
-// X2: the checklist lost ConnectionTestSection and SetupDebugRow - both are their own Settings rows now (see
-// ConnectionTestScreen.kt and SettingsScreen.kt). The wizard's own last page (TestConnectionPage.kt) still
+// X2: the checklist lost ConnectionTestSection and SetupDebugRow - Settings carries both now, the test as its
+// own button and Debug as a row (see SettingsScreen.kt). The wizard's own last page (TestConnectionPage.kt) still
 // shows both; it is explicitly out of scope for this rework and behaves exactly as before. That split is also
 // why this screen now takes two distinct exit callbacks: [onExitWizard] (wizard mode, unchanged destination)
 // and [onBack] (checklist mode, now returns to Settings instead of Before bed/Night - X5).

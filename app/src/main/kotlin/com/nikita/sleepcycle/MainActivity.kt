@@ -23,7 +23,6 @@ import com.nikita.sleepcycle.ui.NightViewModel
 import com.nikita.sleepcycle.ui.components.ErrorBanner
 import com.nikita.sleepcycle.ui.shareNightLogFile
 import com.nikita.sleepcycle.ui.screens.BeforeBedScreen
-import com.nikita.sleepcycle.ui.screens.ConnectionTestScreen
 import com.nikita.sleepcycle.ui.screens.DebugScreen
 import com.nikita.sleepcycle.ui.screens.LogsScreen
 import com.nikita.sleepcycle.ui.screens.PastNightScreen
@@ -71,8 +70,9 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when (uiState.screen) {
                     is Screen.Settings -> SettingsScreen(
+                        state = uiState.setup,
                         onOpenSetup = viewModel::openSetup,
-                        onOpenConnectionTest = viewModel::openConnectionTest,
+                        onRunConnectionTest = viewModel::runSetupCheckAction,
                         onOpenDebug = viewModel::openDebug,
                         onBack = viewModel::closeSettings,
                     )
@@ -88,11 +88,6 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                         onExitWizard = viewModel::exitSetupWizard,
                         onBack = viewModel::closeSetup,
                         onOpenDebug = viewModel::openDebug,
-                    )
-                    is Screen.ConnectionTest -> ConnectionTestScreen(
-                        state = uiState.setup,
-                        onRunConnectionTest = viewModel::runSetupCheckAction,
-                        onBack = viewModel::closeConnectionTest,
                     )
                     is Screen.BeforeBed -> BeforeBedScreen(
                         state = uiState.beforeBed,

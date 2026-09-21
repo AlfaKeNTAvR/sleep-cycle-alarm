@@ -5,19 +5,13 @@ import org.junit.jupiter.api.Test
 
 class SettingsMenuEntriesTest {
     @Test
-    fun `a release build offers Setup and Test connection but not Debug`() {
-        assertEquals(
-            listOf(SettingsMenuEntry.SETUP, SettingsMenuEntry.TEST_CONNECTION),
-            settingsMenuEntries(isDebugBuild = false),
-        )
+    fun `a release build offers Setup and nothing else`() {
+        assertEquals(listOf(SettingsMenuEntry.SETUP), settingsMenuEntries(isDebugBuild = false))
     }
 
     @Test
-    fun `a debug build adds Debug after Test connection`() {
-        assertEquals(
-            listOf(SettingsMenuEntry.SETUP, SettingsMenuEntry.TEST_CONNECTION, SettingsMenuEntry.DEBUG),
-            settingsMenuEntries(isDebugBuild = true),
-        )
+    fun `a debug build adds Debug after Setup`() {
+        assertEquals(listOf(SettingsMenuEntry.SETUP, SettingsMenuEntry.DEBUG), settingsMenuEntries(isDebugBuild = true))
     }
 }
 

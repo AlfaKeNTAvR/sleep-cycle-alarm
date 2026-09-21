@@ -4,11 +4,9 @@ package com.nikita.sleepcycle.ui.state
 
 /** One of the app's top-level screens. */
 sealed interface Screen {
-    /** X1: the short menu the Before-bed gear opens now - Setup/Test connection/Debug as plain navigation rows, no status text. */
+    /** X1: the short menu the Before-bed gear opens now - Setup and Debug as plain navigation rows plus the connection test's own button, no status text. */
     data object Settings : Screen
     data object Setup : Screen
-    /** X3: the "Test connection" row's own screen - the same [com.nikita.sleepcycle.ui.screens.setup.ConnectionTestSection] Setup used to embed, just given its own place to live. */
-    data object ConnectionTest : Screen
     data object BeforeBed : Screen
     data object Night : Screen
     data object Logs : Screen

@@ -330,9 +330,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** Settings' "Setup" row: always opens the one-page checklist, never the wizard - re-checks stay quick. */
     fun openSetup() { screen.value = Screen.Setup; setupWizardPageState.value = null }
 
-    /** X3: Settings' "Test connection" row. */
-    fun openConnectionTest() { screen.value = Screen.ConnectionTest }
-
     fun openLogs() { screen.value = Screen.Logs; nightLogFiles.value = listNightLogs(context) }
 
     /** Reopens one saved night as its own summary screen. Reading and parsing the log is disk I/O, so it happens off the main thread before the screen switches. */
@@ -369,9 +366,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         screen.value = closeToNightOrBeforeBed(observedNightState.value != null)
         setupWizardPageState.value = null
     }
-
-    /** X3: Test connection's own back arrow - always Settings, the only screen that opens it. */
-    fun closeConnectionTest() { screen.value = Screen.Settings }
 
     fun closeLogs() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
 
