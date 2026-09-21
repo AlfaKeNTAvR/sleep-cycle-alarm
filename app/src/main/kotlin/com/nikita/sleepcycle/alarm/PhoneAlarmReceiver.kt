@@ -188,6 +188,11 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      */
     private fun recordWakeOrNapFired(context: Context, state: NightState, firedFor: Instant) {
         val lastPlanWakeAt = state.lastPlan?.wakeAt
+        // M2 (owner-reported, 2026-09-21): this exact-equality match is the FIRST place a sub-millisecond
+        // wakeAt broke - [firedFor] is always millisecond-clean (read back off the alarm intent's own
+        // epoch-milli extra), but [lastPlanWakeAt] was not guaranteed to be before AppClock.now() truncated at
+        // its own source (app/night/AppClock.kt). See NightOrchestrator.firedAlarmIsWakeAlarm's own M2 note and
+        // docs/decisions.md's M2 record for the night this was reproduced on.
         val firedPlan = state.lastPlan?.takeIf { lastPlanWakeAt == firedFor }
         if (firedPlan == null) {
             appendNightLog(

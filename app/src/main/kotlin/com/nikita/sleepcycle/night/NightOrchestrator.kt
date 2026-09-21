@@ -65,6 +65,11 @@ private fun currentZone(): ZoneId = ZoneId.systemDefault()
  * fired marker live at commit time (J3) and cancels a now-null target, which the boot path must NOT do (it has
  * no previous plan of its own to compare against and no tick in flight to race). A future guard that belongs
  * to only one path belongs in that path, not here.
+ *
+ * M2 (owner-reported, 2026-09-21): `wakeAt != phoneAlarmFiredFor` is exact equality, same hazard as
+ * [firedAlarmIsWakeAlarm]'s own M2 note - a sub-millisecond [wakeAt] never matches [phoneAlarmFiredFor]'s
+ * millisecond-clean read-back, so this would refuse to recognize an alarm that just fired and arm a second one.
+ * Closed the same way, at AppClock.now()'s own truncation, not here - see that note for the full argument.
  */
 fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Instant?): Boolean =
     wakeAt != null && wakeAt.isAfter(now) && wakeAt != phoneAlarmFiredFor
@@ -165,6 +170,17 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * at the instant it is already armed at, so nothing moves"), and J1.1 guarantees `pullForwardIfTooSoon` never
  * touches an already-future `raw` - so a firing that is genuinely the deferred morning alarm always arrives at
  * exactly `morningAlarmAt`, with nothing left to widen a window for.
+ *
+ * M2 (owner-reported, 2026-09-21): the exact-equality argument above still depends on [morningAlarmAt] and
+ * [firedFor] both being millisecond-precision - [firedFor] always is (it is read back off the alarm intent's
+ * own epoch-milli extra, PhoneAlarmScheduler.kt/PhoneAlarmReceiver.kt), but before this fix [morningAlarmAt]
+ * was not guaranteed to be: it is latched straight from a computed `wakeAt` (see [latchMorningAlarmAt]), and a
+ * PROJECTED reference onset (`now + fallAsleepEstimate`) inherited whatever sub-millisecond precision `now`
+ * itself carried. Closed at the source: AppClock.now() now truncates to whole milliseconds (app/night/
+ * AppClock.kt), so every `wakeAt` this app ever computes - and therefore every `morningAlarmAt` latched from
+ * one - is millisecond-clean, and this equality needs no window. See docs/decisions.md's M2 record for the
+ * night this was reproduced on, and PhoneAlarmReceiver.recordWakeOrNapFired's own attribution gate
+ * (`lastPlan.wakeAt == firedFor`), which carried the identical hazard one step upstream of this function.
  */
 fun firedAlarmIsWakeAlarm(firedPlanMode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean =
     firedPlanMode != AlarmMode.NAP || firedFor == morningAlarmAt
@@ -686,6 +702,9 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * revoked) is "kept" by this guard exactly like a successfully armed one; what stops THAT case from also
  * freezing forever is the same arm-attempt retry above, not this function - once `now` catches up to `wakeAt`
  * this guard lets go regardless of whether arming ever actually succeeded.
+ *
+ * M2 (owner-reported, 2026-09-21): `wakeAt != phoneAlarmFiredFor` carries the same exact-equality hazard as
+ * [shouldArmPhoneAlarm]'s own M2 note - closed at AppClock.now()'s own truncation, not here.
  */
 internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?, now: Instant): Boolean {
     val wakeAt = previousPlan?.wakeAt ?: return false
@@ -834,6 +853,8 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
     // tick-start snapshot ([NightState.phoneAlarmFiredFor]) only if the fresh read itself fails (never throws,
     // per PhoneAlarmFiredStore.kt's own doc, but can still come back null on a transient I/O error) - so a
     // flaky read never regresses below what the pre-J3 code already knew.
+    // M2 (owner-reported, 2026-09-21): this is the same exact-equality shape as shouldArmPhoneAlarm's own M2
+    // note - closed at AppClock.now()'s own truncation (app/night/AppClock.kt), not here.
     val phoneAlarmFiredForNow = readPhoneAlarmFiredFor(context) ?: state.phoneAlarmFiredFor
     if (wakeAt == phoneAlarmFiredForNow) {
         // J4 (owner-reported, 2026-09-21): false, not true - see this function's own J4 doc above. Still never
