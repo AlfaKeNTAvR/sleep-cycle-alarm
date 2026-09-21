@@ -39,6 +39,7 @@ import com.nikita.sleepcycle.engine.computeAlarmPlan
 import com.nikita.sleepcycle.engine.detectSleepState
 import com.nikita.sleepcycle.engine.nextSyncDelay
 import com.nikita.sleepcycle.engine.normalizeSegments
+import com.nikita.sleepcycle.engine.sameAlarmInstant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -65,9 +66,20 @@ private fun currentZone(): ZoneId = ZoneId.systemDefault()
  * fired marker live at commit time (J3) and cancels a now-null target, which the boot path must NOT do (it has
  * no previous plan of its own to compare against and no tick in flight to race). A future guard that belongs
  * to only one path belongs in that path, not here.
+ *
+ * M2 (owner-reported, 2026-09-21): `wakeAt != phoneAlarmFiredFor` was exact equality, same hazard as
+ * [firedAlarmIsWakeAlarm]'s own M2 note - a sub-millisecond [wakeAt] never matches [phoneAlarmFiredFor]'s
+ * millisecond-clean read-back, so this would refuse to recognize an alarm that just fired and arm a second one.
+ * Closed at AppClock.now()'s own truncation - see that note for the full argument.
+ *
+ * M3 (owner-reported, 2026-09-21): exact equality is replaced with `!sameAlarmInstant(wakeAt, phoneAlarmFiredFor)`
+ * (`com.nikita.sleepcycle.engine.sameAlarmInstant`, `AlarmInstantTolerance.kt`) - a tolerant match on top of
+ * M2's own truncation, not instead of it, so a future leak of sub-millisecond precision degrades gracefully
+ * instead of silently reopening the same double-ring. See [com.nikita.sleepcycle.engine.ALARM_INSTANT_TOLERANCE]'s
+ * own doc for why one second is the right size.
  */
 fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Instant?): Boolean =
-    wakeAt != null && wakeAt.isAfter(now) && wakeAt != phoneAlarmFiredFor
+    wakeAt != null && wakeAt.isAfter(now) && !sameAlarmInstant(wakeAt, phoneAlarmFiredFor)
 
 // J5 (owner-approved revert, 2026-09-21): `shouldRefuseStaleRearm` WAS TRIED HERE AND REVERTED. Do not re-add
 // it in this shape. J4 put a second arming guard right before schedulePhoneAlarm, refusing to arm whenever this
@@ -165,9 +177,31 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * at the instant it is already armed at, so nothing moves"), and J1.1 guarantees `pullForwardIfTooSoon` never
  * touches an already-future `raw` - so a firing that is genuinely the deferred morning alarm always arrives at
  * exactly `morningAlarmAt`, with nothing left to widen a window for.
+ *
+ * M2 (owner-reported, 2026-09-21): the exact-equality argument above still depends on [morningAlarmAt] and
+ * [firedFor] both being millisecond-precision - [firedFor] always is (it is read back off the alarm intent's
+ * own epoch-milli extra, PhoneAlarmScheduler.kt/PhoneAlarmReceiver.kt), but before this fix [morningAlarmAt]
+ * was not guaranteed to be: it is latched straight from a computed `wakeAt` (see [latchMorningAlarmAt]), and a
+ * PROJECTED reference onset (`now + fallAsleepEstimate`) inherited whatever sub-millisecond precision `now`
+ * itself carried. Closed at the source: AppClock.now() now truncates to whole milliseconds (app/night/
+ * AppClock.kt), so every `wakeAt` this app ever computes - and therefore every `morningAlarmAt` latched from
+ * one - is millisecond-clean, and this equality matched exactly again. See docs/decisions.md's M2 record for
+ * the night this was reproduced on, and PhoneAlarmReceiver.recordWakeOrNapFired's own attribution gate
+ * (`lastPlan.wakeAt == firedFor`), which carried the identical hazard one step upstream of this function.
+ *
+ * M3 (owner-reported, 2026-09-21): `firedFor == morningAlarmAt` is replaced with
+ * `sameAlarmInstant(firedFor, morningAlarmAt)` (`com.nikita.sleepcycle.engine.sameAlarmInstant`,
+ * `AlarmInstantTolerance.kt`), tolerant of up to one second of representation drift - added on top of M2's own
+ * truncation as a safety net against a FUTURE precision leak, never as a reason to remove it. This is
+ * deliberately NOT a reprise of J1.2's three-minute window (see docs/decisions.md's J1.2/J2 record, and
+ * [com.nikita.sleepcycle.engine.ALARM_INSTANT_TOLERANCE]'s own doc): `NapAlarmCountingTest`'s J2 must-fix 2
+ * cases (a genuine nap one second, one minute, and three minutes after the morning alarm) are all still pinned
+ * as NOT the wake alarm - one second sits exactly on this tolerance's own boundary, which counts as a
+ * different instant, not the same one; only a gap strictly under one second, the shape a representation
+ * mismatch actually produces, is treated as the same alarm.
  */
 fun firedAlarmIsWakeAlarm(firedPlanMode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean =
-    firedPlanMode != AlarmMode.NAP || firedFor == morningAlarmAt
+    firedPlanMode != AlarmMode.NAP || sameAlarmInstant(firedFor, morningAlarmAt)
 
 /**
  * Runs one full night cycle: load state, sync and read band data (keeping the previous segments and
@@ -686,10 +720,17 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * revoked) is "kept" by this guard exactly like a successfully armed one; what stops THAT case from also
  * freezing forever is the same arm-attempt retry above, not this function - once `now` catches up to `wakeAt`
  * this guard lets go regardless of whether arming ever actually succeeded.
+ *
+ * M2 (owner-reported, 2026-09-21): `wakeAt != phoneAlarmFiredFor` carried the same exact-equality hazard as
+ * [shouldArmPhoneAlarm]'s own M2 note - closed at AppClock.now()'s own truncation.
+ *
+ * M3 (owner-reported, 2026-09-21): replaced with `!sameAlarmInstant(wakeAt, phoneAlarmFiredFor)`, the same
+ * tolerant helper [shouldArmPhoneAlarm] now uses, for the same reason - see
+ * [com.nikita.sleepcycle.engine.ALARM_INSTANT_TOLERANCE]'s own doc.
  */
 internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?, now: Instant): Boolean {
     val wakeAt = previousPlan?.wakeAt ?: return false
-    return !outcome.syncOk && wakeAt != phoneAlarmFiredFor && wakeAt.isAfter(now)
+    return !outcome.syncOk && !sameAlarmInstant(wakeAt, phoneAlarmFiredFor) && wakeAt.isAfter(now)
 }
 
 /**
@@ -834,8 +875,12 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
     // tick-start snapshot ([NightState.phoneAlarmFiredFor]) only if the fresh read itself fails (never throws,
     // per PhoneAlarmFiredStore.kt's own doc, but can still come back null on a transient I/O error) - so a
     // flaky read never regresses below what the pre-J3 code already knew.
+    // M2 (owner-reported, 2026-09-21): this was the same exact-equality shape as shouldArmPhoneAlarm's own M2
+    // note - closed at AppClock.now()'s own truncation (app/night/AppClock.kt).
+    // M3 (owner-reported, 2026-09-21): now sameAlarmInstant(wakeAt, phoneAlarmFiredForNow), the same tolerant
+    // match every other fired-marker comparison in this file uses - see AlarmInstantTolerance.kt's own doc.
     val phoneAlarmFiredForNow = readPhoneAlarmFiredFor(context) ?: state.phoneAlarmFiredFor
-    if (wakeAt == phoneAlarmFiredForNow) {
+    if (sameAlarmInstant(wakeAt, phoneAlarmFiredForNow)) {
         // J4 (owner-reported, 2026-09-21): false, not true - see this function's own J4 doc above. Still never
         // re-arms (this is an early return, schedulePhoneAlarm below never runs), but no longer tells the nudge
         // guard that a FRESH nap was armed this tick - the nap that fired already armed its own fresh nudge,

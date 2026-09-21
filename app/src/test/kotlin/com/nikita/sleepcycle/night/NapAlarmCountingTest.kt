@@ -88,6 +88,27 @@ class NapAlarmCountingTest {
         assertEquals(AlarmLabel.NAP, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
     }
 
+    // ---- M3 (owner-reported, 2026-09-21): firedFor == morningAlarmAt is replaced with
+    // sameAlarmInstant(firedFor, morningAlarmAt) (com.nikita.sleepcycle.engine.AlarmInstantTolerance.kt), a
+    // one-second tolerance on top of M2's own truncation - never a reprise of J1.2's reverted window. The three
+    // tests just above (one second, one minute, three minutes past the morning alarm, all still a genuine nap)
+    // continue to pin that this is not a window: one second sits exactly on the tolerance's own boundary, which
+    // this helper treats as a DIFFERENT instant. This section pins the other side of that boundary. -----------
+
+    @Test
+    fun `M3 a NAP-mode firing a fraction of a second after the latched morning alarm is still the wake alarm`() {
+        // The representation-mismatch shape the tolerance exists for: a firing 900 ms after morningAlarmAt,
+        // well inside the one-second tolerance, must still attribute to the wake alarm - not a genuine nap.
+        assertTrue(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusMillis(900), morningAlarmAt))
+    }
+
+    @Test
+    fun `M3 a NAP-mode firing exactly one second after the latched morning alarm is already a genuine nap`() {
+        // Restates the existing J2 must-fix 2 "one second" test above in M3's own terms: the tolerance boundary
+        // itself is excluded, so this must still be false, not true.
+        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(1), morningAlarmAt))
+    }
+
     // ---- alarmLabelFor (W18/H8): the name an alarm rings under follows the same predicate ------------------
 
     @Test

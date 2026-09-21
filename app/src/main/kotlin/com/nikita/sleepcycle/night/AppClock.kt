@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 /** The process-wide simulated-clock holder every `nowInstant()` call site reads through. */
 object AppClock {
@@ -32,8 +33,30 @@ object AppClock {
      */
     val currentWarp: StateFlow<ClockWarp?> = warpFlow.asStateFlow()
 
-    /** The current virtual instant - the real wall clock, warped by whatever [ClockWarp] is currently loaded. */
-    fun now(): Instant = virtualNow(warp, Instant.now())
+    /**
+     * The current virtual instant - the real wall clock, warped by whatever [ClockWarp] is currently loaded.
+     *
+     * M2 (owner-reported, 2026-09-21): truncated to whole MILLISECONDS before it is ever returned. Every alarm
+     * this app arms is round-tripped through [AlarmManager]'s own epoch-milli granularity
+     * (PhoneAlarmScheduler.kt's `at.toEpochMilli()`, read back by PhoneAlarmReceiver.kt's own
+     * `Instant.ofEpochMilli(...)`), and `Instant.now()` on the JVM this app runs on routinely carries
+     * microsecond precision - so an instant derived from [now] without this truncation (most directly, a
+     * PROJECTED onset, `now + fallAsleepEstimate` in engine/PlanSteps.kt's `findReferenceOnset`, since ASLEEP's
+     * own real onset already comes from whole-second band timestamps) never round-trips back to itself. The
+     * exact-equality comparisons that key on "did the instant I just armed already fire" -
+     * WakeAlarm.kt's `morningAlarmAlreadyRang`/`asleepNapTarget`, PhoneAlarmReceiver's own attribution gate,
+     * NightOrchestrator's `firedAlarmIsWakeAlarm`/`shouldArmPhoneAlarm`/`shouldKeepPreviousPlan` - then never
+     * match, so the app concludes the alarm never rang and arms a second one a few minutes later. Truncating
+     * HERE, at the one seam nearly every instant in this app is built from, closes the hole at its source rather
+     * than at each of those comparisons individually: [virtualNow]'s own arithmetic only ever ADDS whole
+     * milliseconds to [ClockWarp.anchorVirtual] (see SimulatedClock.kt's `plusMillisSaturating`), so truncating
+     * the RESULT here is exactly as correct as truncating every input would have been, including when
+     * [anchorVirtual] itself was seeded from an untruncated `Instant.now()` (DebugScreenController.setSpeed's
+     * first-ever call, when the previous warp was null) - any sub-millisecond remainder baked into the anchor
+     * survives every later addition unchanged and is dropped here regardless of how much virtual time has
+     * elapsed since. See docs/decisions.md's M2 record for the night this was reproduced on.
+     */
+    fun now(): Instant = virtualNow(warp, Instant.now()).truncatedTo(ChronoUnit.MILLIS)
 
     /** T5: the real instant AlarmManager must be armed at for something meant to happen at the virtual instant [virtualAt]. */
     fun toRealInstant(virtualAt: Instant): Instant = realInstantFor(warp, virtualAt)
