@@ -324,4 +324,72 @@ class ComputeWakeAlarmTest {
         )
         assertEquals(instant("2026-09-17T07:50"), result)
     }
+
+    // ---- M3 (owner-reported, 2026-09-21): both morningAlarmAlreadyRang and asleepNapTarget now go through
+    // firedAtOrBefore (AlarmInstantTolerance.kt) instead of a bare Instant comparison - a one-second tolerance
+    // on top of M2's own millisecond truncation, so a future leak of sub-millisecond precision degrades
+    // gracefully instead of silently reopening the double-ring. See ALARM_INSTANT_TOLERANCE's own doc for why
+    // one second, and AlarmInstantToleranceTest for the helper's own boundary tests. --------------------------
+
+    @Test fun `M3 a morning target sitting a fraction of a millisecond after the fired marker still counts as already rung`() {
+        // The actual shape M2 fixed at the source: a projected reference onset carrying microseconds. raw here
+        // is 500 microseconds after wakeAlarmFiredAt - well inside the one-second tolerance, so this still
+        // returns null (already rang) rather than pulling a fresh alarm forward.
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30").plusNanos(500_000), null, 5,
+            instant("2026-09-17T08:03"), config, wakeAlarmFiredAt = instant("2026-09-17T08:00"),
+            morningAlarmAt = instant("2026-09-17T08:00"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
+        )
+        assertNull(result)
+    }
+
+    @Test fun `M3 a morning target one minute after an earlier fired marker is a genuinely new target, not swallowed by the tolerance`() {
+        // raw (02:05, this tick's own computed target) sits a full minute after wakeAlarmFiredAt (02:04, an
+        // earlier, unrelated firing) - sixty times the one-second tolerance. now is still ahead of raw, so
+        // pullForwardIfTooSoon leaves it untouched: the result must be raw itself, proving the tolerance did
+        // NOT treat this as the same already-rung alarm. This is the J1.2 regression shape, pinned again here
+        // at the computeWakeAlarm level (AlarmInstantToleranceTest pins it at the bare helper level).
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:35"), null, 1,
+            instant("2026-09-17T02:00"), config, wakeAlarmFiredAt = instant("2026-09-17T02:04"),
+            morningAlarmAt = instant("2026-09-17T02:04"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
+        )
+        assertEquals(instant("2026-09-17T02:05"), result)
+    }
+
+    @Test fun `M3 the ASLEEP branch anchors on a fired marker sitting a fraction of a second before the onset`() {
+        // referenceOnset (07:10:00.500) sits 500 ms after lastNapAlarmFiredAt (07:10:00.000) - a representation
+        // mismatch, well inside the tolerance. Without it, referenceOnset would be treated as a fresh onset and
+        // the target would be referenceOnset + napLength = 07:30:00.500; with it, the anchor is the fired
+        // marker itself, so the target lands on the clean 07:30:00.000 instead.
+        val result = computeWakeAlarm(
+            PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10").plusMillis(500), null, 0,
+            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null,
+            lastNapAlarmFiredAt = instant("2026-09-17T07:10"), phoneAlarmFiredFor = null
+        )
+        assertEquals(instant("2026-09-17T07:30"), result)
+    }
+
+    @Test fun `M3 the ASLEEP branch does not anchor exactly AT the one-second tolerance boundary - ordinary path applies`() {
+        // referenceOnset is exactly one second after lastNapAlarmFiredAt - the boundary itself is excluded, so
+        // this is treated as an ordinary, not-yet-fired onset: referenceOnset + napLength, uncorrected.
+        val result = computeWakeAlarm(
+            PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10").plusSeconds(1), null, 0,
+            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null,
+            lastNapAlarmFiredAt = instant("2026-09-17T07:10"), phoneAlarmFiredFor = null
+        )
+        assertEquals(instant("2026-09-17T07:10").plusSeconds(1).plus(config.napLength), result)
+    }
+
+    @Test fun `M3 the ASLEEP branch does not treat a nap onset one minute after an earlier fired marker as already fired`() {
+        // lastNapAlarmFiredAt (07:29) belongs to an earlier, unrelated nap; referenceOnset (07:30) is a fresh
+        // awakening a full minute later - sixty times the tolerance. This must compute the ordinary target
+        // (referenceOnset + napLength), never anchor on the earlier marker.
+        val result = computeWakeAlarm(
+            PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:30"), null, 0,
+            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null,
+            lastNapAlarmFiredAt = instant("2026-09-17T07:29"), phoneAlarmFiredFor = null
+        )
+        assertEquals(instant("2026-09-17T07:50"), result)
+    }
 }

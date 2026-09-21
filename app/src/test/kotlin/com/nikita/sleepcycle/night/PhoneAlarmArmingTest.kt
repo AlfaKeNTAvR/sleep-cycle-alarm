@@ -50,4 +50,19 @@ class PhoneAlarmArmingTest {
     // `shouldArmPhoneAlarm` in NightOrchestrator.kt for the two permanent-silence counterexamples that revert
     // rests on. `shouldArmPhoneAlarm` above is once again the ONE pure arming guard, as this file's own header
     // says.
+
+    // ---- M3 (owner-reported, 2026-09-21): wakeAt != phoneAlarmFiredFor is now !sameAlarmInstant(wakeAt,
+    // phoneAlarmFiredFor) - a one-second tolerance on top of M2's own truncation. -----------------------------
+
+    @Test
+    fun `M3 a future phone alarm a fraction of a second off the fired marker is still not re-armed`() {
+        val alarm = now.plusSeconds(60)
+        assertFalse(shouldArmPhoneAlarm(alarm, now, phoneAlarmFiredFor = alarm.minusMillis(900)))
+    }
+
+    @Test
+    fun `M3 a future phone alarm exactly one second off the fired marker is a different target and is armed`() {
+        val alarm = now.plusSeconds(60)
+        assertTrue(shouldArmPhoneAlarm(alarm, now, phoneAlarmFiredFor = alarm.minusSeconds(1)))
+    }
 }

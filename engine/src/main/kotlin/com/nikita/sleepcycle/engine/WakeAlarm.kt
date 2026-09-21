@@ -95,13 +95,21 @@ fun computeWakeAlarm(
  * own epoch-milli round trip (PhoneAlarmScheduler.kt/PhoneAlarmReceiver.kt) can sit strictly AFTER an already-
  * fired marker by exactly its own sub-millisecond remainder, reading as "not yet rung" for an alarm that just
  * did - the night of 2026-09-21/22's own second ring (docs/decisions.md's M2 record). Fixed at the source
- * (AppClock.now() now truncates to whole milliseconds, app/night/AppClock.kt), not here: every instant this
- * function sees is millisecond-clean by construction, so `!raw.isAfter(latestFired)` is exact again.
+ * (AppClock.now() now truncates to whole milliseconds, app/night/AppClock.kt): every instant this function
+ * sees is millisecond-clean by construction, so this comparison is exact again in ordinary operation.
+ *
+ * M3 (owner-reported, 2026-09-21) ADDS a tolerance on top of M2's own truncation, rather than relying on exact
+ * equality alone - the owner's own objection: exact equality on an instant that has already survived one lossy
+ * round trip is brittle by construction, and a future leak of sub-millisecond precision (a new clock seam, a
+ * new persistence format, a refactor) would silently reopen this exact double-ring with nothing in the code to
+ * say why it must not. [firedAtOrBefore] (`AlarmInstantTolerance.kt`) replaces the raw `!raw.isAfter(latestFired)`
+ * below: [raw] up to [ALARM_INSTANT_TOLERANCE] AFTER [latestFired] now also counts as already rung - the
+ * truncation above means that gap is normally exactly zero, so this tolerance normally does no work at all; see
+ * [ALARM_INSTANT_TOLERANCE]'s own doc for why one second is the right size and why this is not J1.2's reverted
+ * window under a new name.
  */
-private fun morningAlarmAlreadyRang(raw: Instant, wakeAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?): Boolean {
-    val latestFired = laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor) ?: return false
-    return !raw.isAfter(latestFired)
-}
+private fun morningAlarmAlreadyRang(raw: Instant, wakeAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?): Boolean =
+    firedAtOrBefore(raw, laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor))
 
 /** J1.3: the later of two possibly-null fired instants, or the one that is non-null, or null if both are. */
 private fun laterOf(a: Instant?, b: Instant?): Instant? = when {
@@ -275,12 +283,19 @@ private fun awakeSlidingNapMustStop(wakeAlarmFiredAt: Instant?, morningAlarmAt: 
  * has the identical precision hazard [morningAlarmAlreadyRang] documents - a [referenceOnset] finer than the
  * alarm intent's own millisecond round trip can sit strictly AFTER an already-fired [lastNapAlarmFiredAt]/
  * [phoneAlarmFiredFor] by its own sub-millisecond remainder, missing the "already fired for this onset" case.
- * Fixed the same way, at the source (AppClock.now() truncates to whole milliseconds) rather than here.
+ * Fixed the same way, at the source (AppClock.now() truncates to whole milliseconds), so this comparison is
+ * exact again in ordinary operation.
+ *
+ * M3 (owner-reported, 2026-09-21) ADDS the same tolerance [morningAlarmAlreadyRang] gets, for the identical
+ * reason: exact equality on an already-truncated instant is still brittle against a future precision leak.
+ * `napAlreadyFiredForThisOnset` is now [firedAtOrBefore]`(referenceOnset, latestFired)` - [referenceOnset] up
+ * to [ALARM_INSTANT_TOLERANCE] AFTER [latestFired] still counts as fired for this onset. See
+ * [ALARM_INSTANT_TOLERANCE]'s own doc (`AlarmInstantTolerance.kt`) for the one-second justification.
  */
 private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?, config: EngineConfig): Instant {
     val latestFired = laterOf(lastNapAlarmFiredAt, phoneAlarmFiredFor)
-    val napAlreadyFiredForThisOnset = latestFired != null && !latestFired.isBefore(referenceOnset)
-    return if (napAlreadyFiredForThisOnset) latestFired.plus(config.napLength) else referenceOnset.plus(config.napLength)
+    val napAlreadyFiredForThisOnset = firedAtOrBefore(referenceOnset, latestFired)
+    return if (napAlreadyFiredForThisOnset) checkNotNull(latestFired).plus(config.napLength) else referenceOnset.plus(config.napLength)
 }
 
 /**

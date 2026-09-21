@@ -98,4 +98,21 @@ class StaleSyncPlanTest {
         // the same way (wakeAt.isAfter(now), not isAfterOrEqual), so this guard must agree with it.
         assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt))
     }
+
+    // ---- M3 (owner-reported, 2026-09-21): wakeAt != phoneAlarmFiredFor is now !sameAlarmInstant(wakeAt,
+    // phoneAlarmFiredFor) - a one-second tolerance on top of M2's own truncation. -----------------------------
+
+    @Test
+    fun `M3 a failed sync stops keeping the plan once its own alarm has fired a fraction of a second off wakeAt`() {
+        assertFalse(
+            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.plusMillis(900), now = now)
+        )
+    }
+
+    @Test
+    fun `M3 a failed sync still keeps the plan when the fired marker is a full second off wakeAt - a different target`() {
+        assertTrue(
+            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.plusSeconds(1), now = now)
+        )
+    }
 }

@@ -50,6 +50,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.nikita.sleepcycle.engine.MAX_NAP_ALARMS
+import com.nikita.sleepcycle.engine.sameAlarmInstant
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.NightState
@@ -188,12 +189,16 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      */
     private fun recordWakeOrNapFired(context: Context, state: NightState, firedFor: Instant) {
         val lastPlanWakeAt = state.lastPlan?.wakeAt
-        // M2 (owner-reported, 2026-09-21): this exact-equality match is the FIRST place a sub-millisecond
+        // M2 (owner-reported, 2026-09-21): this exact-equality match was the FIRST place a sub-millisecond
         // wakeAt broke - [firedFor] is always millisecond-clean (read back off the alarm intent's own
         // epoch-milli extra), but [lastPlanWakeAt] was not guaranteed to be before AppClock.now() truncated at
         // its own source (app/night/AppClock.kt). See NightOrchestrator.firedAlarmIsWakeAlarm's own M2 note and
         // docs/decisions.md's M2 record for the night this was reproduced on.
-        val firedPlan = state.lastPlan?.takeIf { lastPlanWakeAt == firedFor }
+        // M3 (owner-reported, 2026-09-21): exact equality is now sameAlarmInstant(lastPlanWakeAt, firedFor), a
+        // tolerant match on top of M2's own truncation (com.nikita.sleepcycle.engine.AlarmInstantTolerance.kt) -
+        // a safety net against a future precision leak, not a reason to remove the truncation that normally
+        // keeps this exact.
+        val firedPlan = state.lastPlan?.takeIf { sameAlarmInstant(lastPlanWakeAt, firedFor) }
         if (firedPlan == null) {
             appendNightLog(
                 context, state.startedAt,
