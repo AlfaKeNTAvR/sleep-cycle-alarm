@@ -176,8 +176,12 @@ which means a simulated night dies if the app process is killed, unlike a real o
     alarm staying up past the point the night would otherwise have closed).
 13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
     night also resets every Debug switch and any active clock warp - the same happens on its own if the app
-    sits unopened for 2 h after they were last changed, so a desk test like this one can never leak into a
-    real bedtime by accident.
+    sits unopened for 2 h after they were last changed. L2 correction: that auto-reset only fires once no
+    night state is left (`DebugScreenController.resetIfIdle` skips outright while any exists), so it will NOT
+    fire on its own for a **Night finished** screen left sitting the way step 12 describes - the deferred
+    night's state is still there. **End night** is what actually clears it, which is exactly what this step
+    has you do; a desk test only leaks into a real bedtime if you walk away from **Night finished** without
+    ending it.
 14. Open **Logs**: the night you just ran carries a **simulated** tag, and its file is named
     `night-sim-<yyyyMMdd-HHmm>.jsonl` (a real night is always `night-<yyyyMMdd-HHmm>.jsonl`, so the two can
     never be confused). Tap the row to reopen that night's summary - the same report you just saw - or use its

@@ -4,12 +4,14 @@ package com.nikita.sleepcycle.alarm
 // the sound and vibration only) and "I'm awake" (also ends the night through the existing endNight path,
 // recording awakeConfirmedAt). H6: "Stop" does NOT promise the night keeps running - most of the time it
 // does, and D5/rule 7's nap mode still applies, but not when this is the alarm that just spent the D5/G8 nap
-// cap (H2): by the time this screen is even showing that ring, the tick that reached FINISHED has already run
-// its own end-of-night bookkeeping (see NightController.finishNightIfNeeded) and tracking has already
-// stopped - "Stop" then only silences a ring that nothing is tracking any more. D4: when this screen
-// is the out-of-bed nudge rather than the wake alarm, [isOutOfBed] changes the wording - everything else about
-// the screen, and every stop/end path, is identical either way. Not part of the ui/ package: it is
-// system-integration glue the alarm flow needs, not app navigation.
+// cap (H2). L2 (owner decision, 2026-09-21) CORRECTS what this used to say about that case: this ring has
+// already armed its own out-of-bed nudge by the time this screen shows it, so the tick that reaches FINISHED
+// finds a pending nudge and DEFERS its end-of-night bookkeeping (NightController.finishNightIfNeeded) rather
+// than running it - tracking has NOT already stopped. "Stop" then leaves a night that is still nominally live,
+// with nothing left to book it another tick, until the nudge chain itself ends (or goes stale past L3.1's
+// bound). D4: when this screen is the out-of-bed nudge rather than the wake alarm, [isOutOfBed] changes the
+// wording - everything else about the screen, and every stop/end path, is identical either way. Not part of
+// the ui/ package: it is system-integration glue the alarm flow needs, not app navigation.
 //
 // F10: launchMode="singleInstance" means a second firing (typically the nudge arriving while the wake screen
 // is still open, now routine since F1's restart fix keeps the ring session alive across the two) delivers a
@@ -87,9 +89,11 @@ class AlarmActivity : ComponentActivity() {
 
     /**
      * D6 "Stop": silences the sound and vibration only. Usually the night keeps running and D5/rule 7's nap
-     * mode still applies - H6: EXCEPT when this ring is the one that just spent the D5/G8 nap cap (H2), in
-     * which case the night has already finished and tracking has already stopped by the time this button is
-     * even tapped; there is nothing left for "the night keeps running" to mean.
+     * mode still applies - H6: EXCEPT when this ring is the one that just spent the D5/G8 nap cap (H2). L2
+     * (owner decision, 2026-09-21) CORRECTS what this used to say: the night has NOT already finished by the
+     * time this button is tapped - this ring armed a nudge, so the tick reaching FINISHED deferred instead
+     * (NightController.finishNightIfNeeded). "The night keeps running" still does not mean much here, since
+     * nothing books this night another tick until the nudge chain itself ends.
      */
     private fun stopOnly() {
         stopAlarmRinging(this)

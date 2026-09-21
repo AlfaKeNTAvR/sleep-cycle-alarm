@@ -300,8 +300,23 @@ suspend fun runImmediateTick(context: Context) = withContext(Dispatchers.Default
  * pending out-of-bed nudge instant means the FINISHED bookkeeping should not run yet. `internal`, not
  * `private`, mirroring [shouldRearmPendingNudge]/[shouldResumeNightServiceOnBoot]: JVM-testable directly
  * without a Context, even though [finishNightIfNeeded] itself still needs one for the store read and the lock.
+ *
+ * L3.1 (owner decision, 2026-09-21) ADDS the [now]/[config] staleness bound this used to be missing - the
+ * review of L2 found it comparing [pendingNudgeAt] to nothing at all, unlike its own immediate neighbour
+ * [shouldRearmPendingNudge] and [BootReceiver.restoredOutOfBedNudgeAt], which both bound the same kind of
+ * record against [EngineConfig.outOfBedDelay] for the same reason. The record can outlive the alarm behind it -
+ * a boot restore whose [scheduleOutOfBedAlarm] failed (revoked exact-alarm permission), a force-stop (Android
+ * drops the app's alarms, no BOOT_COMPLETED follows), or [rearmAfterSpeedChange] declining to re-arm an
+ * already-overdue pending (debug only) - and when it does, nothing is armed behind the record anymore, so
+ * deferring forever wedges the night: no tick is ever booked again ([nextSyncDelay] returns null for FINISHED),
+ * and every later trigger (an app resume, a boot) just re-defers. A live chain rewrites this record within one
+ * [EngineConfig.outOfBedDelay] of arming it, so a record older than that bound cannot belong to a live chain -
+ * it can only be dead, and dead is exactly when this must stop deferring and let the bookkeeping run. This is
+ * the same bound [BootReceiver.restoredOutOfBedNudgeAt] already uses for the same reason, reused deliberately
+ * so the two neighbours judge staleness the same way.
  */
-internal fun shouldDeferFinishForPendingNudge(pendingNudgeAt: Instant?): Boolean = pendingNudgeAt != null
+internal fun shouldDeferFinishForPendingNudge(pendingNudgeAt: Instant?, now: Instant, config: EngineConfig): Boolean =
+    pendingNudgeAt != null && !now.isAfter(pendingNudgeAt.plus(config.outOfBedDelay))
 
 /**
  * G1 SUPERSEDES the first fix round's own instruction that a plan reaching FINISHED must run the full
@@ -357,12 +372,21 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
         val loaded = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock
         // T4: virtual - see nightEndFields/logNightClosingSummary/MorningReportSnapshot's own doc.
         val now = nowInstant()
-        // L2.1: read through the same store BootReceiver and the orchestrator already use, inside this same
-        // lock (after the state load above, so this never races a concurrent nudge arm/clear). See this
-        // function's own L2.1 doc above for why a pending nudge defers ALL of the bookkeeping below rather than
-        // only the parts that would touch the nudge directly.
+        // L2.1: read through the same store BootReceiver and the orchestrator already use. L3.2 (review
+        // correction, 2026-09-21): this read is NOT race-free with a concurrent nudge arm/clear - withNightTransactionLock
+        // is only ever held by NightController and NightOrchestrator, so PhoneAlarmReceiver.onReceive (clears
+        // then rewrites the record on every firing) and BootReceiver.restorePendingOutOfBedNudge and
+        // OutOfBedPreNudgeCheck (both write it too) all run unlocked - four of the five writers of this record
+        // are outside this lock. The real exposure: a window of two log appends plus one AlarmManager call
+        // (tens of ms) in which this read could observe a mid-write value. It can only be hit by a FINISHED
+        // night, since that is the only state this function defers on, and a FINISHED night only gets a tick
+        // from an app resume or a boot - so it needs the owner opening the app (or the phone booting) in the
+        // same instant a nudge is firing elsewhere. If it does hit, the outcome is just the pre-L2 behaviour:
+        // one more ring, then the chain stops. Not worth a lock for that; worth not claiming there isn't one.
+        // See this function's own L2.1 doc above for why a pending nudge defers ALL of the bookkeeping below
+        // rather than only the parts that would touch the nudge directly.
         val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
-        if (shouldDeferFinishForPendingNudge(pendingNudgeAt)) {
+        if (shouldDeferFinishForPendingNudge(pendingNudgeAt, now, resolveEngineConfig(loaded.debugOptions))) {
             appendNightLog(
                 context, loaded.startedAt,
                 NightLogEvent(now, "night_end_deferred", mapOf("cause" to "out_of_bed_nudge_pending", "pendingNudgeAt" to pendingNudgeAt.toString())),

@@ -72,10 +72,12 @@ import java.time.Instant
  *    can say a nudge rang, never that a genuinely-asleep owner's nudge was cancelled two minutes before it.
  *  - THE NUDGE CHAIN HAS NO END HERE. Production ends it when the night ends: NightController.endNight, from
  *    "I'm awake" or the app's own end-night action, cancels the nudge, its pre-check and its record. This
- *    harness models neither owner action, and it does not model G1's FINISHED bookkeeping clearing night
- *    state either (which in production stops the chain a further nudge later, since PhoneAlarmReceiver needs
- *    a night state to re-arm). Nudges therefore repeat here for as long as a test keeps advancing the clock,
- *    which is enough to pin the repeat itself and nothing about how it stops.
+ *    harness models neither owner action, and it does not model G1's FINISHED bookkeeping either. L2 (owner
+ *    decision, 2026-09-21) CORRECTS what this used to say here: reaching FINISHED does NOT stop the chain in
+ *    production anymore - NightController.finishNightIfNeeded now defers its entire bookkeeping while a nudge
+ *    is pending (L2.1), so the chain outlives FINISHED, bounded only by L3.1's own staleness check on the
+ *    pending record. Nudges therefore repeat here for as long as a test keeps advancing the clock, which is
+ *    enough to pin the repeat itself and nothing about how it stops.
  *  - BATTERY LOSS DOES NOT REBOOT. [batteryDies] drops the armed alarm and the tick schedule, and a later
  *    [openApp] resumes from there - `BootReceiver.handleBoot` never runs, so nothing here exercises boot
  *    restoration, including J5's own overdue-nudge restore.
