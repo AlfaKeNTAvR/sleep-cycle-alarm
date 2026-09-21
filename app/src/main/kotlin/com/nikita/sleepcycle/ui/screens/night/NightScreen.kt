@@ -42,9 +42,8 @@ fun NightScreen(
     onOpenDebug: () -> Unit = {},
 ) {
     ScreenContainer(scrollable = false, bottomPadding = ScreenBottomPadding) {
-        DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
-        // BuildConfig.DEBUG-gated, same as the Debug row on Setup (SetupScreen.kt): the simulator's buttons
-        // need to be reachable while a simulated night is actually running, not just before it starts.
+        // BuildConfig.DEBUG-gated, same as the Debug row Settings carries (SettingsScreen.kt): the simulator's
+        // buttons need to be reachable while a simulated night is actually running, not just before it starts.
         if (BuildConfig.DEBUG) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 SlidersButton(
@@ -54,6 +53,10 @@ fun NightScreen(
             }
         }
         StatusLine(text = statusLineText(state), ok = state.lastSyncOk != false)
+        // W11 (owner request): the simulated-clock banner sits UNDER the sync line and the debug button, not
+        // above them - the sync line is the one thing worth reading first, and the banner only ever renders on
+        // a simulated night anyway.
+        DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             when (val content = state.content) {
