@@ -146,10 +146,17 @@ class TickScheduleRaceTest {
         // FULL_CYCLES, going through the H8/J1.2 attribution check instead of morningAlarmAlreadyRang), but with
         // J1.1 applied the firing lands EXACTLY at morningAlarmAt (06:30) - the whole point of J1.1 keeping the
         // target unshifted - so H8's ORIGINAL exact-equality check already succeeds here too, and reverting
-        // J1.2 alone (with J1.1 still applied) leaves this test passing unchanged. J1.2's own window is pinned
-        // directly by NapAlarmCountingTest.kt's `J1_2 a NAP firing one minute after the latched morning alarm is
-        // still the wake alarm` and its siblings, all verified to fail against the pre-J1.2 exact-equality
-        // check when it landed.
+        // J1.2 alone (with J1.1 still applied) leaves this test passing unchanged.
+        //
+        // J3 SHOULD FIX 4 (reviewer note, 2026-09-21) CORRECTS the reference below: J1.2's own window no longer
+        // exists to be pinned by anything - J2 must-fix 2 REVERTED it back to H8's original exact equality (see
+        // NightOrchestrator.kt's own must-fix 2 doc for why the window was itself a regression), and the very
+        // test this note used to point at was INVERTED along with it: `NapAlarmCountingTest.kt`'s test, once
+        // named `J1_2 a NAP firing one minute after the latched morning alarm is still the wake alarm`, is now
+        // `J2 must-fix 2 - a NAP firing one minute after the latched morning alarm is a genuine nap, not the
+        // wake alarm` (plus its siblings, same file) - asserting the OPPOSITE of what this note used to claim.
+        // A reader following the old reference would land on an assertion of the opposite; corrected here rather
+        // than left pointing at a test that no longer says what this note used to say it says.
         val replay = nightOwnerTraced()
 
         // Asleep until 06:26, four minutes before the 06:30 alarm - then awake, still lying there.

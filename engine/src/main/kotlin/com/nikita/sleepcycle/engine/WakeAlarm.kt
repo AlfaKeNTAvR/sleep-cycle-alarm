@@ -208,8 +208,23 @@ private fun awakeSlidingNapMustStop(wakeAlarmFiredAt: Instant?, morningAlarmAt: 
  * the later of the two (never [phoneAlarmFiredFor] alone) matters for the same reason it did in J1.3: a nap
  * whose attribution succeeded ordinarily can have a [phoneAlarmFiredFor] belonging to an EARLIER, unrelated
  * firing (the wake alarm itself, or an earlier already-ended nap stretch) while [lastNapAlarmFiredAt] holds the
- * correct, later value - the "not before the reference onset" check below already stops an earlier firing from
- * contaminating a later onset regardless of which of the two markers it came from.
+ * correct, later value.
+ *
+ * S5 (reviewer note, 2026-09-21) CORRECTS this doc's own former claim here: the "not before the reference
+ * onset" check below does NOT exclude an unrelated (including a genuine wake-alarm) firing by construction -
+ * it is reachable, not merely hypothetical. Traced counter-example: an awakening registers at 06:28, the owner
+ * is back asleep by 06:29:30 (clearing the minimum-awakening floor, so THIS stretch's own [referenceOnset] is
+ * 06:29:30), and the still-pending latched morning alarm - armed from before this stretch even started - then
+ * fires normally at 06:30, which is at-or-after 06:29:30 and so counts as "already fired for this onset" here,
+ * even though it was the MAIN wake alarm, not a nap. Restored or quarantined state can widen that gap much
+ * further than one tick's worth.
+ *
+ * What actually keeps this safe is not exclusion but DIRECTION: [laterOf] can only push the effective anchor
+ * later than or equal to [referenceOnset], never earlier, and this function always returns a real instant
+ * (never null) - so the worst this can do is hand the owner a nap measured from a later start than the true
+ * onset (a shorter effective nap, bounded by [napLength] itself), never an earlier one, and never nothing at
+ * all. A spurious ring or a missed one would require an EARLIER target than the genuine onset; this can only
+ * produce a later one, and D4's own 15-minute out-of-bed nudge already covers a nap that turns out short.
  */
 private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?, config: EngineConfig): Instant {
     val latestFired = laterOf(lastNapAlarmFiredAt, phoneAlarmFiredFor)

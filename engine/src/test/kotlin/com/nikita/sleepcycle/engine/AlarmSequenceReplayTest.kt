@@ -137,10 +137,28 @@ class AlarmSequenceReplayTest {
     // never move LATER than the first instant it was ever armed at for that stretch - it may need MULTIPLE
     // ticks to first compute a stable value (a tick landing before the owner is confirmed asleep sees no
     // stretch at all yet), but once armed, D8/J1.1 guarantee it only ever holds steady or gets PULLED FORWARD
-    // by an actual firing, never pushed later while still pending. ------------------------------------------
+    // by an actual firing, never pushed later while still pending.
+    //
+    // J3 SHOULD FIX 3 (reviewer note, 2026-09-21) DROPS offset 0 from the sweep below. `armedTargetsAfter`'s own
+    // filter is `!armedAt.isBefore(from)` - inclusive, not strictly-after - so at offset 0 `markAsleepAt` equals
+    // `startNight`'s own instant exactly, and the comment below ("excludes it cleanly") was simply wrong for
+    // that one value: the start-night tick's own arming (a PROJECTED, not-yet-asleep target, fifteen minutes
+    // later than the real target for the stretch) is included at offset 0, not excluded, and the invariant only
+    // passed there because fifteen minutes of slack happened to be enough room. Reverting J1.1 and rerunning
+    // confirmed the arithmetic: offsets 30s/60s/90s fail (the ones this sweep is really meant to catch), offset
+    // 0 does not - direct confirmation that offset 0 was never doing this sweep's actual job. Every remaining
+    // offset is strictly greater than zero, so `markAsleepAt` is strictly after `startNight`'s own instant and
+    // the filter genuinely does exclude the start-night tick's own arming, as the comment now correctly claims.
+    //
+    // This invariant also only holds because this fixture never produces a NAP: a legitimate post-wake nap
+    // target is always later than the morning target it follows (H2/D5/G8's own twenty extra minutes), and
+    // would fail the "never moves later" assertion below on its own terms, not as a bug. Extending this fixture
+    // to cover a nap without first re-scoping the assertion to "never moves later than the first target for the
+    // SAME plan mode" would be a false failure, not a caught regression - do not weaken the assertion to make
+    // that pass; re-scope it instead. ------------------------------------------------------------------------
 
     @ParameterizedTest(name = "offset {0}s between startNight and markAsleep")
-    @ValueSource(longs = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300])
+    @ValueSource(longs = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300])
     fun `J2 SHOULD FIX S4 - the armed morning target never moves later than the first target armed for this stretch, across a sweep of startNight-to-markAsleep offsets`(offsetSeconds: Long) {
         val replay = NightReplay(settings(cycles = 5))
         replay.startNight("2026-09-20T23:00:00")
@@ -154,8 +172,10 @@ class AlarmSequenceReplayTest {
         // Anchored on markAsleepAt itself, not startNight's own 23:00:00 - startNight's own very first tick
         // runs BEFORE this mark is ever recorded (J1.4: marking does not itself tick), against an empty
         // segment list, and can arm its own short-lived PROJECTED-onset target in the meantime; that target
-        // belongs to a different (NOT_YET_ASLEEP) stretch, not the one this sweep is about, and offsetting the
-        // anchor to markAsleepAt itself excludes it cleanly (armedTargetsAfter's own >= filter).
+        // belongs to a different (NOT_YET_ASLEEP) stretch, not the one this sweep is about. Offsetting the
+        // anchor to markAsleepAt itself excludes it cleanly for every offset actually swept here (all strictly
+        // greater than zero, per the J3 SHOULD FIX 3 note above) - it did NOT exclude it at offset 0, which is
+        // exactly why that value was dropped from the sweep rather than kept and left silently under-tested.
         replay.advanceTo(markAsleepLocal.plusSeconds(1200).toString())
         val armedSoFar = replay.armedTargetsAfter(markAsleepAt)
         assertTrue(armedSoFar.isNotEmpty(), "no target armed yet for offset ${offsetSeconds}s - ${replay.trace()}")

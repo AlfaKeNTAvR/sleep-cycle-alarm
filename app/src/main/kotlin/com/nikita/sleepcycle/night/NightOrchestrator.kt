@@ -171,11 +171,17 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     val simulatedEvents = if (state.debugOptions.simulatedBandData) readSimulatedSleepEvents(context).first() else emptyList()
     val outcome = readBandDataForTick(context, state.debugOptions, appSettings, state, simulatedEvents, decisionNow)
 
-    // J1.5: a dead band (sync failed, or returned only stale data) with a real alarm already armed keeps that
-    // plan untouched rather than re-planning stale segments against this tick's own moving decisionNow - see
-    // shouldKeepPreviousPlan's own doc for the no-deadline-night-never-rings bug this closes. J2 must-fix 1:
+    // J1.5: a stale sync (failed outright, or returned only stale data) with a real alarm already armed keeps
+    // that plan untouched rather than re-planning stale segments against this tick's own moving decisionNow -
+    // see shouldKeepPreviousPlan's own doc for the no-deadline-night-never-rings bug this closes. J2 must-fix 1:
     // decisionNow is now also part of the guard itself (a plan is only kept while its own alarm is still
     // ahead of decisionNow) - see shouldKeepPreviousPlan's own doc for the freeze-forever bug that closes.
+    //
+    // J3 SHOULD FIX 6 (reviewer note, 2026-09-21) RENAMES the log event below from "dead_band_keep_plan" to
+    // "stale_sync_keep_plan": this guard triggers on mere STALENESS (including the ordinary "export file did
+    // not change since the last successful sync" case, not only a genuine band fault), so "dead band" invited
+    // the wrong mental model for anyone reading the night log - see shouldKeepPreviousPlan's own doc for the
+    // full staleness-vs-fault distinction and why the behaviour itself is unchanged, only the name.
     val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor, decisionNow)) {
         // shouldKeepPreviousPlan only returns true when previousPlan?.wakeAt is non-null, so state.lastPlan
         // itself is guaranteed non-null here too.
@@ -183,7 +189,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         appendNightLog(
             context, state.startedAt,
             NightLogEvent(
-                decisionNow, "dead_band_keep_plan",
+                decisionNow, "stale_sync_keep_plan",
                 mapOf("cause" to "sync not ok and the previous plan already has a real alarm armed - keeping it rather than re-planning stale data", "wakeAt" to keptPlan.wakeAt.toString())
             ),
             state.debugOptions.isAnyEnabled
@@ -408,10 +414,24 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * computeAlarmPlan again against this tick's own moving `now`.
  *
  * True exactly when the sync did not succeed ([SyncOutcome.syncOk] false - a failed sync or one that returned
- * only stale data, [resolveSyncOutcome]'s own two cases) AND [previousPlan] already carries a real armed alarm
- * ([AlarmPlan.wakeAt] non-null). The dead band this guards against: on a night with NO deadline, if the band
- * dies while the owner is marked AWAKE (before ever falling properly asleep, or having woken mid-night),
- * [outcome.segments] keeps being the SAME stale AWAKE-ending picture on every tick, and the engine's own
+ * only stale data, [resolveSyncOutcome]'s own two cases) AND [previousPlan] still has a non-null `wakeAt` of
+ * its own ([AlarmPlan.wakeAt] non-null - see the S5 note further down for exactly what that does and does not
+ * tell this function about whether an alarm was ever actually armed for it).
+ *
+ * S6 (reviewer note, 2026-09-21) RENAMES this guard's own framing from "dead band" to STALENESS throughout -
+ * `!outcome.syncOk` is true for EITHER of [resolveSyncOutcome]'s not-ok branches, and one of those two is
+ * ordinary staleness (an export file that simply did not change since the last successful sync), not a genuine
+ * band fault. "Dead band" invited the wrong mental model: acceptable slack for the MORNING alarm, whose target
+ * sits hours out, but mid-night during a nap stretch the target is only about 20 minutes out while ticks run
+ * every 5 - a genuine return to sleep detected inside that window may not get re-planned for up to a nap
+ * length before this guard lets go. Still bounded, and still erring toward keeping the alarm already armed
+ * rather than dropping it, so the BEHAVIOUR is unchanged by this note - only the name (see the log event this
+ * guard's own call site now writes, `stale_sync_keep_plan`, not `dead_band_keep_plan`). The specific traced
+ * scenario immediately below (a genuinely dead band, the band literally unreachable) is one real CAUSE of
+ * staleness, not the only one, and is left as originally written since it did in fact happen exactly that way:
+ * on a night with NO deadline, if the band dies while the owner is marked AWAKE (before ever falling properly
+ * asleep, or having woken mid-night), [outcome.segments] keeps being the SAME stale AWAKE-ending picture on
+ * every tick, and the engine's own
  * `findReferenceOnset` has no choice but to project a fresh onset at `now + fallAsleepEstimate` from THAT
  * tick's own `now` - which, because `now` keeps moving forward tick after tick while the segments never do,
  * projects a LATER onset (and so a later `wakeAt`) every single time. The alarm never settles on a fixed

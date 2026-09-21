@@ -553,3 +553,59 @@ pull-forward run), so building it earned both the should-fix and the must-fix's 
 added `batteryDies()` (clears the armed alarm and the ordinary tick schedule without ever firing, modeling
 total power loss - BootReceiver's own precondition, not its body, since BootReceiver correctly declining to
 re-arm a past target was never the bug in question).
+
+### SHOULD FIX 3 (landed) - `AlarmSequenceReplayTest.kt` offset-0 slack
+
+Confirmed the bug by reading, not by re-running the revert (the reviewer already measured this): `armedTargetsAfter`'s
+filter is `!armedAt.isBefore(from)`, inclusive - at offset 0 `markAsleepAt` equals `startNight`'s own instant
+exactly, so the start-night tick's own PROJECTED (not-yet-asleep) target is included, not excluded as the old
+comment claimed, and the invariant only passed there on 15 minutes of borrowed slack. Chose "drop 0 from the
+value source" over "advance the anchor by a nanosecond" (the reviewer offered either) - simpler, and offset 0
+was never doing this sweep's actual job (the reviewer's own revert-and-measure showed 30s/60s/90s catch the
+regression, 0 does not). Corrected the comment's false "excludes it cleanly" claim and added the nap-fixture
+caveat sentence the reviewer asked for. Reran the 10 remaining offsets after the change - all still green.
+
+### SHOULD FIX 4 (landed) - stale cross-reference in `TickScheduleRaceTest.kt`
+
+Confirmed the reviewer's claim before rewording: `NapAlarmCountingTest.kt`'s test, formerly named `J1_2 a NAP
+firing one minute after the latched morning alarm is still the wake alarm`, is now named `J2 must-fix 2 - a NAP
+firing one minute after the latched morning alarm is a genuine nap, not the wake alarm` - the assertion really
+was inverted when J2 must-fix 2 reverted J1.2's window. Reworded the naming note to say the window was reverted
+and point at the current test names, doc-only change.
+
+### SHOULD FIX 5 (landed, no code change, per the reviewer's own instruction) - `WakeAlarm.kt` docstring
+
+Verified the reviewer's counter-trace against the real code before rewriting anything: awakening at 06:28,
+back asleep 06:29:30 (clears `minAwakening`, so the new stretch's own `referenceOnset` is 06:29:30), the still-
+pending latched morning alarm at 06:30 then fires normally - 06:30 is at-or-after 06:29:30, so
+`asleepNapTarget`'s own "not before the reference onset" check does NOT exclude it, contradicting the old
+docstring's claim. Confirmed the actual safety property instead: `laterOf` can only push the anchor later than
+or equal to `referenceOnset`, never earlier, and the function always returns a real instant, never null - so
+the worst case is a shorter nap, never a spurious or missed ring. Rewrote the docstring to claim the bound, not
+the exclusion. No behaviour change, matching the reviewer's own "no code change is needed."
+
+### SHOULD FIX 6 (landed) - "dead band" renamed to "staleness" for `shouldKeepPreviousPlan`
+
+Interpreted "rename the function" narrowly rather than literally: `shouldKeepPreviousPlan` itself never said
+"dead band" in its own name, so a full identifier rename would cascade into `NightReplay.kt`'s mirror,
+`DeadBandPlanTest.kt`, and `DeadBandDriftTest.kt` (engine-level, demonstrates the underlying drift bug this
+guard exists to interrupt - a different, legitimate test purpose, left untouched) without addressing the
+reviewer's actual complaint. What genuinely said "dead band" as a NAME, not prose: the log event string
+(`dead_band_keep_plan`) and the guard's own general-framing sentence ("The dead band this guards against:").
+Renamed the log event to `stale_sync_keep_plan` (no test asserted the old string - checked first) and added a
+framing correction paragraph naming the staleness-vs-fault distinction explicitly, without deleting the
+original owner-traced dead-band scenario narrative right below it (which is a real, true account of one
+specific cause of staleness, not the guard's only trigger - left as originally written, extended rather than
+rewritten, per the "preserve existing comments" rule). Did not touch `DeadBandPlanTest.kt`'s file name or its
+own header comment - out of scope for a MEDIUM-severity doc/naming fix under this round's time budget; flagged
+here rather than silently expanded into.
+
+### Nits (both landed)
+
+- NightOrchestrator.kt:411's "already carries a real armed alarm" phrasing reworded to "still has a non-null
+  `wakeAt` of its own", with an explicit forward-pointer to the S5 paragraph further down - so that paragraph
+  now reads as the promised correction rather than a contradiction of the sentence just above it.
+- NightOrchestrator.kt:550's arm-refusal cause string now interpolates `$now` explicitly. This became almost
+  automatic once the must-fix removed the second (commit-time) clock - the comparison instant and the log
+  timestamp are the same value now - but written out explicitly in the string itself anyway, per the reviewer's
+  own ask, rather than left implicit.
