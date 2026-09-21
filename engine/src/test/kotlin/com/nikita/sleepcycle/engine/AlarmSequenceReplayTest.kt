@@ -2,7 +2,10 @@ package com.nikita.sleepcycle.engine
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 /**
  * The whole alarm sequence of a night, replayed tick by tick through [NightReplay] - the plans, the arming,
@@ -120,5 +123,52 @@ class AlarmSequenceReplayTest {
         )
         assertEquals(AlarmMode.FINISHED, replay.lastPlan?.mode, replay.trace())
         assertEquals(emptyList<java.time.Instant>(), replay.armedTargetsAfter("2026-09-21T07:01"), replay.trace())
+    }
+
+    // ---- J2 SHOULD FIX S4 (reviewer note, adversarial review of J1.1-J1.6): every fixture above this line
+    // calls startNight and markAsleep at the SAME instant, per [nightAsleepAtEleven]'s own doc - exactly the
+    // blind spot J1.4's re-anchored [NightReplay] exists to get away from (see its own class doc: a tick grid
+    // anchored at the same instant as its own target tends to land ON that target's own lattice, never landing
+    // NEAR it the way a real, independently-scheduled tick can). Only J1.4's four hand-picked
+    // `TickScheduleRaceTest` cases actually use an offset; nothing sweeps the space between them, so a
+    // DIFFERENT phase relationship this session's four hand-picked cases do not happen to hit is not guarded by
+    // anything. This sweep is the general property every one of those hand-picked cases is really a single
+    // sample of: whatever the tick grid's own phase against the target turns out to be, the armed target must
+    // never move LATER than the first instant it was ever armed at for that stretch - it may need MULTIPLE
+    // ticks to first compute a stable value (a tick landing before the owner is confirmed asleep sees no
+    // stretch at all yet), but once armed, D8/J1.1 guarantee it only ever holds steady or gets PULLED FORWARD
+    // by an actual firing, never pushed later while still pending. ------------------------------------------
+
+    @ParameterizedTest(name = "offset {0}s between startNight and markAsleep")
+    @ValueSource(longs = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300])
+    fun `J2 SHOULD FIX S4 - the armed morning target never moves later than the first target armed for this stretch, across a sweep of startNight-to-markAsleep offsets`(offsetSeconds: Long) {
+        val replay = NightReplay(settings(cycles = 5))
+        replay.startNight("2026-09-20T23:00:00")
+        // Built from LocalDateTime, not Instant - instant()/NightReplay's own string API takes a zone-less
+        // local time (ISO_LOCAL_DATE_TIME), and Instant.toString() always renders a trailing "Z" that the same
+        // parser rejects.
+        val markAsleepLocal = java.time.LocalDateTime.parse("2026-09-20T23:00:00").plusSeconds(offsetSeconds)
+        val markAsleepAt = markAsleepLocal.toString()
+        replay.markAsleep(markAsleepAt)
+
+        // Anchored on markAsleepAt itself, not startNight's own 23:00:00 - startNight's own very first tick
+        // runs BEFORE this mark is ever recorded (J1.4: marking does not itself tick), against an empty
+        // segment list, and can arm its own short-lived PROJECTED-onset target in the meantime; that target
+        // belongs to a different (NOT_YET_ASLEEP) stretch, not the one this sweep is about, and offsetting the
+        // anchor to markAsleepAt itself excludes it cleanly (armedTargetsAfter's own >= filter).
+        replay.advanceTo(markAsleepLocal.plusSeconds(1200).toString())
+        val armedSoFar = replay.armedTargetsAfter(markAsleepAt)
+        assertTrue(armedSoFar.isNotEmpty(), "no target armed yet for offset ${offsetSeconds}s - ${replay.trace()}")
+        val firstTarget = armedSoFar.first()
+
+        // Advance well past the alarm's own instant (roughly 06:30 plus the offset) and well past every nap
+        // that could possibly follow, and check every target ever armed for this stretch - none may fall after
+        // the first one.
+        replay.advanceTo("2026-09-21T08:30:00")
+        val everyTarget = replay.armedTargetsAfter(markAsleepAt)
+        assertTrue(
+            everyTarget.all { !it.isAfter(firstTarget) },
+            "a later target than the first one ($firstTarget) was armed for offset ${offsetSeconds}s: $everyTarget - ${replay.trace()}"
+        )
     }
 }

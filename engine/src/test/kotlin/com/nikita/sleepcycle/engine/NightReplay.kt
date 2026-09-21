@@ -243,16 +243,17 @@ internal class NightReplay(
 
     /**
      * NightOrchestrator.armPhoneAlarmIfNeeded: a null wake time cancels, an instant that already fired or is
-     * not in the future is left alone, anything else is (re-)armed - EXCEPT [phoneAlarmFiredForAtStart]'s own
-     * J1.3 second line of defence: a wakeAt strictly after it but still within minAlarmLead is refused too, not
-     * just an exact match. [phoneAlarmFiredForAtStart] is this PENDING tick's own snapshot, taken at
-     * [PendingTick.startedAt] - see [runTick]'s own doc for why a stale-snapshot tick's arm step is stale here
-     * too.
+     * not in the future is left alone, anything else is (re-)armed.
      *
      * J2 must-fix 4: [tickStartedAt] and [armTimeNow] are now two DIFFERENT instants, not one - [tickStartedAt]
      * (this tick's own decisionNow) is still what gets recorded in [armings] (identifying WHICH tick armed
      * something, for [armedTargetsAfter]'s own use), but the actual past-check (`!wakeAt.isAfter(...)`) reads
      * [armTimeNow] instead - this tick's own real commit instant. See [commitPendingTick]'s own doc for why.
+     *
+     * S1 (reviewer note): the J1.3 second-line-of-defence window this used to mirror (refusing a wakeAt
+     * strictly after phoneAlarmFiredForAtStart but still within minAlarmLead of it) is REMOVED, matching
+     * production's own removal - see NightOrchestrator.kt's own S1 doc for why it never actually caught the
+     * bug it was written for, and why must-fix 3 closes that hole at its real source instead.
      */
     private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, phoneAlarmFiredForAtStart: Instant?, tickStartedAt: Instant, armTimeNow: Instant) {
         val wakeAt = plan.wakeAt
@@ -262,11 +263,6 @@ internal class NightReplay(
         }
         if (wakeAt == phoneAlarmFiredForAtStart) return
         if (!wakeAt.isAfter(armTimeNow)) return
-        if (phoneAlarmFiredForAtStart != null && wakeAt.isAfter(phoneAlarmFiredForAtStart) &&
-            !wakeAt.isAfter(phoneAlarmFiredForAtStart.plus(config.minAlarmLead))
-        ) {
-            return
-        }
         armedAlarmAt = wakeAt
         armings.add(tickStartedAt to wakeAt)
     }

@@ -423,6 +423,67 @@ zero-data projection. Considered, not changed, for these reasons:
   failed) data in a way that visibly delays a plan settling - not reproduced or observed in this session, so
   left as a documented open question rather than spending scope on an unconfirmed problem.
 
+### SHOULD FIX pass (after the four must-fixes)
+
+**S1 (landed) - deleted the J1.3 second-line-of-defence guard in `armPhoneAlarmIfNeeded`.** Traced both
+scenarios it was meant to backstop by hand: the morning-path re-ring always recomputes an EXACT match
+(`wakeAt == firedFor`), which the exact-equality check right above it already catches, never reaching this
+window at all; the mid-night nap re-ring (pre-must-fix-3) produces `now + minAlarmLead`, which by the time a
+tick gets around to recomputing an overdue nap sits MORE than `minAlarmLead` past the original firing (tick
+cadence plus sync delay push `now` well beyond the window before this ever runs) - so it missed that case too,
+every time, exactly as the reviewer traced. Deleted rather than re-expressed: must-fix 3 (this session) and
+J1.3's own `morningAlarmAlreadyRang` already close both re-ring shapes at their real source, so there is
+nothing left for a "close but not exact" window to usefully catch, only a real false-positive risk (refusing a
+legitimately close but unrelated alarm). Removed the now-unused `config: EngineConfig` parameter from
+`armPhoneAlarmIfNeeded` along with it (its only remaining use). Mirrored the removal in `NightReplay.kt`'s own
+harness copy. Full suite unaffected - nothing was actually relying on this guard's behaviour, confirming it
+was dead weight.
+
+**S2 (landed, folded into must-fix 1's own commit) - see the must-fix 1 entry above:** the two duplicate
+`DeadBandPlanTest` cases were folded into one with a comment explaining why, and the frozen-plan-must-not-
+outlive-its-own-alarm-time case was added as part of adding `now` to `shouldKeepPreviousPlan`.
+
+**S3 (not attempted, documented tradeoff) - `NightReplay` cannot model a failed or stale sync at all.**
+Considered adding a sync-failure mode to the harness so `must-fix 1`'s freeze-forever bug could be caught at
+the sequence level, not just by `DeadBandPlanTest`'s own direct unit tests of `shouldKeepPreviousPlan`. Did
+not attempt it: `shouldKeepPreviousPlan` is purely an APP-layer decision (`NightOrchestrator.kt`) that never
+touches `computeAlarmPlan` or anything else the engine-side `NightReplay` harness currently models - giving the
+harness a "sync failed" concept would mean either (a) duplicating the app-layer freeze decision into engine
+test code, which the harness has deliberately avoided doing for anything outside the engine's own observable
+surface (its own class doc: every rule it restates has a NAMED app-layer counterpart, kept in sync by
+convention, and this one lives in a different layer entirely), or (b) inventing a new cross-layer harness this
+task did not ask for. `DeadBandPlanTest`'s own 9 cases (7 original + 2 must-fix-1 additions) already give
+`shouldKeepPreviousPlan` itself direct, complete branch coverage, including the exact boundary must-fix 1
+closes; the sequence-level gap is real but lower-value than it looks once the pure-function coverage is this
+complete. Left as a known limitation, matching how J1.5's own entry above already flagged the identical
+constraint for `runNightTickLocked` as a whole.
+
+**S4 (landed) - parametrised sweep in `AlarmSequenceReplayTest.kt`.** Added one `@ParameterizedTest` over
+offsets 0-300s in 30s steps between `startNight` and `markAsleep`, asserting the armed morning target never
+moves later than the first instant armed for that stretch. Anchored the "first target" read on the
+`markAsleep` instant itself, not `startNight`'s own 23:00 - `startNight`'s own very first tick runs against an
+EMPTY segment list (before `markAsleep` is ever called, per J1.4's own no-longer-ticks-on-mark design) and can
+arm a short-lived, unrelated PROJECTED-onset target of its own in the meantime; anchoring later excludes it
+cleanly via `armedTargetsAfter`'s existing `>=` filter. Verified this sweep is not vacuous: temporarily
+reverted `pullForwardIfTooSoon` (WakeAlarm.kt) to its pre-J1.1 body, reran - 3 of the 11 offsets (30s, 60s, 90s)
+failed, plus two of the file's own PRE-EXISTING tests, confirming the sweep catches real regressions the four
+hand-picked `TickScheduleRaceTest` cases do not happen to hit on their own. Restored the fix, full suite green.
+Needed `java.time.LocalDateTime` arithmetic directly (not `Instant.plusSeconds().toString()`) to build each
+offset instant string - `NightReplay`'s own `instant()` helper parses a zone-less local time
+(`ISO_LOCAL_DATE_TIME`), and `Instant.toString()` always renders a trailing `Z` the same parser rejects.
+
+### Final verify (all four must-fixes plus the SHOULD FIX pass)
+
+`JAVA_HOME=.../jdk-21.0.12.1+1 ANDROID_HOME=.../sdk ./gradlew :engine:test :app:testDebugUnitTest :app:lintDebug
+:app:assembleDebug` - `BUILD SUCCESSFUL`, 0 test failures, 0 errors across every test class in both modules.
+Hit the documented transient Windows `R.jar` file lock once while forcing a clean recompile to double-check for
+Kotlin compiler warnings (`--rerun-tasks`, contending with the concurrent UI agent's own build) - retried per
+the environment brief; the `:engine` module's own forced recompile (no R.jar/Android dependency, so unaffected
+by the lock) came back completely clean, zero `w:` lines from either `compileKotlin` or `compileTestKotlin`.
+Every actual (non-cached) `:app:compileDebugKotlin`/`:app:compileDebugUnitTestKotlin` execution observed
+throughout this whole session likewise printed zero `w:` lines - no evidence of any compiler warning from any
+change in this session's scope, in either module.
+
 ## All six J1 findings landed
 
 J1.1 through J1.6 are all committed on `nikita/fix/overnight-hardening`: d594204, 7e73145, 12c9e51, ee9db3e,
