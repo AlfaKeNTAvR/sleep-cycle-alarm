@@ -37,6 +37,7 @@ import com.nikita.sleepcycle.engine.normalizeSegments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
@@ -75,9 +76,28 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * last few minutes before the alarm is rule 7, and rule 7 now defers to the morning alarm instead of re-arming
  * the phone past it), so the mode alone would attribute the night's real wake-up to a nap - spending one of the
  * two nap alarms on it and leaving wakeAlarmFiredAt unrecorded.
+ *
+ * J1.2 (owner-reported, 2026-09-21) widens H8's own test from EXACT equality to a WINDOW:
+ * [morningAlarmAt] .. [morningAlarmAt] + [WAKE_ALARM_FIRE_TOLERANCE]. H8's `firedFor == morningAlarmAt` assumed
+ * a NAP plan carrying the morning alarm always fires at exactly that instant, but J1.1's own bug (now fixed)
+ * proved that assumption false in exactly the case H8 exists for: waking in the last two minutes before the
+ * morning alarm hands rule 7 the still-pending `morningAlarmAt` as `wakeAt` (`awakeNapTarget`), and the old
+ * `pullForwardIfTooSoon` could then rearm the phone a minute or two LATER than `morningAlarmAt` - a NAP-mode
+ * firing that never exactly matches it. Exact equality then missed it: `wakeAlarmFiredAt` stayed null, the ring
+ * screen called it "Nap alarm" at the real wake-up, and one of the two nap alarms was spent recording it as a
+ * nap. J1.1 removes the trigger, but this predicate is hardened independently rather than leaning on that fix
+ * alone - a firing landing slightly after its own armed target is not unique to J1.1 (delivery jitter, Doze
+ * deferral), and the window costs nothing: [WAKE_ALARM_FIRE_TOLERANCE] is [EngineConfig.minAlarmLead] (the
+ * widest D8/J1.1 could ever legitimately push a target by) plus one more minute of slack for ordinary
+ * AlarmManager delivery jitter, and nothing genuinely nap-shaped can land inside a 3-minute window right after
+ * the latched morning alarm - a real rule 7 nap is always `napLength` (20 min) or more past whatever it is
+ * measured from.
  */
+private val WAKE_ALARM_FIRE_TOLERANCE: Duration = EngineConfig().minAlarmLead.plus(Duration.ofMinutes(1))
+
 fun firedAlarmIsWakeAlarm(firedPlanMode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean =
-    firedPlanMode != AlarmMode.NAP || firedFor == morningAlarmAt
+    firedPlanMode != AlarmMode.NAP ||
+        (morningAlarmAt != null && !firedFor.isBefore(morningAlarmAt) && !firedFor.isAfter(morningAlarmAt.plus(WAKE_ALARM_FIRE_TOLERANCE)))
 
 /**
  * Runs one full night cycle: load state, sync and read band data (keeping the previous segments and

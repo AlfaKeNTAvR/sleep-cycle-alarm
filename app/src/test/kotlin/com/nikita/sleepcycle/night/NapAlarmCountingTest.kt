@@ -50,6 +50,36 @@ class NapAlarmCountingTest {
         assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, napFiredAt, morningAlarmAt = null))
     }
 
+    // ---- J1.2: H8's exact-equality test widened to a window, since a NAP plan carrying the still-pending
+    // morning alarm as its wakeAt (rule 7's awakeNapTarget) does not always fire at EXACTLY morningAlarmAt -
+    // J1.1's own bug (now fixed) could rearm it a minute or two later, and ordinary AlarmManager delivery
+    // jitter can do the same regardless. The window is minAlarmLead (2 min) plus one more minute of slack. ----
+
+    @Test
+    fun `J1_2 a NAP firing one minute after the latched morning alarm is still the wake alarm`() {
+        // This is the exact shape of the J1.1 bug before it was fixed: rule 7's AWAKE branch hands back the
+        // pending morningAlarmAt, pullForwardIfTooSoon used to shift it one minute later, and the alarm fired
+        // NAP-mode at morningAlarmAt + 1 min - which the old firedFor == morningAlarmAt check missed entirely.
+        assertTrue(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
+    }
+
+    @Test
+    fun `J1_2 a NAP firing exactly at the tolerance boundary is still the wake alarm`() {
+        assertTrue(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(180), morningAlarmAt))
+    }
+
+    @Test
+    fun `J1_2 a NAP firing just past the tolerance window is a genuine nap, not the wake alarm`() {
+        // A real rule 7 nap is never less than napLength (20 min) past whatever it is measured from, so a
+        // firing this close to morningAlarmAt but past the window is never mistaken for one.
+        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(181), morningAlarmAt))
+    }
+
+    @Test
+    fun `J1_2 alarmLabelFor rings a NAP armed one minute after the morning alarm as MORNING`() {
+        assertEquals(AlarmLabel.MORNING, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
+    }
+
     // ---- alarmLabelFor (W18/H8): the name an alarm rings under follows the same predicate ------------------
 
     @Test

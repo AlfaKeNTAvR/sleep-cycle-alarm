@@ -25,3 +25,29 @@ worked.
   numbers (onset 23:00, 5 cycles, tick at 06:28:30). Verified it fails against the pre-fix code (temporarily
   restored the old `WakeAlarm.kt` from HEAD, ran just that test, saw `AssertionFailedError`, restored the fix)
   before committing.
+
+## J1.2 (landed)
+
+- The task description said `NapAlarmCountingTest` has a test pinning the exact-equality behaviour that would
+  need updating. I read the whole file first: no existing test actually exercises a `firedFor` value that is
+  close to but not equal to `morningAlarmAt` (the file's one near-miss fixture, `napFiredAt`, sits 30 minutes
+  past it, far outside any reasonable tolerance window) - so nothing in the file was actually PINNING the old
+  exact-equality bug, and the full `:app:testDebugUnitTest` run confirmed nothing broke when the predicate
+  widened. I widened it anyway per the finding (independent hardening, not contingent on J1.1), and instead of
+  editing a nonexistent pinned expectation I added four new tests under a J1.2 heading: one minute after
+  (inside the window, now true), exactly at the tolerance boundary (still true), one second past the boundary
+  (still a genuine nap, false), and the matching `alarmLabelFor` case. Report this discrepancy rather than
+  forcing an edit to a test that did not need one.
+- Chose NOT to thread `EngineConfig` through `firedAlarmIsWakeAlarm` and its two call sites
+  (`PhoneAlarmReceiver.recordWakeOrNapFired`, `alarmLabelFor` and, through it, `BootReceiver`, `NightController`,
+  `NightOrchestrator.armPhoneAlarmIfNeeded`, and the UI's `BuildNightScreenContent.kt`). `resolveEngineConfig`
+  already always returns the real, unscaled `EngineConfig` regardless of debug options (its own T7 comment:
+  "resolveEngineConfig always returns the real EngineConfig regardless of debug options"), so `minAlarmLead` is
+  a genuine compile-time constant in practice, not a per-call value a default could silently hide - unlike
+  J1.3's `phoneAlarmFiredFor`, which is real per-night state and gets threaded explicitly. Added a private
+  `WAKE_ALARM_FIRE_TOLERANCE = EngineConfig().minAlarmLead + 1 min` (3 minutes total) inside
+  `NightOrchestrator.kt` instead, next to `firedAlarmIsWakeAlarm` itself, so the widening is visible right where
+  H8/J1.2's own doc comment explains it, without touching any UI file's call site or signature.
+- The tolerance window is `[morningAlarmAt, morningAlarmAt + 3 min]`, closed on both ends. A real rule 7 nap is
+  never less than `napLength` (20 min) past whatever it is measured from, so nothing genuinely nap-shaped can
+  ever land inside that 3-minute window and be misattributed as the wake alarm.
