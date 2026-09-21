@@ -55,9 +55,12 @@ sealed interface NightScreenContent {
      * this used to show with no explanation; it is also why [reasonText] is suppressed in that state (the
      * "Already rang" subtitle already says what happened, and the engine's [reasonText] sentence trails off
      * with "... alarm none" once [AlarmPlan.wakeAt] is null). [deadlineTimeLabel] is a plain caption for the
-     * deadline, shown only in the ordinary [NightSubtitle.SLEEP_LENGTH] case - the owner uses it to decide
-     * whether to go back to sleep, and it would otherwise only be visible buried mid-sentence in [reasonText]
-     * (see AUTONOMOUS_DECISIONS_09_21_2026_UI.md for why this was restored instead of left dropped).
+     * deadline, shown in both [NightSubtitle.SLEEP_LENGTH] and [NightSubtitle.ALREADY_RANG] - suppressed only
+     * for [NightSubtitle.DEADLINE_ONLY], whose own subtitle already names the deadline and whose hero number
+     * already is it. The owner uses this caption to decide whether to go back to sleep, which is exactly the
+     * question live in the ALREADY_RANG state (round 2 of the 09/21 review, must-fix 2: an earlier version of
+     * this also hid it for ALREADY_RANG, reasoning the deadline "no longer matters" there - wrong, since
+     * ALREADY_RANG is only reachable while the deadline is still ahead; see AUTONOMOUS_DECISIONS_09_21_2026_UI.md).
      */
     data class GoingToBedOrAsleep(
         val onsetPhase: OnsetPhase,

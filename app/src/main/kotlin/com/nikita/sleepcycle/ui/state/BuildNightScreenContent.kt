@@ -63,11 +63,15 @@ fun buildGoingToBedContent(plan: AlarmPlan, zone: ZoneId, debugOptions: DebugOpt
         isDeadlineOnly -> NightSubtitle.DEADLINE_ONLY
         else -> NightSubtitle.SLEEP_LENGTH
     }
-    // The deadline caption (09/21 review's must-fix 3 decision) only earns its place in the ordinary
-    // SLEEP_LENGTH case: ALREADY_RANG has already moved past the deadline mattering, and DEADLINE_ONLY's own
-    // subtitle already says the alarm rings at the deadline, so naming the deadline again next to a hero time
-    // that already is the deadline would be redundant.
-    val deadlineTimeLabel = if (subtitle == NightSubtitle.SLEEP_LENGTH) deadline?.let { formatClockTime(it, zone) } else null
+    // The deadline caption (09/21 review round 1's must-fix 3 decision) is suppressed only for DEADLINE_ONLY:
+    // that subtitle already says the alarm rings at the deadline, and the hero number above it already IS the
+    // deadline, so naming it again would be redundant. Round 2's must-fix 2 corrected the original reasoning
+    // here, which also suppressed it for ALREADY_RANG on the theory that "the deadline no longer matters once
+    // the night has moved past it into the already-rang state" - wrong, because ALREADY_RANG is only reachable
+    // while the deadline is still ahead (a passed deadline sends the night to FINISHED first, per the engine's
+    // own tick order), and that already-rang state is exactly when the owner is deciding whether to go back to
+    // sleep - the one moment this caption matters most. See AUTONOMOUS_DECISIONS_09_21_2026_UI.md.
+    val deadlineTimeLabel = if (subtitle == NightSubtitle.DEADLINE_ONLY) null else deadline?.let { formatClockTime(it, zone) }
     return NightScreenContent.GoingToBedOrAsleep(
         onsetPhase = if (plan.onsetIsProjected) OnsetPhase.PROJECTED else OnsetPhase.ACTUAL,
         onsetTimeLabel = formatClockTime(onset, zone),

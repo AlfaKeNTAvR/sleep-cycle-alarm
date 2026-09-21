@@ -86,6 +86,16 @@ class BuildGoingToBedContentTest {
         assertEquals(NightSubtitle.SLEEP_LENGTH, content.subtitle)
         assertNull(content.deadlineTimeLabel)
     }
+
+    @Test fun `already-rang state still carries the deadline caption (09_21 review round 2 must-fix 2)`() {
+        // The already-rang state is exactly when the owner is deciding whether to go back to sleep - the
+        // deadline caption must not disappear there. An earlier version suppressed it here on the wrong theory
+        // that a passed deadline made it moot; ALREADY_RANG is only reachable while the deadline is still ahead.
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, referenceOnset = "2026-09-17T00:00", cycles = 5)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = instant("2026-09-17T07:00"), deadline = instant("2026-09-17T07:30"))
+        assertEquals(NightSubtitle.ALREADY_RANG, content.subtitle)
+        assertEquals("07:30", content.deadlineTimeLabel)
+    }
 }
 
 class BuildNapAsleepContentTest {
