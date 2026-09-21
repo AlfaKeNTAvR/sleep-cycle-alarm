@@ -172,3 +172,44 @@ in the meantime - untouched here, no reason to touch them).
   state before moving on.
 - Final verify: `BUILD SUCCESSFUL`, 517 tests, 0 failures, 0 skipped, no Kotlin compiler warnings from
   `compileKotlin`/`compileTestKotlin` in either module.
+
+## J1.5 (landed)
+
+- `resolveSyncOutcome` (NightOrchestrator.kt) was ALREADY the pure, named function the finding asked for - it
+  just had no test and nothing downstream ever refused to re-plan from what it returned. Added the actual
+  decision as a SEPARATE pure function, `shouldKeepPreviousPlan(outcome, previousPlan, phoneAlarmFiredFor)`,
+  rather than folding it into `resolveSyncOutcome` itself: `resolveSyncOutcome` decides what THIS sync
+  produced (fresh data, kept-stale data, or a failure), which is a fact about the sync; whether to actually USE
+  that fact to re-plan is a SEPARATE decision that also needs the previous plan and the fire-time bookkeeping,
+  neither of which `resolveSyncOutcome` has or should need.
+- Wired it into `runNightTickLocked`: when true, skip `computeAlarmPlan` entirely and reuse `state.lastPlan`,
+  logging a dedicated `dead_band_keep_plan` event (mode/cause/wakeAt) so this is visible in the night log as a
+  deliberate skip, not silently identical output that could be mistaken for a coincidence. `scheduleNextTick`
+  still runs off the kept plan afterward, so the tick schedule itself is untouched - only the PLAN stops
+  updating while the band stays dead.
+- Extended the guard beyond the finding's own literal wording: `previousPlan?.wakeAt != null` is not quite
+  enough by itself, because the ALREADY-FIRED case would otherwise freeze the plan forever even after the
+  protected alarm has already rung (PhoneAlarmReceiver fires independently of ticks, so the freeze's own job is
+  already done at that point) - added `phoneAlarmFiredFor` so the freeze specifically ends once the KEPT plan's
+  own `wakeAt` matches it. Decided this without asking: it is a strict narrowing of when the freeze applies (a
+  smaller behavioural footprint than the literal reading, never a larger one), and leaving it out would have
+  meant logging "keeping the plan" every single tick for the rest of a dead-band night even long after the one
+  alarm it was protecting had already rung, which reads as actively misleading in the log.
+- Added `DeadBandPlanTest.kt` (7 cases: failed sync + armed plan keeps it, successful sync never keeps it, no
+  previous plan, a FINISHED previous plan with no real alarm, the already-fired case ending the freeze, a
+  DIFFERENT earlier firing not ending it, stale-data treated the same as an outright failure) - all pass, and
+  since `shouldKeepPreviousPlan` is a brand new function (nothing to revert to a "before" state), the tests
+  themselves directly exercise every branch of its own logic rather than pinning a prior defect.
+- Also added `DeadBandDriftTest.kt` (engine module, pure, no Android) to prove the underlying MECHANISM this
+  guards against actually exists, independent of the app-layer fix: three `computeAlarmPlan` calls with
+  IDENTICAL (frozen) AWAKE-ending segments and only `now` advancing (00:40, 01:40, 05:40) produce a `wakeAt`
+  that keeps sliding later by roughly however far `now` itself moved, never settling - confirming this is not a
+  computeAlarmPlan bug (projecting `now + fallAsleepEstimate` while AWAKE is correct, documented behaviour for
+  a band that IS still reporting) but a consequence of the APP re-feeding stale data into it on every tick,
+  which is exactly the mechanism `shouldKeepPreviousPlan` interrupts. This is the closest this environment's
+  testing constraints (pure functions only, no Robolectric) allow to a true end-to-end regression test for a
+  fix that lives in `runNightTickLocked`, which itself needs a real `Context` to unit test directly.
+- Test-count discrepancies noted throughout this session (517 expected vs. slightly higher counts observed a
+  few times) trace to the concurrent UI-review agent's own commits landing test files on `ui/` in between my
+  own runs - never anything under `night/` or `engine/`, confirmed by `git status` before every commit in this
+  session.

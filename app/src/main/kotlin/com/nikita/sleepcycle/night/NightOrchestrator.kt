@@ -163,10 +163,28 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     val simulatedEvents = if (state.debugOptions.simulatedBandData) readSimulatedSleepEvents(context).first() else emptyList()
     val outcome = readBandDataForTick(context, state.debugOptions, appSettings, state, simulatedEvents, decisionNow)
 
-    val plan = computeAlarmPlan(
-        outcome.segments, state.settings, decisionNow, state.morningAlarmAt, currentZone(), config,
-        state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt, state.phoneAlarmFiredFor
-    )
+    // J1.5: a dead band (sync failed, or returned only stale data) with a real alarm already armed keeps that
+    // plan untouched rather than re-planning stale segments against this tick's own moving decisionNow - see
+    // shouldKeepPreviousPlan's own doc for the no-deadline-night-never-rings bug this closes.
+    val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor)) {
+        // shouldKeepPreviousPlan only returns true when previousPlan?.wakeAt is non-null, so state.lastPlan
+        // itself is guaranteed non-null here too.
+        val keptPlan = checkNotNull(state.lastPlan)
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                decisionNow, "dead_band_keep_plan",
+                mapOf("cause" to "sync not ok and the previous plan already has a real alarm armed - keeping it rather than re-planning stale data", "wakeAt" to keptPlan.wakeAt.toString())
+            ),
+            state.debugOptions.isAnyEnabled
+        )
+        keptPlan
+    } else {
+        computeAlarmPlan(
+            outcome.segments, state.settings, decisionNow, state.morningAlarmAt, currentZone(), config,
+            state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt, state.phoneAlarmFiredFor
+        )
+    }
     logDataAndPlan(context, state, outcome, plan, decisionNow)
 
     val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, config, decisionNow)
@@ -354,6 +372,42 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
             }
         }
     }
+
+/**
+ * J1.5 (owner-reported, 2026-09-21): whether this tick should skip re-planning entirely and keep
+ * [previousPlan] unchanged, rather than feeding [outcome]'s own (possibly long-stale) segments through
+ * computeAlarmPlan again against this tick's own moving `now`.
+ *
+ * True exactly when the sync did not succeed ([SyncOutcome.syncOk] false - a failed sync or one that returned
+ * only stale data, [resolveSyncOutcome]'s own two cases) AND [previousPlan] already carries a real armed alarm
+ * ([AlarmPlan.wakeAt] non-null). The dead band this guards against: on a night with NO deadline, if the band
+ * dies while the owner is marked AWAKE (before ever falling properly asleep, or having woken mid-night),
+ * [outcome.segments] keeps being the SAME stale AWAKE-ending picture on every tick, and the engine's own
+ * `findReferenceOnset` has no choice but to project a fresh onset at `now + fallAsleepEstimate` from THAT
+ * tick's own `now` - which, because `now` keeps moving forward tick after tick while the segments never do,
+ * projects a LATER onset (and so a later `wakeAt`) every single time. The alarm never settles on a fixed
+ * instant and so never actually rings - the night silently never ends. A deadline would have capped this (the
+ * plan degrades to DEADLINE_ONLY, then FINISHED, once `now` approaches it), which is exactly why only the
+ * no-deadline night is exposed.
+ *
+ * Keeping [previousPlan] untouched instead means the LAST GENUINELY COMPUTED alarm - the last one built from
+ * data the band actually reported - stays armed and rings at its own fixed time, exactly as if the band had
+ * simply gone silent for the rest of the night (which, from the alarm's point of view, is exactly what
+ * happened). [previousPlan] with a null `wakeAt` (FINISHED, or a NAP plan that already used its own alarm) is
+ * NOT covered here - false in that case, and the caller re-plans normally, since there is no real alarm to
+ * protect by freezing the plan, and the usual engine logic (D4's nudge, D5/G8's naps) still needs a chance to
+ * run from fresh (if stale) data.
+ *
+ * [phoneAlarmFiredFor] also ends the freeze once [previousPlan]'s own `wakeAt` matches it: PhoneAlarmReceiver
+ * fires independently of whether ticks are stuck re-using a frozen plan (D1/D4's own nudge is armed directly
+ * at fire time, not from a tick's own plan), so once the protected alarm has actually rung there is nothing
+ * left here to protect - freezing further would only mean logging the same already-fired instant forever
+ * instead of ever trying fresh data again, however unlikely fresh data is to arrive from a genuinely dead band.
+ */
+internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?): Boolean {
+    val wakeAt = previousPlan?.wakeAt ?: return false
+    return !outcome.syncOk && wakeAt != phoneAlarmFiredFor
+}
 
 /**
  * Always (re)schedules the phone alarm when the plan has one, so a scheduling failure is retried on every
