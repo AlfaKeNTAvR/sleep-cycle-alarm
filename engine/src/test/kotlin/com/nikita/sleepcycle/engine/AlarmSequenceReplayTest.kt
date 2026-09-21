@@ -156,6 +156,15 @@ class AlarmSequenceReplayTest {
     // to cover a nap without first re-scoping the assertion to "never moves later than the first target for the
     // SAME plan mode" would be a false failure, not a caught regression - do not weaken the assertion to make
     // that pass; re-scope it instead. ------------------------------------------------------------------------
+    //
+    // Item 5 (reviewer note, 2026-09-21): only offsets 30/60/90 below were actually shown, by hand, to fail
+    // without J1.1 (the "confirmed the arithmetic" sentence above) - those three sit inside or right at the
+    // edge of minAlarmLead (2 min) and so land the start-night tick's own lattice close enough to the target for
+    // the pre-J1.1 bug's own pull-forward-too-early window to bite. The remaining offsets (120 through 300) were
+    // never individually confirmed to fail the same way; they exist for broader phase coverage of the SAME
+    // invariant against `nextSyncDelay`'s own 15-minute normal cadence once outside minAlarmLead's window,
+    // not as additional confirmed regression cases - do not read every value in the sweep as equally load-
+    // bearing evidence for the pull-forward rule specifically.
 
     @ParameterizedTest(name = "offset {0}s between startNight and markAsleep")
     @ValueSource(longs = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300])

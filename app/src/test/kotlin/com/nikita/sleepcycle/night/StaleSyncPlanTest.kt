@@ -1,10 +1,20 @@
 package com.nikita.sleepcycle.night
 
 // File purpose: J1.5 - the one pure guard runNightTickLocked uses to decide whether to keep the previous
-// tick's plan untouched instead of re-planning a dead band's own stale segments. See shouldKeepPreviousPlan's
+// tick's plan untouched instead of re-planning stale segments (a genuinely dead band, or merely an export file
+// that has not changed since the last successful sync - see S6/item 5 below). See shouldKeepPreviousPlan's
 // own doc in NightOrchestrator.kt for the no-deadline-night-never-rings bug this closes, and for J2 must-fix
 // 1's own correction (the freeze must not outlive its own alarm time - see the two tests below the halfway
 // marker) of the freeze-forever regression J1.5 itself introduced.
+//
+// Renamed from DeadBandPlanTest (item 5, 2026-09-21): J3 SHOULD FIX 6 renamed this guard's own framing from
+// "dead band" to STALENESS throughout NightOrchestrator.kt (the guard triggers on mere staleness, not only a
+// genuine band fault - see shouldKeepPreviousPlan's own S6 doc), but deliberately left this file's own name
+// untouched at the time as out of scope for that round's budget (see AUTONOMOUS_DECISIONS_09_21_2026.md,
+// "SHOULD FIX 6"). Renamed here since nothing outside this file references the old name by identifier - a
+// clean rename, unlike the broader "dead band" terminology rename that round explicitly declined (which would
+// have cascaded into NightReplay.kt's own mirror and DeadBandDriftTest.kt, a different, legitimate test of the
+// underlying drift bug this guard exists to interrupt, left untouched here too).
 
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
@@ -13,7 +23,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Instant
 
-class DeadBandPlanTest {
+class StaleSyncPlanTest {
     private val wakeAt: Instant = Instant.parse("2026-09-17T06:30:00Z")
     private val armedPlan = AlarmPlan(AlarmMode.FULL_CYCLES, wakeAt, 5, Instant.parse("2026-09-16T23:00:00Z"), false, "r")
     private val finishedPlan = AlarmPlan(AlarmMode.FINISHED, null, 0, null, false, "r")
