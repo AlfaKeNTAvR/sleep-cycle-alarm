@@ -105,14 +105,18 @@ which means a simulated night dies if the app process is killed, unlike a real o
    entry right there. Tap back - the Night screen now shows a real onset, an amber **"Morning alarm"** label
    with the engine's own reason underneath it, and the alarm itself 4.5 h away in virtual time, which at 60x
    is a few real minutes out.
-9. Wait a few seconds, reopen Debug, turn **Asleep** off, wait a few seconds, turn it back on. The picked
-   length is the whole night's budget, so every stretch you "sleep" is subtracted from it: the plan does not
-   start a fresh count from the new onset, it counts only what is still owed. Watch the Night screen's
-   "of sleep" subtitle count down a cycle each round (there is no separate list of candidate wake times any
-   more - the owner asked for it removed as not worth reading at 3am), and the alarm keep landing 4.5 h after
-   you first fell asleep however often you wake.
-10. Keep repeating off / on until the "of sleep" subtitle is down to its last whole cycle and the alarm is
-    only moments out. The next time you turn Asleep back on, less than half a cycle is left of the budget,
+9. Wait about a minute of real time (roughly an hour of virtual sleep at 60x - `resolveEngineConfig` ignores
+   the debug options, so the cycle length stays the real 90 minutes and the owed-cycle count rounds to
+   nearest; a round needs a full virtual hour before the subtitle visibly moves, so "wait a few seconds"
+   shows nothing at all), reopen Debug, turn **Asleep** off, wait about a minute again, turn it back on. The
+   picked length is the whole night's budget, so every stretch you "sleep" is subtracted from it: the plan
+   does not start a fresh count from the new onset, it counts only what is still owed. Watch the Night
+   screen's "of sleep" subtitle count down a cycle each round (there is no separate list of candidate wake
+   times any more - the owner asked for it removed as not worth reading at 3am), and the alarm keep landing
+   4.5 h after you first fell asleep however often you wake.
+10. Keep repeating off / on (about a minute of real time each way) until the "of sleep" subtitle is down to
+    its last whole cycle and the alarm is only moments out. The next time you turn Asleep back on, less than
+    half a cycle is left of the budget,
     nothing whole is owed, and the Night screen switches to the **nap** card: a short 20-minute nap from that
     onset (rule 7), with the mode label now reading **"Nap alarm"**.
     This is the way to reach the nap card on a night with no deadline - using up the total is the only thing
