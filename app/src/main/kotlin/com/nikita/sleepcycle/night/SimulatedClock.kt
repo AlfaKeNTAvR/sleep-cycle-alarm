@@ -30,8 +30,17 @@ import java.time.format.DateTimeFormatter
  */
 data class ClockWarp(val speed: Int, val anchorReal: Instant, val anchorVirtual: Instant)
 
-/** The simulated-clock speed multipliers the Debug screen offers; 1 is real time. */
-val SIMULATION_SPEEDS: List<Int> = listOf(1, 10, 60, 600)
+/**
+ * The simulated-clock speed multipliers the Debug screen offers; 1 is real time.
+ *
+ * W13 (owner request): 10x is gone - it was slow enough to be boring and fast enough to be useless, and each
+ * remaining step reads as a sentence. 60x is a simulated minute per real second, so a real minute is a
+ * simulated hour. 600x is ten simulated minutes per real second, so a whole eight-hour night runs in about 48
+ * real seconds. 600x is also the practical ceiling: TickScheduling's own [IN_PROCESS_TICK_MIN_DELAY] floor is
+ * 250 ms, and the engine's shortest sync gap is 5 simulated minutes, which at 600x is exactly 500 real ms - go
+ * much faster and that floor starts binding, and the clock quietly stops keeping the speed it advertises.
+ */
+val SIMULATION_SPEEDS: List<Int> = listOf(1, 60, 600)
 
 /**
  * The current virtual instant, given the real wall-clock instant [realNow] - identity when [warp] is null.
