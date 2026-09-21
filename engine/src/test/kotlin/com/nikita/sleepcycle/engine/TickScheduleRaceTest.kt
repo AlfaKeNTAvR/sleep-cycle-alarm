@@ -241,6 +241,25 @@ class TickScheduleRaceTest {
         assertNotNull(replay.pendingNudgeAt, replay.trace())
     }
 
+    @Test fun `J5 delivery replay - a late-delivered alarm arms its nudge from when it was delivered, not from what it was armed for`() {
+        // The harness fidelity bug (reviewer-reported, 2026-09-21, NightReplay.fireAlarm's own J5 doc): this
+        // harness measured the nudge from the instant the alarm was ARMED for, while PhoneAlarmReceiver
+        // measures it from the receiver's own `now` - the instant the intent actually arrived. Pre-J5 the two
+        // disagreed by exactly the delivery lateness, silently, on every night this harness has ever replayed.
+        val replay = nightOwnerTraced()
+
+        // The 06:30 wake alarm is delivered two minutes late, as Doze or an alarm-manager backlog can do.
+        replay.advanceTo("2026-09-21T07:00:00", alarmDelivery = Duration.ofMinutes(2))
+
+        // Attribution is unaffected by lateness, on both sides: PhoneAlarmReceiver reads the armed-for instant
+        // off the intent's own extra, never the delivery time (J2 must-fix 2).
+        assertEquals(listOf(instant("2026-09-21T06:30:00")), replay.firings.map { it.firedFor }, replay.trace())
+        assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
+
+        // The assertion that fails without the fix: 06:47, not 06:45. Delivered 06:32 plus outOfBedDelay.
+        assertEquals(instant("2026-09-21T06:47:00"), replay.pendingNudgeAt, replay.trace())
+    }
+
     @Test fun `J1_1 replay - waking 4 minutes before the alarm and opening the app 90 s before it still rings correctly, once, attributed to the wake alarm`() {
         // NAMING NOTE, checked by hand: this pins J1.1 alone, not J1.2. It was originally meant to also exercise
         // J1.2's own window widening in firedAlarmIsWakeAlarm (since the firing here is NAP-mode, not

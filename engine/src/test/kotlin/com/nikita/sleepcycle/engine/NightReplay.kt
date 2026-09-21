@@ -50,6 +50,32 @@ import java.time.Instant
  * This harness already mirrors [shouldKeepPreviousPlan] (added here for the first time this round, see its
  * own doc below), [armPhoneAlarmIfNeeded], [firedAlarmIsWakeAlarm] and [latchMorningAlarmAt], so the
  * duplication objection is spent - the last several rounds each had to edit these mirrors in lockstep anyway.
+ *
+ * WHAT THIS HARNESS DOES NOT MODEL (J5, reviewer-reported, 2026-09-21). Written down so nobody reads a green
+ * suite here as more assurance than it is. Every item below is a KNOWN, deliberate gap, not a bug to fix in
+ * passing; each one is a state or an interleaving this harness cannot express at all, so no test written
+ * against it can ever challenge behaviour that depends on one.
+ *
+ *  - ARMING ALWAYS SUCCEEDS. [armPhoneAlarmIfNeeded] here has no failure path: there is no failed arm, no
+ *    revoked exact-alarm permission, and no failed fired-marker read. That is exactly the state needed to
+ *    challenge J4's own reverted stale-re-arm guard (see the J5 record in NightOrchestrator.kt), which is why
+ *    that guard's counterexamples had to be traced by hand rather than replayed here.
+ *  - FIRING IS ATOMIC. [fireAlarm] does the firing, the fired-marker write, attribution and the nudge creation
+ *    in one indivisible step. In production those are four separately observable steps on a different thread,
+ *    and a tick's own commit can interleave between any two of them - the whole J3/J4/J5 nudge family lives in
+ *    exactly those gaps.
+ *  - THE NUDGE IS NEVER DISPATCHED. [pendingNudgeAt] records that a nudge exists and when, but no nudge ever
+ *    rings here, and its H7.3 pre-check (OutOfBedPreNudgeCheck.kt, with its own re-sync and fail-open rule)
+ *    never runs at all. A test here can say a nudge was armed or cancelled, never what it did.
+ *  - BATTERY LOSS DOES NOT REBOOT. [batteryDies] drops the armed alarm and the tick schedule, and a later
+ *    [openApp] resumes from there - `BootReceiver.handleBoot` never runs, so nothing here exercises boot
+ *    restoration, including J5's own overdue-nudge restore.
+ *  - SYNC FAILURE IS A BOOLEAN. `syncFails` collapses `resolveSyncOutcome`'s real freshness classification (an
+ *    outright failure, a success carrying only stale samples, an export file that did not advance) into one
+ *    flag. The guard it feeds cannot tell the three apart here, though the UI and the night log do.
+ *  - INSTANTS KEEP FULL PRECISION. Everything here stays a [java.time.Instant]; production round-trips through
+ *    epoch MILLISECONDS (the alarm intent's own extra, the persisted instant files), so sub-millisecond
+ *    differences this harness can represent do not survive the real path.
  */
 internal class NightReplay(
     private val setting: NightSettings,
@@ -156,9 +182,22 @@ internal class NightReplay(
         nextTickAt = null
     }
 
-    /** Runs every tick and every alarm firing due up to and including [at]. [syncDuration] and [syncFails] apply to any SCHEDULED tick that becomes due during this call - see the class doc. */
-    fun advanceTo(at: String, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false) {
-        advanceTo(instant(at), syncDuration, syncFails)
+    /**
+     * Runs every tick and every alarm firing due up to and including [at]. [syncDuration] and [syncFails] apply
+     * to any SCHEDULED tick that becomes due during this call - see the class doc.
+     *
+     * J5 (reviewer note, 2026-09-21) ADDS [alarmDelivery]: how much later than its own armed-for instant an
+     * alarm firing during this call is actually DELIVERED to the receiver. Zero by default, which is how every
+     * test before J5 ran and still runs. It exists because production and this harness used to disagree about
+     * one observable: production's nudge is armed at the RECEIVER's own current time plus `outOfBedDelay`
+     * (PhoneAlarmReceiver.armOutOfBedNudge takes `now`, sampled when the intent actually arrives), while this
+     * harness armed it from the instant the alarm was armed FOR - so a 06:30 alarm delivered at 06:32 meant a
+     * 06:45 nudge here and a 06:47 nudge on the phone. Attribution is deliberately NOT affected by lateness, on
+     * either side: production reads `EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI`, the armed-for instant carried on
+     * the intent, never the delivery time (see NightOrchestrator.firedAlarmIsWakeAlarm's own J2 must-fix 2 doc).
+     */
+    fun advanceTo(at: String, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false, alarmDelivery: Duration = Duration.ZERO) {
+        advanceTo(instant(at), syncDuration, syncFails, alarmDelivery)
     }
 
     /**
@@ -193,17 +232,21 @@ internal class NightReplay(
         marks.add(SleepMark(asleep, markAt))
     }
 
-    private fun advanceTo(at: Instant, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false) {
+    private fun advanceTo(at: Instant, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false, alarmDelivery: Duration = Duration.ZERO) {
         while (true) {
             // Ties (a pending tick's own commit landing at the exact instant an armed alarm fires) resolve
             // commit-first, deterministically - see the class doc's own note on what that is built to express.
             val dueCommit = pendingTick?.commitAt?.takeIf { !it.isAfter(at) }
-            val dueFire = armedAlarmAt?.takeIf { !it.isAfter(at) }
+            // J5: an alarm becomes due at its armed-for instant plus [alarmDelivery], and [fireAlarm] is handed
+            // BOTH instants - the one it was armed for (what attribution keys on) and the one it was actually
+            // delivered at (what the nudge is measured from), matching production.
+            val armedFor = armedAlarmAt
+            val dueFire = armedFor?.plus(alarmDelivery)?.takeIf { !it.isAfter(at) }
             val dueTick = nextTickAt?.takeIf { !it.isAfter(at) }
             val due = listOfNotNull(dueCommit, dueFire, dueTick).minOrNull() ?: return
             when (due) {
                 dueCommit -> commitPendingTick()
-                dueFire -> fireAlarm(due)
+                dueFire -> fireAlarm(checkNotNull(armedFor), due)
                 else -> runTick(due, syncDuration, syncFails)
             }
         }
@@ -328,19 +371,27 @@ internal class NightReplay(
      * reach via a mismatched commit racing a firing, even though none of the regression tests below need it).
      * D4: every firing arms a fresh out-of-bed nudge unconditionally, [config.outOfBedDelay] later - overwriting
      * whatever was pending before, nap or not.
+     *
+     * J5 (reviewer note, 2026-09-21) SPLITS the one instant this used to take into two, correcting a real
+     * fidelity bug. [firedFor] is the instant the alarm was ARMED for, which is what every piece of
+     * PhoneAlarmReceiver's own bookkeeping keys on (it reads `EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI`, carried on
+     * the intent since the moment it was armed, never the delivery time). [deliveredAt] is when the receiver
+     * actually ran, and the nudge is measured from THAT, matching `armOutOfBedNudge(context, state, now)`. The
+     * two are equal unless a caller passes `alarmDelivery`; before this they were equal by construction, so a
+     * 06:30 alarm delivered at 06:32 armed its nudge for 06:45 here and 06:47 on the phone.
      */
-    private fun fireAlarm(at: Instant) {
+    private fun fireAlarm(firedFor: Instant, deliveredAt: Instant) {
         armedAlarmAt = null
-        phoneAlarmFiredFor = at
-        pendingNudgeAt = at.plus(config.outOfBedDelay)
-        val firedPlan = lastPlan?.takeIf { it.wakeAt == at }
-        firings.add(Firing(at, firedPlan?.mode))
+        phoneAlarmFiredFor = firedFor
+        pendingNudgeAt = deliveredAt.plus(config.outOfBedDelay)
+        val firedPlan = lastPlan?.takeIf { it.wakeAt == firedFor }
+        firings.add(Firing(firedFor, firedPlan?.mode))
         if (firedPlan == null) return
-        if (firedAlarmIsWakeAlarm(firedPlan.mode, at, morningAlarmAt)) {
-            wakeAlarmFiredAt = at
+        if (firedAlarmIsWakeAlarm(firedPlan.mode, firedFor, morningAlarmAt)) {
+            wakeAlarmFiredAt = firedFor
         } else {
             napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
-            lastNapAlarmFiredAt = at
+            lastNapAlarmFiredAt = firedFor
         }
     }
 
