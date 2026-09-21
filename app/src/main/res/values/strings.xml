@@ -134,6 +134,15 @@
     <string name="past_night_no_summary">No summary was recorded for this night: it was never ended in the app.</string>
 
     <!-- Alarm notification -->
+    <!-- W18 (owner request): four different rings reach the same screen, so each one says its own name. -->
+    <string name="alarm_label_morning">Morning alarm</string>
+    <string name="alarm_label_nap">Nap alarm</string>
+    <string name="alarm_label_out_of_bed">Out-of-bed nudge</string>
+    <string name="alarm_label_test">Test ring</string>
+    <string name="alarm_instruction_wake">Wake up</string>
+    <string name="alarm_action_stop">Stop</string>
+    <string name="alarm_action_im_awake">I\'m awake</string>
+    <string name="alarm_instruction_out_of_bed">Time to get up</string>
     <string name="alarm_notification_title">Wake up</string>
     <string name="alarm_notification_text">Sleep cycle alarm</string>
     <string name="alarm_notification_stop_action">Stop</string>

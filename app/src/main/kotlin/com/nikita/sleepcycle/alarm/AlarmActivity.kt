@@ -39,15 +39,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.night.endNight
 import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import kotlinx.coroutines.launch
 
 class AlarmActivity : ComponentActivity() {
-    private var isOutOfBed by mutableStateOf(false)
+    /**
+     * W18: which ring this is, in words, so a 03:40 ring is not a guess between the nap alarm, the morning
+     * alarm and a leftover debug test. It replaces the bare `isOutOfBed` flag this screen used to hold:
+     * [readAlarmLabel] falls back to that same flag, so nothing is lost for an intent from an older build.
+     */
+    private var label by mutableStateOf(AlarmLabel.MORNING)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,17 +66,17 @@ class AlarmActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        isOutOfBed = intent?.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false) ?: false
+        label = intent.readAlarmLabel()
         setContent {
-            AlarmStopScreen(isOutOfBed = isOutOfBed, onStop = ::stopOnly, onImAwake = ::confirmAwakeAndFinish)
+            AlarmStopScreen(label = label, onStop = ::stopOnly, onImAwake = ::confirmAwakeAndFinish)
         }
     }
 
-    /** F10: re-reads EXTRA_ALARM_IS_OUT_OF_BED_NUDGE for a new firing delivered to this same singleInstance activity, so the wording never goes stale when the nudge arrives while the wake screen (or a previous nudge screen) is still on top. [isOutOfBed] is Compose state, so the running screen recomposes with the new wording immediately - no new setContent call needed. */
+    /** F10: re-reads the firing intent's own label for a new firing delivered to this same singleInstance activity, so the wording never goes stale when the nudge arrives while the wake screen (or a previous nudge screen) is still on top. [label] is Compose state, so the running screen recomposes with the new wording immediately - no new setContent call needed. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        isOutOfBed = intent.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false)
+        label = intent.readAlarmLabel()
     }
 
     private fun showOverLockScreen() {
@@ -106,11 +113,15 @@ class AlarmActivity : ComponentActivity() {
 
 /**
  * The alarm's ring screen, kept full-bleed like every other screen but clearing the status bar, navigation
- * bar and display cutout the same way, via the shared [ScreenContainer]. [isOutOfBed] (D4) only changes the
- * title; both actions behave the same either way (D6).
+ * bar and display cutout the same way, via the shared [ScreenContainer]. [label] (W18) names the ring and
+ * chooses the headline; both actions behave the same for every real alarm (D6).
+ *
+ * W18: the one exception is the debug test ring, which never touches night state by design (PhoneAlarmReceiver
+ * loads none for a test) - so "I'm awake", which ends the night, is not offered there. Tapping it during a
+ * daylight ring test would have ended a night that was genuinely running in the background.
  */
 @Composable
-private fun AlarmStopScreen(isOutOfBed: Boolean, onStop: () -> Unit, onImAwake: () -> Unit) {
+private fun AlarmStopScreen(label: AlarmLabel, onStop: () -> Unit, onImAwake: () -> Unit) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         ScreenContainer(scrollable = false) {
             Column(
@@ -118,12 +129,15 @@ private fun AlarmStopScreen(isOutOfBed: Boolean, onStop: () -> Unit, onImAwake: 
                 verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = if (isOutOfBed) "Time to get up" else "Wake up", style = MaterialTheme.typography.headlineLarge)
+                Text(text = stringResource(alarmLabelNameRes(label)), style = MaterialTheme.typography.titleMedium)
+                Text(text = stringResource(alarmLabelInstructionRes(label)), style = MaterialTheme.typography.headlineLarge)
                 Button(onClick = onStop) {
-                    Text(text = "Stop")
+                    Text(text = stringResource(R.string.alarm_action_stop))
                 }
-                Button(onClick = onImAwake) {
-                    Text(text = "I'm awake")
+                if (label != AlarmLabel.TEST) {
+                    Button(onClick = onImAwake) {
+                        Text(text = stringResource(R.string.alarm_action_im_awake))
+                    }
                 }
             }
         }

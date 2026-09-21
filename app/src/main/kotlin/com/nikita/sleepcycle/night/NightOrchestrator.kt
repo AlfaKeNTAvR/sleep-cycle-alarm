@@ -10,6 +10,7 @@ import android.content.Context
 import android.util.Log
 import com.nikita.sleepcycle.alarm.cancelOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.cancelPhoneAlarm
+import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
@@ -277,7 +278,7 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         )
         return
     }
-    val armed = schedulePhoneAlarm(context, wakeAt)
+    val armed = schedulePhoneAlarm(context, wakeAt, alarmLabelFor(plan.mode))
     val changed = wakeAt != previousPlan?.wakeAt
     val event = when {
         !armed -> NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "exact alarm permission was likely revoked, will retry next tick"))

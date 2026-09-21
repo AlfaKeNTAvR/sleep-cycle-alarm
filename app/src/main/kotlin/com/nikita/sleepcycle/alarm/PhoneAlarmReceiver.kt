@@ -65,6 +65,8 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val isTest = intent.getBooleanExtra(EXTRA_ALARM_IS_TEST, false)
         val isOutOfBed = intent.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false)
+        // W18: wording only, carried forward to whatever ends up showing the ring - see AlarmLabel.kt.
+        val label = intent.readAlarmLabel()
         val state = if (isTest) null else loadNightState(context)
         val ringAutoStopAfter = resolveEngineConfig(state?.debugOptions ?: DebugOptions()).ringAutoStopAfter
         acquireAlarmWakeLock(context, ringAutoStopAfter)
@@ -88,10 +90,11 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             context.startForegroundService(
                 Intent(context, AlarmRingService::class.java)
                     .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
+                    .putExtra(EXTRA_ALARM_LABEL, label.name)
                     .putExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, ringAutoStopAfter.toMillis())
             )
         } catch (error: Exception) {
-            handleServiceStartFailure(context, state, isOutOfBed, error)
+            handleServiceStartFailure(context, state, isOutOfBed, label, error)
         }
     }
 
@@ -231,7 +234,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
     }
 
     /** startForegroundService can be refused outright (background-start restrictions); the alarm must still be reachable. */
-    private fun handleServiceStartFailure(context: Context, state: NightState?, isOutOfBed: Boolean, error: Exception) {
+    private fun handleServiceStartFailure(context: Context, state: NightState?, isOutOfBed: Boolean, label: AlarmLabel, error: Exception) {
         if (state != null) {
             appendNightLog(
                 context, state.startedAt,
@@ -240,11 +243,12 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             )
         }
         releaseAlarmWakeLock()
-        postAlarmNotificationDirectly(context, isOutOfBed)
+        postAlarmNotificationDirectly(context, isOutOfBed, label)
         context.startActivity(
             Intent(context, AlarmActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
+                .putExtra(EXTRA_ALARM_LABEL, label.name)
         )
     }
 }

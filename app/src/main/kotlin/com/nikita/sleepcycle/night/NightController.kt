@@ -12,6 +12,7 @@ import com.nikita.sleepcycle.alarm.ALARM_STOP_REASON_NIGHT_ENDED
 import com.nikita.sleepcycle.alarm.cancelOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.cancelPhoneAlarm
 import com.nikita.sleepcycle.alarm.readAlarmNotificationReadiness
+import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.stopAlarmRinging
@@ -100,7 +101,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
             // D1: the same guard used every tick and after a reboot - degenerate but possible with a deadline
             // already at or before "now" (a deadline always drives the phone alarm, in every mode).
             if (shouldArmPhoneAlarm(initialPlan.wakeAt, now, phoneAlarmFiredFor = null)) {
-                schedulePhoneAlarm(context, requireNotNull(initialPlan.wakeAt))
+                schedulePhoneAlarm(context, requireNotNull(initialPlan.wakeAt), alarmLabelFor(initialPlan.mode))
             }
             if (!saveNightState(context, state)) {
                 appendNightLog(context, now, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to save the initial night state")), debugOptions.isAnyEnabled)

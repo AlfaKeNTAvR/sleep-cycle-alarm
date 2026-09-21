@@ -46,8 +46,8 @@ const val EXTRA_ALARM_IS_OUT_OF_BED_NUDGE = "isOutOfBedNudge"
  * it from Settings, so the call is guarded rather than assumed to always succeed (lint's MissingPermission
  * check does not know about `USE_EXACT_ALARM`, hence the suppression on [armAlarmClockAlarm] below).
  */
-fun schedulePhoneAlarm(context: Context, at: Instant): Boolean =
-    scheduleAlarmClockAlarm(context, at, PHONE_ALARM_REQUEST_CODE, isOutOfBed = false)
+fun schedulePhoneAlarm(context: Context, at: Instant, label: AlarmLabel): Boolean =
+    scheduleAlarmClockAlarm(context, at, PHONE_ALARM_REQUEST_CODE, isOutOfBed = false, label = label)
 
 /**
  * D4: arms the out-of-bed nudge for the virtual instant [at] (`firedAt + EngineConfig.outOfBedDelay`), called
@@ -56,7 +56,7 @@ fun schedulePhoneAlarm(context: Context, at: Instant): Boolean =
  * replace either one.
  */
 fun scheduleOutOfBedAlarm(context: Context, at: Instant): Boolean =
-    scheduleAlarmClockAlarm(context, at, PHONE_ALARM_OUT_OF_BED_REQUEST_CODE, isOutOfBed = true)
+    scheduleAlarmClockAlarm(context, at, PHONE_ALARM_OUT_OF_BED_REQUEST_CODE, isOutOfBed = true, label = AlarmLabel.OUT_OF_BED)
 
 /**
  * T8: arms the Debug screen's daylight test alarm for the REAL instant [at] (D1) - a caller-computed
@@ -66,11 +66,11 @@ fun scheduleOutOfBedAlarm(context: Context, at: Instant): Boolean =
  * its broadcast intent as a test so [PhoneAlarmReceiver] never touches night state for it.
  */
 fun scheduleTestPhoneAlarm(context: Context, at: Instant): Boolean =
-    armAlarmClockAlarm(context, alarmManagerAt = at, intentAt = at, PHONE_ALARM_TEST_REQUEST_CODE, isTest = true, isOutOfBed = false)
+    armAlarmClockAlarm(context, alarmManagerAt = at, intentAt = at, PHONE_ALARM_TEST_REQUEST_CODE, isTest = true, isOutOfBed = false, label = AlarmLabel.TEST)
 
 /** T5: [at] is virtual - converted through [AppClock.toRealInstant] for AlarmManager itself, while the broadcast intent (built by [armAlarmClockAlarm]) keeps [at] unconverted. */
-private fun scheduleAlarmClockAlarm(context: Context, at: Instant, requestCode: Int, isOutOfBed: Boolean): Boolean =
-    armAlarmClockAlarm(context, alarmManagerAt = AppClock.toRealInstant(at), intentAt = at, requestCode, isTest = false, isOutOfBed)
+private fun scheduleAlarmClockAlarm(context: Context, at: Instant, requestCode: Int, isOutOfBed: Boolean, label: AlarmLabel): Boolean =
+    armAlarmClockAlarm(context, alarmManagerAt = AppClock.toRealInstant(at), intentAt = at, requestCode, isTest = false, isOutOfBed, label)
 
 /**
  * The one place that actually calls [AlarmManager.setAlarmClock]. [alarmManagerAt] is what AlarmManager
@@ -78,15 +78,18 @@ private fun scheduleAlarmClockAlarm(context: Context, at: Instant, requestCode: 
  * extra carries (real for the test alarm, virtual for the phone alarm and the out-of-bed nudge).
  */
 @SuppressLint("MissingPermission")
-private fun armAlarmClockAlarm(context: Context, alarmManagerAt: Instant, intentAt: Instant, requestCode: Int, isTest: Boolean, isOutOfBed: Boolean): Boolean {
+private fun armAlarmClockAlarm(context: Context, alarmManagerAt: Instant, intentAt: Instant, requestCode: Int, isTest: Boolean, isOutOfBed: Boolean, label: AlarmLabel): Boolean {
     val alarmManager = context.getSystemService<AlarmManager>() ?: return false
     val showIntent = PendingIntent.getActivity(
-        context, requestCode, Intent(context, AlarmActivity::class.java).putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed),
+        context, requestCode,
+        Intent(context, AlarmActivity::class.java)
+            .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
+            .putExtra(EXTRA_ALARM_LABEL, label.name),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
     val info = AlarmManager.AlarmClockInfo(alarmManagerAt.toEpochMilli(), showIntent)
     return try {
-        alarmManager.setAlarmClock(info, phoneAlarmPendingIntent(context, requestCode, intentAt, isTest, isOutOfBed))
+        alarmManager.setAlarmClock(info, phoneAlarmPendingIntent(context, requestCode, intentAt, isTest, isOutOfBed, label))
         true
     } catch (error: SecurityException) {
         Log.e(LOG_TAG, "cannot set the phone alarm: exact alarm permission was likely revoked", error)
@@ -97,20 +100,21 @@ private fun armAlarmClockAlarm(context: Context, alarmManagerAt: Instant, intent
 /** Cancels the phone's real wake-up alarm, if one is armed. Never touches the test alarm's or the out-of-bed nudge's separate request codes. */
 fun cancelPhoneAlarm(context: Context) {
     val alarmManager = context.getSystemService<AlarmManager>() ?: return
-    alarmManager.cancel(phoneAlarmPendingIntent(context, PHONE_ALARM_REQUEST_CODE, at = Instant.EPOCH, isTest = false, isOutOfBed = false))
+    alarmManager.cancel(phoneAlarmPendingIntent(context, PHONE_ALARM_REQUEST_CODE, at = Instant.EPOCH, isTest = false, isOutOfBed = false, label = AlarmLabel.MORNING))
 }
 
 /** D4: cancels the out-of-bed nudge, if one is armed - called only when the night ends (NightController.endNight), never on its own. */
 fun cancelOutOfBedAlarm(context: Context) {
     val alarmManager = context.getSystemService<AlarmManager>() ?: return
-    alarmManager.cancel(phoneAlarmPendingIntent(context, PHONE_ALARM_OUT_OF_BED_REQUEST_CODE, at = Instant.EPOCH, isTest = false, isOutOfBed = true))
+    alarmManager.cancel(phoneAlarmPendingIntent(context, PHONE_ALARM_OUT_OF_BED_REQUEST_CODE, at = Instant.EPOCH, isTest = false, isOutOfBed = true, label = AlarmLabel.OUT_OF_BED))
 }
 
-/** [at], [isTest] and [isOutOfBed] only matter for what the firing intent will carry - PendingIntent identity/matching is by [requestCode] and the intent's action/component alone, never its extras. */
-private fun phoneAlarmPendingIntent(context: Context, requestCode: Int, at: Instant, isTest: Boolean, isOutOfBed: Boolean): PendingIntent {
+/** [at], [isTest], [isOutOfBed] and [label] only matter for what the firing intent will carry - PendingIntent identity/matching is by [requestCode] and the intent's action/component alone, never its extras. */
+private fun phoneAlarmPendingIntent(context: Context, requestCode: Int, at: Instant, isTest: Boolean, isOutOfBed: Boolean, label: AlarmLabel): PendingIntent {
     val intent = Intent(context, PhoneAlarmReceiver::class.java)
         .putExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, at.toEpochMilli())
         .putExtra(EXTRA_ALARM_IS_TEST, isTest)
         .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
+        .putExtra(EXTRA_ALARM_LABEL, label.name)
     return PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 }

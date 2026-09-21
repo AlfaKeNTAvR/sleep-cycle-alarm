@@ -7,6 +7,7 @@ package com.nikita.sleepcycle.night
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import kotlinx.coroutines.CoroutineScope
@@ -69,7 +70,7 @@ class BootReceiver : BroadcastReceiver() {
         // T4: virtual - compared against plan.wakeAt, which is night state.
         val now = nowInstant()
         if (plan != null && shouldArmPhoneAlarm(plan.wakeAt, now, nonNullState.phoneAlarmFiredFor)) {
-            schedulePhoneAlarm(context, requireNotNull(plan.wakeAt))
+            schedulePhoneAlarm(context, requireNotNull(plan.wakeAt), alarmLabelFor(plan.mode))
         }
         startServiceForTickSafely(context, nonNullState)
     }

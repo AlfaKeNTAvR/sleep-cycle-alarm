@@ -103,7 +103,7 @@ class AlarmRingService : Service() {
         // notification's and AlarmActivity's wording; sound, vibration and every stop path are identical either way.
         val isOutOfBed = intent?.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false) ?: false
         val autoStopAfterMillis = intent?.getLongExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, AUTO_STOP_AFTER.toMillis()) ?: AUTO_STOP_AFTER.toMillis()
-        startForeground(NOTIFICATION_ID, buildAlarmNotification(this, isOutOfBed))
+        startForeground(NOTIFICATION_ID, buildAlarmNotification(this, isOutOfBed, intent.readAlarmLabel()))
         startRinging(Duration.ofMillis(autoStopAfterMillis))
         return START_NOT_STICKY
     }
@@ -235,10 +235,11 @@ private fun stopVibration(context: Context) {
  * nudge reads as "time to get up" rather than the wake alarm's own text - the Stop action still only stops
  * the sound (D6), it never ends the night, whichever alarm this is.
  */
-fun buildAlarmNotification(context: Context, isOutOfBed: Boolean = false): Notification {
+fun buildAlarmNotification(context: Context, isOutOfBed: Boolean = false, label: AlarmLabel = AlarmLabel.MORNING): Notification {
     val activityIntent = Intent(context, AlarmActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
+        .putExtra(EXTRA_ALARM_LABEL, label.name)
     val activityPendingIntent = PendingIntent.getActivity(
         context, ALARM_ACTIVITY_REQUEST_CODE, activityIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -247,11 +248,11 @@ fun buildAlarmNotification(context: Context, isOutOfBed: Boolean = false): Notif
         context, ALARM_STOP_REQUEST_CODE, Intent(context, AlarmRingService::class.java).setAction(ACTION_STOP),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
-    val titleRes = if (isOutOfBed) R.string.alarm_notification_out_of_bed_title else R.string.alarm_notification_title
-    val textRes = if (isOutOfBed) R.string.alarm_notification_out_of_bed_text else R.string.alarm_notification_text
+    // W18: the title names the ring ("Nap alarm"), the text says what it wants ("Wake up") - the notification
+    // used to carry only the latter, so two different alarms an hour apart were indistinguishable in the shade.
     return NotificationCompat.Builder(context, ALARM_NOTIFICATION_CHANNEL_ID)
-        .setContentTitle(context.getString(titleRes))
-        .setContentText(context.getString(textRes))
+        .setContentTitle(context.getString(alarmLabelNameRes(label)))
+        .setContentText(context.getString(alarmLabelInstructionRes(label)))
         .setSmallIcon(R.mipmap.ic_launcher)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -272,8 +273,8 @@ fun createNotificationChannel(context: Context) {
 }
 
 /** Posts the alarm notification directly, without going through [AlarmRingService] - the fallback PhoneAlarmReceiver uses when it cannot start the service at all. */
-fun postAlarmNotificationDirectly(context: Context, isOutOfBed: Boolean = false) {
+fun postAlarmNotificationDirectly(context: Context, isOutOfBed: Boolean = false, label: AlarmLabel = AlarmLabel.MORNING) {
     createNotificationChannel(context)
     val manager = context.getSystemService<NotificationManager>() ?: return
-    manager.notify(NOTIFICATION_ID, buildAlarmNotification(context, isOutOfBed))
+    manager.notify(NOTIFICATION_ID, buildAlarmNotification(context, isOutOfBed, label))
 }
