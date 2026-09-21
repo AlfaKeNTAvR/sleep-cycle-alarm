@@ -68,8 +68,10 @@ import java.time.Instant
  *    here, "THE NUDGE IS NEVER DISPATCHED": a pending nudge now actually FIRES in [advanceTo], recorded in
  *    [nudgeFirings], and arms the next one exactly as PhoneAlarmReceiver does, which is what lets a test say
  *    anything at all about the repeating chain. What is still missing is its H7.3 pre-check
- *    (OutOfBedPreNudgeCheck.kt, with its own re-sync and fail-open rule), which never runs here - so a test
- *    can say a nudge rang, never that a genuinely-asleep owner's nudge was cancelled two minutes before it.
+ *    (OutOfBedPreNudgeCheck.kt, its own fail-open rule, and - M1, owner-reported, 2026-09-21 - its
+ *    "another alarm actually armed and still ahead" test against `lastPlan`/`phoneAlarmFiredFor`), which never
+ *    runs here - so a test can say a nudge rang, never that a still-covered owner's nudge was cancelled two
+ *    minutes before it because something else had genuinely taken over.
  *  - THE NUDGE CHAIN HAS NO END HERE. Production ends it when the night ends: NightController.endNight, from
  *    "I'm awake" or the app's own end-night action, cancels the nudge, its pre-check and its record. This
  *    harness models neither owner action, and it does not model G1's FINISHED bookkeeping either. L2 (owner
