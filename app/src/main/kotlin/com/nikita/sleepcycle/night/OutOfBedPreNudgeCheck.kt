@@ -52,6 +52,7 @@ import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.alarm.cancelOutOfBedAlarm
 import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.bridge.checkDataFreshness
+import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.engine.detectSleepState
@@ -202,7 +203,7 @@ private suspend fun runPreNudgeCheck(context: Context) {
     val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return
     val appSettings = readAppSettings(context).first()
     val sleepState = readFreshSleepStateOrNull(context, appSettings, state, now)
-    if (!shouldCancelNudgeForPreCheck(sleepState)) {
+    if (!shouldCancelNudgeForPreCheck(sleepState, state.lastPlan?.mode)) {
         appendNightLog(
             context, state.startedAt,
             NightLogEvent(now, "pre_nudge_check", mapOf("outcome" to (sleepState?.name ?: "unknown"), "result" to "rings")),
@@ -265,8 +266,21 @@ internal fun simulatedSleepStateAt(events: List<SimulatedSleepEvent>, now: Insta
  * out, or its result was stale) and [SleepState.AWAKE]/[SleepState.NOT_YET_ASLEEP] all mean the same thing -
  * "not confidently asleep" - and all let the nudge ring, per the owner's own fail-open framing (H7.3): a nudge
  * that did not need to ring is a far smaller harm than one that was needed and never rang.
+ *
+ * L2.2 (owner decision, 2026-09-21) ADDS [mode]: a confirmed-ASLEEP reading must NOT cancel once the night's
+ * own plan is already FINISHED. Before L1 this check only ever ended one nudge, so cancelling on ASLEEP was
+ * unconditionally right; after L1 it ends the WHOLE chain (see PhoneAlarmReceiver.armOutOfBedNudge's own
+ * "EXACTLY THREE THINGS END A CHAIN", item 2), and on a FINISHED night nothing else is left to restart it - no
+ * nap can arm (napSupersedesPendingNudge/rearmNudgeIfNapCancelledWhileAwake both require a plan that still
+ * produces alarms of its own), so cancelling here would leave the night silent with its state still lingering
+ * (L2.1's own deferral), which is worse than L2.1's own "keep ringing" answer. The owner's own reasoning: past
+ * the deadline, "he is confirmed asleep" is the very reason the nudge SHOULD ring - the deadline already said
+ * get up, so being asleep now is the problem, not a reason to stay quiet. `mode` is
+ * nullable only because [NightState.lastPlan] itself is (a night can in principle have no plan yet); a null
+ * `mode` reads correctly here too - only an actual FINISHED plan suppresses the cancel.
  */
-internal fun shouldCancelNudgeForPreCheck(sleepState: SleepState?): Boolean = sleepState == SleepState.ASLEEP
+internal fun shouldCancelNudgeForPreCheck(sleepState: SleepState?, mode: AlarmMode?): Boolean =
+    sleepState == SleepState.ASLEEP && mode != AlarmMode.FINISHED
 
 private fun buildPreNudgeCheckNotification(context: Context) =
     NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)

@@ -13,10 +13,17 @@ package com.nikita.sleepcycle.alarm
 //
 // D4/H7.1: a firing intent also carries EXTRA_ALARM_IS_OUT_OF_BED_NUDGE. The wake alarm AND every D5/G8 nap
 // alarm share the same request code/slot (D1: "one alarm, and it is the phone's"), so whichever of them just
-// fired arms the out-of-bed nudge in turn (15 min later, H7.1) - the nudge itself never re-arms another one
-// (no chaining), and never touches phoneAlarmFiredFor/wakeAlarmFiredAt/napAlarmsUsed/lastNapAlarmFiredAt
+// fired arms the out-of-bed nudge in turn (15 min later, H7.1).
+//
+// L1 (owner decision, 2026-09-21) SUPERSEDES the rule this paragraph used to state here, and again above
+// [PhoneAlarmReceiver.armOutOfBedNudge]: "the nudge itself never re-arms another one (no chaining)". A nudge
+// firing now arms the NEXT nudge, one outOfBedDelay later, exactly as a wake or nap firing already does, so
+// the nudge repeats until the night ends. See armOutOfBedNudge's own L1 doc for the contract, what still ends
+// the chain, and why there is no cap. Unchanged by L1: the nudge's own firing still never touches
+// phoneAlarmFiredFor/wakeAlarmFiredAt/napAlarmsUsed/lastNapAlarmFiredAt
 // (those four are D5/F2/F6/G8/H2's own bookkeeping for the wake/nap alarm that fired, never the nudge's own
-// firing). G4/H5: the nudge's own pending fire instant is persisted separately (OutOfBedNudgeStore.kt) the
+// firing - see [firedAlarmRecordsPlanBookkeeping], the one seam that boundary now lives behind). G4/H5: the
+// nudge's own pending fire instant is persisted separately (OutOfBedNudgeStore.kt) the
 // moment it is armed here, so a reboot or app update in between still restores it (see BootReceiver.handleBoot,
 // independently of whether night state also survived - H5). H5: it is cleared the moment the nudge fires, in
 // onReceive itself rather than here, because that must happen even when night state is already gone (G1's
@@ -61,6 +68,21 @@ import com.nikita.sleepcycle.night.saveWakeAlarmFiredAt
 import com.nikita.sleepcycle.night.schedulePreNudgeCheck
 import java.time.Instant
 
+/**
+ * L1 (owner decision, 2026-09-21): whether a firing does the phone alarm SLOT's own bookkeeping - D1's fired
+ * marker, and F2/F6/G8/H2's wake-versus-nap attribution. True for the wake alarm and for every D5/G8 nap
+ * alarm, false for the out-of-bed nudge, which has its own request code and its own label (D4) and is not a
+ * plan alarm at all.
+ *
+ * This is now the ONLY thing the nudge's own firing is excluded from. Until L1 the same `isOutOfBed` flag
+ * also gated the nudge ARMING that follows it, through one early return in [PhoneAlarmReceiver] covering
+ * both - which is why the nudge rang exactly once per night. Splitting the two is the whole change: the four
+ * fired-alarm facts stay the wake/nap alarm's alone, while every firing, the nudge's included, arms the next
+ * nudge. `internal`, not `private`: the one pure decision seam, JVM-testable directly without a Context
+ * (see OutOfBedNudgeSupersessionTest.kt's own L1 section).
+ */
+internal fun firedAlarmRecordsPlanBookkeeping(isOutOfBed: Boolean): Boolean = !isOutOfBed
+
 class PhoneAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val isTest = intent.getBooleanExtra(EXTRA_ALARM_IS_TEST, false)
@@ -98,18 +120,33 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    /** Logs the firing, marks fired the instant THIS intent was scheduled for (D1, wake/nap alarms only), attributes it to either the wake alarm or a nap (F2/F6/G8, wake/nap alarms only), and arms the out-of-bed nudge (D4, wake/nap alarms only) - or, for the nudge's own firing, does nothing further (H5: its self-consuming record clear now happens in [onReceive] itself, unconditionally, since it must run even when [state] is null). */
+    /**
+     * Logs the firing, then does the two separate things a firing means.
+     *
+     * The phone alarm slot's own bookkeeping - marking fired the instant THIS intent was scheduled for (D1)
+     * and attributing it to either the wake alarm or a nap (F2/F6/G8/H2) - runs only for a wake or nap
+     * firing, per [firedAlarmRecordsPlanBookkeeping].
+     *
+     * L1 (owner decision, 2026-09-21): arming the next out-of-bed nudge (D4) runs for EVERY real firing, the
+     * nudge's own included. This function used to return early on [isOutOfBed] before it ever reached
+     * [armOutOfBedNudge], which is exactly what made the nudge ring once per night and then stop; that one
+     * early return conflated "this is not a plan alarm" with "nothing follows this". See [armOutOfBedNudge]'s
+     * own L1 doc for the contract. H5: the nudge's self-consuming record clear happens in [onReceive] itself,
+     * unconditionally and BEFORE this runs (it must also happen when [state] is null), so a repeat's own
+     * [saveOutOfBedNudgePendingAt] writes over a record that was just cleared rather than racing it.
+     */
     private fun recordRealAlarmFired(context: Context, state: NightState, intent: Intent, now: Instant, isOutOfBed: Boolean) {
         val eventName = if (isOutOfBed) "out_of_bed_alarm_fired" else "phone_alarm_fired"
         appendNightLog(context, state.startedAt, NightLogEvent(now, eventName, emptyMap()), state.debugOptions.isAnyEnabled)
-        if (isOutOfBed) return
-        val scheduledForMillis = intent.getLongExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, -1L)
-        if (scheduledForMillis >= 0) {
-            val firedFor = Instant.ofEpochMilli(scheduledForMillis)
-            markPhoneAlarmFired(context, state, firedFor)
-            recordWakeOrNapFired(context, state, firedFor)
+        if (firedAlarmRecordsPlanBookkeeping(isOutOfBed)) {
+            val scheduledForMillis = intent.getLongExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, -1L)
+            if (scheduledForMillis >= 0) {
+                val firedFor = Instant.ofEpochMilli(scheduledForMillis)
+                markPhoneAlarmFired(context, state, firedFor)
+                recordWakeOrNapFired(context, state, firedFor)
+            }
         }
-        armOutOfBedNudge(context, state, now)
+        armOutOfBedNudge(context, state, now, isOutOfBed)
     }
 
     /**
@@ -195,17 +232,57 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
     }
 
     /**
-     * D4/H7.1: armed the moment the wake alarm (or a nap alarm, mid-night or post-wake) fires, at [now] +
-     * EngineConfig.outOfBedDelay (now 15 min) - never for a test alarm ([recordRealAlarmFired] is only ever
-     * called for a real one) and never re-armed by the nudge's own firing ([recordRealAlarmFired] returns
-     * before reaching here when isOutOfBed is true). G4: the armed instant is persisted so
-     * [com.nikita.sleepcycle.night.BootReceiver] can restore it across a reboot or app update before it fires.
+     * D4/H7.1: armed the moment ANY real alarm fires - the wake alarm, a D5/G8 nap alarm (mid-night or
+     * post-wake), and since L1 the out-of-bed nudge itself - at [now] + EngineConfig.outOfBedDelay (now
+     * 15 min). Never for a test alarm ([recordRealAlarmFired] is only ever called for a real one).
+     *
+     * L1 (owner decision, 2026-09-21) SUPERSEDES this doc's own previous claim that the nudge is "never
+     * re-armed by the nudge's own firing". THE CONTRACT NOW: pressing "I'm awake" is the only thing that means
+     * the owner is genuinely up, so if it was never pressed, something is wrong and ringing again is the right
+     * answer. A nudge firing arms the next nudge, one outOfBedDelay later. There is deliberately NO cap, no
+     * maximum count and no deadline stop: a night that can never be ended nags every outOfBedDelay until the
+     * owner notices, which is the direction the owner judged right to fail in.
+     *
+     * EXACTLY TWO THINGS END A CHAIN. L2 (owner decision, 2026-09-21) SUPERSEDES this doc's own previous
+     * "EXACTLY THREE THINGS" list, and answers the open question docs/decisions.md's L1 record used to carry -
+     * see its own L2 record for the reasoning.
+     *  1. The owner - "I'm awake" on the ring screen, or ending the night from the app. Both go through
+     *     NightController.endNight, which cancels the pending nudge, its H7.3 pre-check and its record
+     *     together. This is the intended one.
+     *  2. The H7.3 pre-check, on a confirmed-ASLEEP re-sync, and ONLY on a night whose plan is not already
+     *     FINISHED: OutOfBedPreNudgeCheck.runPreNudgeCheck cancels the alarm and clears the record, which ends
+     *     the WHOLE chain, not just the one nudge. It restarts only if a nap alarm is armed and actually fires.
+     *     Correct by intent (the owner is asleep again and the nap logic owns the wake-up), but it does mean
+     *     the chain is not unconditional. L2.2 (OutOfBedPreNudgeCheck.shouldCancelNudgeForPreCheck) carves out
+     *     a FINISHED night from this item: past the deadline, "he is confirmed asleep" is the reason to keep
+     *     ringing, not the reason to go quiet, and nothing is left to restart the chain if this cancelled it
+     *     (no nap can arm on a FINISHED plan).
+     *
+     * What used to be a third item - G1's FINISHED bookkeeping clearing night state, which on a deadline night
+     * let the chain ring once more past the deadline and then stop by starving [onReceive] of a night state to
+     * read - no longer happens. L2.1 (NightController.finishNightIfNeeded) now defers that bookkeeping
+     * entirely while a nudge is pending, so night state survives for [onReceive] to keep reading from, and a
+     * deadline night's chain now behaves exactly like a no-deadline night's: unconditional short of items 1
+     * and 2 above, which is what the owner asked for on both kinds of night.
+     *
+     * G4: the armed instant is persisted so [com.nikita.sleepcycle.night.BootReceiver] can restore it across a
+     * reboot or app update before it fires. A repeat goes through that same single record, which [onReceive]
+     * cleared moments earlier, so a chain never leaves a stale instant behind - and an arm that FAILS leaves
+     * the record cleared, correctly, since there is then no nudge to restore.
+     *
      * H7.3: also schedules the pre-nudge check [preNudgeCheckLead] before [at] - see OutOfBedPreNudgeCheck.kt.
-     * A reboot before the check fires simply loses it (it has no reboot-recovery of its own, unlike the nudge
-     * itself), which is fine by the same fail-open rule the check itself follows: losing the extra safety net
-     * still leaves the nudge ringing normally, never silently missing.
+     * Every repeat gets its own check, which is what still lets the nap logic take over if the owner genuinely
+     * fell back asleep between two nudges. A reboot before the check fires simply loses it (it has no
+     * reboot-recovery of its own, unlike the nudge itself), which is fine by the same fail-open rule the check
+     * itself follows: losing the extra safety net still leaves the nudge ringing normally, never silently
+     * missing.
+     *
+     * L1: a successful arming is logged as `out_of_bed_nudge_armed`, carrying the instant and which kind of
+     * firing armed it, so a repeating chain reads in the night log as a sequence of distinct, attributable
+     * events rather than a run of identical `out_of_bed_alarm_fired` lines. No counter and no phase field is
+     * kept for this: the log line is derived entirely from [isOutOfBed] and [at], both already in hand.
      */
-    private fun armOutOfBedNudge(context: Context, state: NightState, now: Instant) {
+    private fun armOutOfBedNudge(context: Context, state: NightState, now: Instant, isOutOfBed: Boolean) {
         val config = resolveEngineConfig(state.debugOptions)
         val at = now.plus(config.outOfBedDelay)
         val armed = scheduleOutOfBedAlarm(context, at)
@@ -217,6 +294,14 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             )
             return
         }
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                now, "out_of_bed_nudge_armed",
+                mapOf("at" to at.toString(), "cause" to if (isOutOfBed) "out_of_bed_nudge_fired" else "wake_or_nap_alarm_fired")
+            ),
+            state.debugOptions.isAnyEnabled
+        )
         if (!saveOutOfBedNudgePendingAt(context, at)) {
             appendNightLog(
                 context, state.startedAt,

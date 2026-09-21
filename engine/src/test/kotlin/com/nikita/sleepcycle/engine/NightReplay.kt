@@ -64,9 +64,20 @@ import java.time.Instant
  *    in one indivisible step. In production those are four separately observable steps on a different thread,
  *    and a tick's own commit can interleave between any two of them - the whole J3/J4/J5 nudge family lives in
  *    exactly those gaps.
- *  - THE NUDGE IS NEVER DISPATCHED. [pendingNudgeAt] records that a nudge exists and when, but no nudge ever
- *    rings here, and its H7.3 pre-check (OutOfBedPreNudgeCheck.kt, with its own re-sync and fail-open rule)
- *    never runs at all. A test here can say a nudge was armed or cancelled, never what it did.
+ *  - THE NUDGE'S PRE-CHECK NEVER RUNS. L1 (owner decision, 2026-09-21) narrows what used to be a wider gap
+ *    here, "THE NUDGE IS NEVER DISPATCHED": a pending nudge now actually FIRES in [advanceTo], recorded in
+ *    [nudgeFirings], and arms the next one exactly as PhoneAlarmReceiver does, which is what lets a test say
+ *    anything at all about the repeating chain. What is still missing is its H7.3 pre-check
+ *    (OutOfBedPreNudgeCheck.kt, with its own re-sync and fail-open rule), which never runs here - so a test
+ *    can say a nudge rang, never that a genuinely-asleep owner's nudge was cancelled two minutes before it.
+ *  - THE NUDGE CHAIN HAS NO END HERE. Production ends it when the night ends: NightController.endNight, from
+ *    "I'm awake" or the app's own end-night action, cancels the nudge, its pre-check and its record. This
+ *    harness models neither owner action, and it does not model G1's FINISHED bookkeeping either. L2 (owner
+ *    decision, 2026-09-21) CORRECTS what this used to say here: reaching FINISHED does NOT stop the chain in
+ *    production anymore - NightController.finishNightIfNeeded now defers its entire bookkeeping while a nudge
+ *    is pending (L2.1), so the chain outlives FINISHED, bounded only by L3.1's own staleness check on the
+ *    pending record. Nudges therefore repeat here for as long as a test keeps advancing the clock, which is
+ *    enough to pin the repeat itself and nothing about how it stops.
  *  - BATTERY LOSS DOES NOT REBOOT. [batteryDies] drops the armed alarm and the tick schedule, and a later
  *    [openApp] resumes from there - `BootReceiver.handleBoot` never runs, so nothing here exercises boot
  *    restoration, including J5's own overdue-nudge restore.
@@ -130,15 +141,25 @@ internal class NightReplay(
 
     /**
      * J4: the out-of-bed nudge's own pending fire instant, OutOfBedNudgeStore's mirror - set to
-     * `firedFor + config.outOfBedDelay` unconditionally by every firing ([fireAlarm], D4's "every alarm that
-     * fires arms its own fresh nudge"), and cleared by [cancelNudgeIfSupersededByNap] when a fresh nap
+     * `deliveredAt + config.outOfBedDelay` unconditionally by every firing ([fireAlarm], D4's "every alarm
+     * that fires arms its own fresh nudge"), and cleared by [cancelNudgeIfSupersededByNap] when a fresh nap
      * supersedes it. Null means no nudge is currently pending (including "cancelled").
+     *
+     * L1: [fireNudge] now sets this too, so a nudge firing leaves the NEXT nudge pending rather than nothing.
      */
     var pendingNudgeAt: Instant? = null
         private set
 
-    /** Every alarm that rang this night, in order. */
+    /** Every alarm that rang this night, in order. The out-of-bed nudge is not one of these - see [nudgeFirings]. */
     val firings = mutableListOf<Firing>()
+
+    /**
+     * L1: every out-of-bed nudge that actually rang this night, in order, by the instant it was armed for.
+     * Kept apart from [firings] deliberately: those carry the plan alarm's own attribution (wake versus nap),
+     * which a nudge firing has none of and deliberately never touches - see
+     * PhoneAlarmReceiver.firedAlarmRecordsPlanBookkeeping.
+     */
+    val nudgeFirings = mutableListOf<Instant>()
 
     /** Every arming of the phone alarm, in order: the tick that armed it, and the instant it was armed for. */
     val armings = mutableListOf<Pair<Instant, Instant>>()
@@ -243,11 +264,17 @@ internal class NightReplay(
             val armedFor = armedAlarmAt
             val dueFire = armedFor?.plus(alarmDelivery)?.takeIf { !it.isAfter(at) }
             val dueTick = nextTickAt?.takeIf { !it.isAfter(at) }
-            val due = listOfNotNull(dueCommit, dueFire, dueTick).minOrNull() ?: return
-            when (due) {
-                dueCommit -> commitPendingTick()
-                dueFire -> fireAlarm(checkNotNull(armedFor), due)
-                else -> runTick(due, syncDuration, syncFails)
+            // L1: the nudge is armed through AlarmManager exactly like the plan alarm, so it is delivered on
+            // the same terms, [alarmDelivery] included - and it fires on its own schedule, independently of
+            // whatever is in the plan's own slot.
+            val nudgeFor = pendingNudgeAt
+            val dueNudge = nudgeFor?.plus(alarmDelivery)?.takeIf { !it.isAfter(at) }
+            val due = listOfNotNull(dueCommit, dueFire, dueTick, dueNudge).minOrNull() ?: return
+            when {
+                due == dueCommit -> commitPendingTick()
+                due == dueFire -> fireAlarm(checkNotNull(armedFor), due)
+                due == dueTick -> runTick(due, syncDuration, syncFails)
+                else -> fireNudge(checkNotNull(nudgeFor), due)
             }
         }
     }
@@ -396,6 +423,25 @@ internal class NightReplay(
     }
 
     /**
+     * L1 (owner decision, 2026-09-21): PhoneAlarmReceiver.onReceive for the out-of-bed nudge's OWN firing -
+     * a function this harness had no need of before, because a fired nudge used to leave [pendingNudgeAt]
+     * null for the rest of the night. It records that the nudge rang and arms the NEXT one
+     * [EngineConfig.outOfBedDelay] after the instant it was actually DELIVERED at, the same rule [fireAlarm]
+     * follows and for the same reason (`armOutOfBedNudge(context, state, now)` samples the receiver's own
+     * clock, not what the alarm was armed for).
+     *
+     * Deliberately touches NONE of [phoneAlarmFiredFor], [wakeAlarmFiredAt], [napAlarmsUsed],
+     * [lastNapAlarmFiredAt] or [firings]. Those four facts and their wake-versus-nap attribution belong to the
+     * phone alarm's own slot and never to the nudge - the one boundary
+     * PhoneAlarmReceiver.firedAlarmRecordsPlanBookkeeping still holds after L1, and the reason a nudge firing
+     * can never be mistaken by a later tick for a plan alarm having rung.
+     */
+    private fun fireNudge(firedFor: Instant, deliveredAt: Instant) {
+        nudgeFirings.add(firedFor)
+        pendingNudgeAt = deliveredAt.plus(config.outOfBedDelay)
+    }
+
+    /**
      * NightOrchestrator.firedAlarmIsWakeAlarm - J2 must-fix 2 REVERTS this mirror back to H8's original exact
      * equality, matching the production function's own revert: a NAP-mode firing is the wake alarm only when it
      * fires at EXACTLY the latched morning alarm time. See NightOrchestrator.kt's own doc for why the J1.2
@@ -489,6 +535,8 @@ internal class NightReplay(
     fun trace(): String = buildString {
         plans.forEach { appendLine("plan ${it.mode} wakeAt=${it.wakeAt}") }
         firings.forEach { appendLine("fired ${it.firedFor} attributedTo=${it.mode}") }
+        nudgeFirings.forEach { appendLine("nudge fired $it") }
+        appendLine("pending nudge $pendingNudgeAt")
         pendingTick?.let { appendLine("pending tick started=${it.startedAt} commitAt=${it.commitAt} plan=${it.plan.mode} wakeAt=${it.plan.wakeAt}") }
     }
 }

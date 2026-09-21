@@ -384,6 +384,15 @@ internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? 
  * is deliberately NOT cancelled: at worst the nudge rings alongside the nap it duplicates, which is the
  * direction this project errs in. [napAlarmArmed] stays as well - it still carries FIX4's own separate fact,
  * that a plan whose arm attempt FAILED is no replacement for anything.
+ *
+ * L1 (owner decision, 2026-09-21) leaves this predicate untouched and does not need it widened. The nudge now
+ * repeats until the night ends, so what this sees is no longer "the one nudge this night has" but "the
+ * currently pending link of a live chain" - and superseding that link is still exactly right: the owner is
+ * confirmed asleep again, so the nap owns the wake-up, and when the nap rings it arms a fresh nudge and the
+ * chain resumes from there. The J5 ordering clause keeps its meaning too. A repeat due at or after the nap's
+ * own target is left alone, and if it is the one that rings first, the nap's own firing simply overwrites the
+ * same AlarmManager request code and the same single store record, so a repeat can never double-ring against
+ * a nap.
  */
 internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?, sleepState: SleepState, napAlarmArmed: Boolean): Boolean {
     val napWakeAt = plan.wakeAt ?: return false
@@ -454,6 +463,16 @@ private fun cancelNudgeIfSupersededByNap(
  *
  * This predates the whole J series - neither half is new, only their composition was never traced. `internal`,
  * not `private`: the one pure decision, JVM-testable directly without a Context.
+ *
+ * L1 (owner decision, 2026-09-21) EXTENDS this rather than changing it. The nudge now repeats until the night
+ * ends (PhoneAlarmReceiver.armOutOfBedNudge's own L1 doc), so the two mechanisms have to be checked against
+ * each other: they cannot fight, and they cannot double-arm, because of the [pendingNudgeAt] `== null`
+ * requirement that is already the last clause above. A nudge firing clears its own record and re-arms in the
+ * same receiver call, so from a tick's point of view a nudge is ALWAYS pending while the chain is alive, and
+ * this predicate is simply false throughout it. The only way it becomes true again is the path it was written
+ * for: H7.2 superseded the nudge with a nap, and this tick then cancelled that nap while the owner is awake -
+ * the one moment the chain is genuinely broken and needs restarting. The re-arm it triggers puts exactly one
+ * nudge back, which then chains on its own from there.
  */
 internal fun awakeNapCancellationNeedsNudge(plan: AlarmPlan, previousPlan: AlarmPlan?, sleepState: SleepState, pendingNudgeAt: Instant?): Boolean =
     plan.mode == AlarmMode.NAP && plan.wakeAt == null && previousPlan?.wakeAt != null &&

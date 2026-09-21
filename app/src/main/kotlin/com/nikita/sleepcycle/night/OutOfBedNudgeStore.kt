@@ -6,11 +6,18 @@ package com.nikita.sleepcycle.night
 // reboot or app update between the nudge being armed and it actually firing drops it silently - AlarmManager
 // alarms do not survive either event (F13), and nothing else remembers when it was due.
 //
-// Deliberately NOT part of clearAlarmFiredStores/clearNightState's own bundle: it is cleared only when the
-// nudge itself fires (self-consuming, PhoneAlarmReceiver.recordRealAlarmFired) or when the owner ends the
-// night (NightController.endNight). G1's FINISHED-bookkeeping path leaves an already-armed nudge alone on
-// purpose (it must still fire), so it must not erase the one record that could restore that same nudge
-// across a reboot before it does.
+// Deliberately NOT part of clearAlarmFiredStores/clearNightState's own bundle: it is cleared when the nudge
+// itself fires (self-consuming, PhoneAlarmReceiver.onReceive) or when the owner ends the night
+// (NightController.endNight). G1's FINISHED-bookkeeping path leaves an already-armed nudge alone on purpose
+// (it must still fire), so it must not erase the one record that could restore that same nudge across a
+// reboot before it does.
+//
+// L1 (owner decision, 2026-09-21): the nudge now REPEATS until the night ends, so that self-consuming clear
+// is immediately followed, in the same receiver call, by a save of the NEXT nudge's instant - one record,
+// overwritten once per repeat, never a list and never a count. Nothing here changed for L1; this note exists
+// so a reader does not conclude from "cleared when the nudge fires" that a fired nudge leaves the file empty.
+// It does, for the moment between the clear and the re-arm, and an arming that FAILS leaves it empty for
+// good, which is correct: there is then no nudge left to restore.
 
 import android.content.Context
 import android.util.Log
