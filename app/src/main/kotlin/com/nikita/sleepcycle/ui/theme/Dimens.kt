@@ -36,3 +36,7 @@ val TimelineBarCornerRadius = 4.dp
 val StatusDotSize = 8.dp
 
 val DividerThickness = 1.dp
+
+/** X1: the disclosure chevron on a Settings menu row - drawn, like the toolbar icon marks (IconButtons.kt), rather than set as a Unicode glyph. */
+val ChevronArtSize = 16.dp
+val ChevronStrokeWidth = 2.dp

@@ -23,9 +23,11 @@ import com.nikita.sleepcycle.ui.NightViewModel
 import com.nikita.sleepcycle.ui.components.ErrorBanner
 import com.nikita.sleepcycle.ui.shareNightLogFile
 import com.nikita.sleepcycle.ui.screens.BeforeBedScreen
+import com.nikita.sleepcycle.ui.screens.ConnectionTestScreen
 import com.nikita.sleepcycle.ui.screens.DebugScreen
 import com.nikita.sleepcycle.ui.screens.LogsScreen
 import com.nikita.sleepcycle.ui.screens.PastNightScreen
+import com.nikita.sleepcycle.ui.screens.SettingsScreen
 import com.nikita.sleepcycle.ui.screens.SetupScreen
 import com.nikita.sleepcycle.ui.screens.night.NightScreen
 import com.nikita.sleepcycle.ui.state.Screen
@@ -68,6 +70,12 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
             ErrorBanner(message = uiState.errorMessage, onDismiss = viewModel::clearErrorMessage)
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when (uiState.screen) {
+                    is Screen.Settings -> SettingsScreen(
+                        onOpenSetup = viewModel::openSetup,
+                        onOpenConnectionTest = viewModel::openConnectionTest,
+                        onOpenDebug = viewModel::openDebug,
+                        onBack = viewModel::closeSettings,
+                    )
                     is Screen.Setup -> SetupScreen(
                         state = uiState.setup,
                         wizardPage = setupWizardPage,
@@ -77,12 +85,18 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                         onWizardNext = viewModel::setupWizardNext,
                         onWizardBack = viewModel::setupWizardBack,
                         onRunSetupAgain = viewModel::runSetupWizardAgain,
-                        onBack = viewModel::closeSetupOrLogs,
+                        onExitWizard = viewModel::exitSetupWizard,
+                        onBack = viewModel::closeSetup,
                         onOpenDebug = viewModel::openDebug,
+                    )
+                    is Screen.ConnectionTest -> ConnectionTestScreen(
+                        state = uiState.setup,
+                        onRunConnectionTest = viewModel::runSetupCheckAction,
+                        onBack = viewModel::closeConnectionTest,
                     )
                     is Screen.BeforeBed -> BeforeBedScreen(
                         state = uiState.beforeBed,
-                        onOpenSetup = viewModel::openSetup,
+                        onOpenSettings = viewModel::openSettings,
                         onOpenLogs = viewModel::openLogs,
                         onDeadlineEnabledChange = viewModel::setDeadlineEnabled,
                         onDeadlineTimeChange = viewModel::setDeadlineTime,
@@ -109,7 +123,7 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                         onOpenLog = viewModel::openNightLog,
                         onShareLog = { log -> shareNightLogFile(context, log) },
                         onDeleteLog = viewModel::deleteNightLog,
-                        onBack = viewModel::closeSetupOrLogs,
+                        onBack = viewModel::closeLogs,
                     )
                     is Screen.PastNight -> pastNight?.let { night ->
                         PastNightScreen(state = night, onBack = viewModel::closePastNight)

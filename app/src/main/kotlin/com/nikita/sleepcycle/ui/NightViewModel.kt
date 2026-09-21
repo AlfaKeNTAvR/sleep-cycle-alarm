@@ -59,6 +59,8 @@ import com.nikita.sleepcycle.ui.state.buildSetupUiState
 import com.nikita.sleepcycle.ui.state.buildUiState
 import com.nikita.sleepcycle.ui.state.canConfirmEndNight
 import com.nikita.sleepcycle.ui.state.canRequestEndNight
+import com.nikita.sleepcycle.ui.state.closeToNightOrBeforeBed
+import com.nikita.sleepcycle.ui.state.closeToNightOrSettings
 import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
@@ -125,9 +127,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val screen = MutableStateFlow<Screen>(Screen.Setup)
     // The Setup screen's wizard page: null shows the one-page checklist, non-null shows that page of the
     // page-by-page wizard. Kept separate from `screen` (rather than folded into UiState/Screen) so the wizard
-    // stays entirely additive - see resolveInitialScreen, openSetup, runSetupWizardAgain and closeSetupOrLogs
-    // for where it changes. Surviving rotation and backgrounding falls out for free: like `screen` itself,
-    // this only needs to outlive the ViewModel, not the process.
+    // stays entirely additive - see resolveInitialScreen, openSetup, runSetupWizardAgain, closeSetup and
+    // exitSetupWizard for where it changes. Surviving rotation and backgrounding falls out for free: like
+    // `screen` itself, this only needs to outlive the ViewModel, not the process.
     private val setupWizardPageState = MutableStateFlow<SetupWizardPage?>(null)
     // T4: virtual - drives every timer/countdown the whole UI shows.
     private val now = MutableStateFlow(nowInstant())
@@ -322,8 +324,15 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Navigation.
-    /** The gear icon: always opens the one-page checklist, never the wizard - re-checks stay quick. */
+    /** X1: the gear icon on Before bed - opens the short Settings menu, not Setup directly. */
+    fun openSettings() { screen.value = Screen.Settings }
+
+    /** Settings' "Setup" row: always opens the one-page checklist, never the wizard - re-checks stay quick. */
     fun openSetup() { screen.value = Screen.Setup; setupWizardPageState.value = null }
+
+    /** X3: Settings' "Test connection" row. */
+    fun openConnectionTest() { screen.value = Screen.ConnectionTest }
+
     fun openLogs() { screen.value = Screen.Logs; nightLogFiles.value = listNightLogs(context) }
 
     /** Reopens one saved night as its own summary screen. Reading and parsing the log is disk I/O, so it happens off the main thread before the screen switches. */
@@ -345,17 +354,36 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun closeSetupOrLogs() {
-        screen.value = if (observedNightState.value != null) Screen.Night else Screen.BeforeBed
+    /** X5: Settings' own back arrow and its "Done" button both land here - Night if one is running behind Settings, otherwise Before bed. */
+    fun closeSettings() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
+
+    /** X2/X5: Setup's checklist-mode back arrow (and its own "Done", once everything is complete) - always Settings, since checklist mode is only ever reached from there. */
+    fun closeSetup() { screen.value = Screen.Settings; setupWizardPageState.value = null }
+
+    /**
+     * X2: the wizard's own exit, unaffected by this rework - "goes where it goes today" per the task spec, NOT
+     * through Settings. Distinct from [closeSetup] because the wizard is entered from resolveInitialScreen
+     * (fresh install, before Settings is reachable at all) as well as from the checklist's "Run setup again".
+     */
+    fun exitSetupWizard() {
+        screen.value = closeToNightOrBeforeBed(observedNightState.value != null)
         setupWizardPageState.value = null
     }
-    /** Reachable from Setup AND from the Night screen (a debug build shows a Debug icon there too) - the simulator's buttons need to work while a simulated night is actually running, not just before it starts. */
+
+    /** X3: Test connection's own back arrow - always Settings, the only screen that opens it. */
+    fun closeConnectionTest() { screen.value = Screen.Settings }
+
+    fun closeLogs() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
+
+    /** Reachable from Settings' Debug row AND from the Night screen (a debug build shows a Debug icon there too) - the simulator's buttons need to work while a simulated night is actually running, not just before it starts. */
     fun openDebug() { screen.value = Screen.Debug }
-    fun closeDebug() { screen.value = if (observedNightState.value != null) Screen.Night else Screen.Setup }
+
+    /** X4/X5: back from Debug. See [closeToNightOrSettings] for why this is not simply "always Settings" - the night screen's own shortcut needs its way back too. */
+    fun closeDebug() { screen.value = closeToNightOrSettings(observedNightState.value != null) }
 
     // Setup wizard navigation. The wizard is entered either by resolveInitialScreen (fresh install) or by
-    // runSetupWizardAgain (the checklist's "Run setup again"); openSetup/closeSetupOrLogs above always clear
-    // it back to null so a later gear-icon open defaults to the checklist.
+    // runSetupWizardAgain (the checklist's "Run setup again"); openSetup/closeSetup/exitSetupWizard above
+    // always clear it back to null so a later Settings-menu open defaults to the checklist.
     /** The checklist's "Run setup again": re-enters the wizard on the first unsatisfied page. */
     fun runSetupWizardAgain() { setupWizardPageState.value = firstUnsatisfiedSetupWizardPage(uiState.value.setup) }
     fun setupWizardNext() {

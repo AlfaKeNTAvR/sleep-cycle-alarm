@@ -42,7 +42,7 @@ import java.time.LocalTime
 @Composable
 fun BeforeBedScreen(
     state: BeforeBedUiState,
-    onOpenSetup: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenLogs: () -> Unit,
     onDeadlineEnabledChange: (Boolean) -> Unit,
     onDeadlineTimeChange: (LocalTime) -> Unit,
@@ -59,7 +59,7 @@ fun BeforeBedScreen(
             )
             Row {
                 MenuLinesButton(stringResource(R.string.content_description_open_logs), onOpenLogs)
-                SlidersButton(stringResource(R.string.content_description_open_setup), onOpenSetup)
+                SlidersButton(stringResource(R.string.content_description_open_settings), onOpenSettings)
             }
         }
         Text(text = stringResource(R.string.before_bed_title), style = MaterialTheme.typography.headlineLarge)

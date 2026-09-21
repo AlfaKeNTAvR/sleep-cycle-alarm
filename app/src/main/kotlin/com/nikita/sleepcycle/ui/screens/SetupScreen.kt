@@ -1,9 +1,15 @@
 package com.nikita.sleepcycle.ui.screens
 
-// File purpose: the Setup screen. Renders either the one-page checklist (reachable any time from the gear
-// icon, for a later re-check) or the page-by-page wizard (what a fresh install opens into, and what "Run
-// setup again" on the checklist re-enters). Both share the same SetupUiState and the same underlying actions -
-// this is a presentation split only, see ui/screens/setup/ for the wizard's page model and page composables.
+// File purpose: the Setup screen. Renders either the one-page checklist (reachable from Settings' "Setup" row,
+// for a later re-check) or the page-by-page wizard (what a fresh install opens into, and what "Run setup
+// again" on the checklist re-enters). Both share the same SetupUiState and the same underlying actions - this
+// is a presentation split only, see ui/screens/setup/ for the wizard's page model and page composables.
+//
+// X2: the checklist lost ConnectionTestSection and SetupDebugRow - both are their own Settings rows now (see
+// ConnectionTestScreen.kt and SettingsScreen.kt). The wizard's own last page (TestConnectionPage.kt) still
+// shows both; it is explicitly out of scope for this rework and behaves exactly as before. That split is also
+// why this screen now takes two distinct exit callbacks: [onExitWizard] (wizard mode, unchanged destination)
+// and [onBack] (checklist mode, now returns to Settings instead of Before bed/Night - X5).
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,8 +33,6 @@ import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.permissions.batteryOptimizationSettingsIntent
 import com.nikita.sleepcycle.ui.permissions.fullScreenIntentSettingsIntent
-import com.nikita.sleepcycle.ui.screens.setup.ConnectionTestSection
-import com.nikita.sleepcycle.ui.screens.setup.SetupDebugRow
 import com.nikita.sleepcycle.ui.screens.setup.SetupItemStatusRow
 import com.nikita.sleepcycle.ui.screens.setup.SetupWizardActions
 import com.nikita.sleepcycle.ui.screens.setup.SetupWizardContent
@@ -51,6 +55,7 @@ fun SetupScreen(
     onWizardNext: () -> Unit,
     onWizardBack: () -> Unit,
     onRunSetupAgain: () -> Unit,
+    onExitWizard: () -> Unit,
     onBack: () -> Unit,
     onOpenDebug: () -> Unit = {},
 ) {
@@ -72,7 +77,7 @@ fun SetupScreen(
                 onOpenBatteryOptimizationSettings = { context.startActivity(batteryOptimizationSettingsIntent(context)) },
                 onRunConnectionTest = onRunConnectionTest,
                 onOpenDebug = onOpenDebug,
-                onExitWizard = onBack,
+                onExitWizard = onExitWizard,
                 onPreviousPage = onWizardBack,
                 onNextPage = onWizardNext,
             ),
@@ -138,10 +143,6 @@ fun SetupScreen(
                 Text(text = "• $line", style = MaterialTheme.typography.bodyMedium)
             }
         }
-
-        ConnectionTestSection(state = state, onRunConnectionTest = onRunConnectionTest)
-
-        SetupDebugRow(onOpenDebug = onOpenDebug)
 
         if (state.allComplete) {
             PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onBack)

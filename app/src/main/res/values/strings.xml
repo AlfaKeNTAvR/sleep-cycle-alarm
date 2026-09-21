@@ -5,9 +5,14 @@
     <!-- Common -->
     <string name="action_cancel">Cancel</string>
     <string name="action_done">Done</string>
-    <string name="content_description_open_setup">Open setup</string>
+    <!-- X1: the Before-bed gear opens Settings now, not Setup directly. -->
+    <string name="content_description_open_settings">Open settings</string>
     <string name="content_description_open_logs">Open night logs</string>
     <string name="content_description_back">Back</string>
+
+    <!-- X1: the Settings menu - a short list of plain navigation rows, no status text. Row labels reuse
+         setup_title/setup_test_connection/setup_debug_row_label below rather than duplicating them (X6). -->
+    <string name="settings_title">Settings</string>
 
     <!-- Setup screen -->
     <string name="setup_title">Setup</string>

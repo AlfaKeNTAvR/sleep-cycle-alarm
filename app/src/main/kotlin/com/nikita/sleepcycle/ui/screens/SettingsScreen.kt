@@ -1,0 +1,73 @@
+package com.nikita.sleepcycle.ui.screens
+
+// File purpose: the Settings menu (X1) - a short top-level list of plain navigation rows (Setup, Test
+// connection, Debug) and nothing else. Every status line, checklist, warning and count that used to live on
+// Setup's one long scroll moved down into the screen each row opens; this screen only routes. Replaces Setup
+// as the destination of the Before-bed gear - see MainActivity.kt and NightViewModel.openSettings.
+
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
+import com.nikita.sleepcycle.BuildConfig
+import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.BackArrowButton
+import com.nikita.sleepcycle.ui.components.PrimaryActionButton
+import com.nikita.sleepcycle.ui.components.ScreenContainer
+import com.nikita.sleepcycle.ui.components.SettingsMenuRow
+import com.nikita.sleepcycle.ui.state.SettingsMenuEntry
+import com.nikita.sleepcycle.ui.state.settingsMenuEntries
+
+/**
+ * The Settings menu. [isDebugBuild] defaults to the real [BuildConfig.DEBUG] flag and is a parameter only so a
+ * preview/test can force either list; [settingsMenuEntries] (X4) is what actually decides whether Debug shows.
+ * [onBack] is used for both the back arrow and the "Done" button - X1 makes Done the primary action at the
+ * bottom, returning to the same place the back arrow does.
+ */
+@Composable
+fun SettingsScreen(
+    onOpenSetup: () -> Unit,
+    onOpenConnectionTest: () -> Unit,
+    onOpenDebug: () -> Unit,
+    onBack: () -> Unit,
+    isDebugBuild: Boolean = BuildConfig.DEBUG,
+) {
+    ScreenContainer(scrollable = true) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BackArrowButton(
+                contentDescription = stringResource(R.string.content_description_back),
+                onClick = onBack,
+            )
+            Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium)
+        }
+
+        settingsMenuEntries(isDebugBuild).forEach { entry ->
+            SettingsMenuRow(
+                text = stringResource(settingsMenuEntryLabelRes(entry)),
+                onClick = settingsMenuEntryAction(entry, onOpenSetup, onOpenConnectionTest, onOpenDebug),
+            )
+        }
+
+        PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onBack)
+    }
+}
+
+/** Row label per entry - reuses the same strings Setup/Test connection/Debug already show as their own screen titles (X6), rather than adding near-duplicates. */
+private fun settingsMenuEntryLabelRes(entry: SettingsMenuEntry): Int = when (entry) {
+    SettingsMenuEntry.SETUP -> R.string.setup_title
+    SettingsMenuEntry.TEST_CONNECTION -> R.string.setup_test_connection
+    SettingsMenuEntry.DEBUG -> R.string.setup_debug_row_label
+}
+
+private fun settingsMenuEntryAction(
+    entry: SettingsMenuEntry,
+    onOpenSetup: () -> Unit,
+    onOpenConnectionTest: () -> Unit,
+    onOpenDebug: () -> Unit,
+): () -> Unit = when (entry) {
+    SettingsMenuEntry.SETUP -> onOpenSetup
+    SettingsMenuEntry.TEST_CONNECTION -> onOpenConnectionTest
+    SettingsMenuEntry.DEBUG -> onOpenDebug
+}
