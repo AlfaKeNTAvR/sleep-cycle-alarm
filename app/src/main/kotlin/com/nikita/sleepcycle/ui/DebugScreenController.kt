@@ -41,6 +41,8 @@ import com.nikita.sleepcycle.night.readDebugOptionsLastChangedAt
 import com.nikita.sleepcycle.night.readSimulatedSleepEvents
 import com.nikita.sleepcycle.night.rearmAfterSpeedChange
 import com.nikita.sleepcycle.night.requestImmediateTick
+import com.nikita.sleepcycle.night.resolveEngineConfig
+import com.nikita.sleepcycle.night.scheduleTick
 import com.nikita.sleepcycle.night.resetDebugOptionsAndClock
 import com.nikita.sleepcycle.night.resolveDebugOptions
 import com.nikita.sleepcycle.night.scheduleDebugTestAlarm
@@ -56,9 +58,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
+
+/** W9: how far past the engine's own minimum awakening the follow-up tick is booked, so it lands once the awake mark is already longer than the floor rather than exactly on it. */
+private val DEBOUNCE_RETICK_MARGIN: Duration = Duration.ofSeconds(2)
 
 /** Everything the Debug screen persists and can act on, plus the one seam ([effectiveOptions]) that forces every switch off outside a debug build. */
 class DebugScreenController(private val context: Context, private val scope: CoroutineScope) {
@@ -227,13 +233,28 @@ class DebugScreenController(private val context: Context, private val scope: Cor
         }
     }
 
-    /** Appends a simulated sleep event and, per the task spec, requests an immediate tick so the effect shows up right away instead of waiting for the next scheduled sync. */
+    /**
+     * Appends a simulated sleep event and ticks immediately, so the effect shows up without waiting for the
+     * next scheduled sync.
+     *
+     * W9: an immediate tick alone is not enough for an AWAKE mark, and this is why the owner saw falling
+     * asleep register at once while waking up lagged. The engine ignores any awake mark shorter than
+     * [EngineConfig.minAwakening] - a real band's brief stirring must not split a sleep stretch - so at the
+     * instant of the tap that mark is zero long and is filtered out. Nothing then re-evaluates it until the
+     * next scheduled sync, 5 to 15 minutes of the app's own clock later, which is where the wait came from.
+     * So a second tick is booked for just past the debounce, when the mark first becomes significant. Falling
+     * asleep has no equivalent floor, which is exactly why that direction always felt instant.
+     */
     private fun recordEvent(kind: SimulatedSleepEventKind) {
         scope.launch {
             // T4: virtual - this becomes a SleepSegment boundary the engine plans against (BandDataSimulator.kt).
-            val updated = appendSimulatedSleepEvent(simulatedSleepEvents.value, kind, nowInstant())
+            val at = nowInstant()
+            val updated = appendSimulatedSleepEvent(simulatedSleepEvents.value, kind, at)
             writeSimulatedSleepEvents(context, updated)
             requestImmediateTick(context)
+            if (kind == SimulatedSleepEventKind.AWAKE) {
+                scheduleTick(context, at + resolveEngineConfig(effectiveOptions()).minAwakening + DEBOUNCE_RETICK_MARGIN)
+            }
         }
     }
 
