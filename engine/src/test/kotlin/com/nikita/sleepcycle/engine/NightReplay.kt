@@ -71,8 +71,12 @@ internal class NightReplay(
      * why the arm step now deliberately reads the LIVE [phoneAlarmFiredFor] field at commit time instead. The
      * PLAN itself (already computed and stored in [plan] here) still reflects only this tick's own [startedAt]
      * snapshot, same as before - only the arm step's own fired-marker read moved.
+     *
+     * J4: [segments] added - this tick's own segment snapshot, needed at commit time to recompute the SAME
+     * [SleepState] [cancelNudgeIfSupersededByNap] mirrors NightOrchestrator computing from (`detectSleepState`
+     * on this tick's own segments and its own `decisionNow`/[startedAt] - never the commit instant).
      */
-    private data class PendingTick(val startedAt: Instant, val commitAt: Instant, val plan: AlarmPlan)
+    private data class PendingTick(val startedAt: Instant, val commitAt: Instant, val plan: AlarmPlan, val segments: List<SleepSegment>)
 
     private val marks = mutableListOf<SleepMark>()
     private var nextTickAt: Instant? = null
@@ -96,6 +100,15 @@ internal class NightReplay(
 
     /** The plan the last tick COMMITTED - the app's NightState.lastPlan. A pending (not yet committed) tick's own plan is not reflected here until it commits - see [PendingTick]. */
     var lastPlan: AlarmPlan? = null
+        private set
+
+    /**
+     * J4: the out-of-bed nudge's own pending fire instant, OutOfBedNudgeStore's mirror - set to
+     * `firedFor + config.outOfBedDelay` unconditionally by every firing ([fireAlarm], D4's "every alarm that
+     * fires arms its own fresh nudge"), and cleared by [cancelNudgeIfSupersededByNap] when a fresh nap
+     * supersedes it. Null means no nudge is currently pending (including "cancelled").
+     */
+    var pendingNudgeAt: Instant? = null
         private set
 
     /** Every alarm that rang this night, in order. */
@@ -228,7 +241,7 @@ internal class NightReplay(
                 lastNapAlarmFiredAt, phoneAlarmFiredFor
             )
         }
-        pendingTick = PendingTick(at, at.plus(syncDuration), plan)
+        pendingTick = PendingTick(at, at.plus(syncDuration), plan, segments)
         if (syncDuration.isZero) commitPendingTick()
     }
 
@@ -248,16 +261,25 @@ internal class NightReplay(
     }
 
     /**
-     * The pending tick's own arm/latch/save/reschedule, all at once.
+     * The pending tick's own arm/nudge-supersede/latch/save/reschedule, all at once.
      *
      * J3: the arm step reads the LIVE [phoneAlarmFiredFor] field (a firing that happened while this tick was
      * pending IS visible to it now) rather than a tick-start snapshot - see [armPhoneAlarmIfNeeded]'s own doc
      * for why.
+     *
+     * J4: [cancelNudgeIfSupersededByNap] added, mirroring NightOrchestrator's own call right after arming -
+     * see its own doc for the fix this pins (a nap's OWN freshly-armed nudge no longer superseded by that same
+     * nap's own already-fired marker match).
      */
     private fun commitPendingTick() {
         val pending = checkNotNull(pendingTick) { "commitPendingTick called with nothing pending" }
         pendingTick = null
-        armPhoneAlarmIfNeeded(pending.plan, pending.startedAt)
+        // J4: previousWakeAt/armTimeNow captured BEFORE lastPlan is overwritten below, mirroring
+        // NightOrchestrator.armPhoneAlarmIfNeeded's own previousPlan (state.lastPlan, loaded at tick start) and
+        // the fresh nowInstant() re-read at the point arming actually runs (pending.commitAt is this replay's
+        // own equivalent of "the real clock right now" - the instant commitPendingTick itself was invoked at).
+        val napAlarmArmed = armPhoneAlarmIfNeeded(pending.plan, pending.startedAt, lastPlan?.wakeAt, pending.commitAt)
+        cancelNudgeIfSupersededByNap(pending.plan, pending.segments, pending.startedAt, napAlarmArmed)
         morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, pending.plan)
         lastPlan = pending.plan
         plans.add(pending.plan)
@@ -266,15 +288,31 @@ internal class NightReplay(
     }
 
     /**
+     * NightOrchestrator.cancelNudgeIfSupersededByNap / napSupersedesPendingNudge, reimplemented here (the engine
+     * module cannot import the app module's `internal` originals - see this class's own header). Recomputes the
+     * SAME [SleepState] this tick's own [plan] was built from, from [segments] and this tick's own [now]
+     * (`decisionNow`/[PendingTick.startedAt] - never the commit instant, matching production).
+     */
+    private fun cancelNudgeIfSupersededByNap(plan: AlarmPlan, segments: List<SleepSegment>, now: Instant, napAlarmArmed: Boolean) {
+        val sleepState = detectSleepState(normalizeSegments(segments, now, config))
+        val supersedes = plan.mode == AlarmMode.NAP && plan.wakeAt != null && pendingNudgeAt != null &&
+            sleepState == SleepState.ASLEEP && napAlarmArmed
+        if (supersedes) pendingNudgeAt = null
+    }
+
+    /**
      * PhoneAlarmReceiver.onReceive: the armed alarm rings, records the instant it was scheduled for
      * unconditionally (phoneAlarmFiredFor - see PhoneAlarmReceiver.markPhoneAlarmFired), and is attributed to
      * either the main wake alarm or a nap from the plan COMMITTED at that moment (recordWakeOrNapFired -
      * attribution is skipped when that plan's own wakeAt no longer matches, which this harness can still
      * reach via a mismatched commit racing a firing, even though none of the regression tests below need it).
+     * D4: every firing arms a fresh out-of-bed nudge unconditionally, [config.outOfBedDelay] later - overwriting
+     * whatever was pending before, nap or not.
      */
     private fun fireAlarm(at: Instant) {
         armedAlarmAt = null
         phoneAlarmFiredFor = at
+        pendingNudgeAt = at.plus(config.outOfBedDelay)
         val firedPlan = lastPlan?.takeIf { it.wakeAt == at }
         firings.add(Firing(at, firedPlan?.mode))
         if (firedPlan == null) return
@@ -302,9 +340,12 @@ internal class NightReplay(
      * not in the future is left alone, anything else is (re-)armed.
      *
      * J3 (owner-reported, 2026-09-21) CORRECTS J2 must-fix 4. Must-fix 4 re-read the real CLOCK right before
-     * this check (here, [armTimeNow] used to be [PendingTick.commitAt], the tick's own post-sync commit
-     * instant, rather than its [tickStartedAt]/decisionNow) to stop a stale-plan tick from re-arming a target
-     * that had already fired during its own sync. That closed the duplicate-ring bug, but opened the opposite
+     * this check (a now-removed parameter this function's must-fix-4-era signature carried, itself
+     * [PendingTick.commitAt], the tick's own post-sync commit instant, rather than its
+     * [tickStartedAt]/decisionNow - reworded to plain text since that parameter was deleted in the same commit
+     * that deleted this whole must-fix 4 mechanism, and does not name any parameter this function still has) to
+     * stop a stale-plan tick from re-arming a target that had already fired during its own sync. That closed the
+     * duplicate-ring bug, but opened the opposite
      * one: D8's pull-forward target sits only [EngineConfig.minAlarmLead] (2 min, plus up to a minute of
      * rounding) past decisionNow, while a real sync can itself cost close to that much - so whenever a sync
      * outlives the very lead it produced, the commit-time clock has already caught up to (or passed) a target
@@ -322,17 +363,41 @@ internal class NightReplay(
      * there is still exactly one ring - see `J2 must-fix 4 replay` below, unchanged in what it asserts. A
      * target that has never fired is never refused, whatever the sync costs - see `J3 replay` below, which
      * fails without this fix.
+     *
+     * J4 (owner-reported, 2026-09-21) ADDS a second, independent guard, mirroring
+     * NightOrchestrator.shouldRefuseStaleRearm: [wakeAt] unchanged from [previousWakeAt] (the plan the LAST
+     * tick actually committed, [lastPlan] here, read before this call overwrites it) AND [armTimeNow] (this
+     * replay's own equivalent of a fresh real-clock read at the point arming actually runs - see this function's
+     * own call site) has already reached [wakeAt]. This closes the residual double-ring window the marker-read
+     * guard above cannot: in production the fired-marker file is written by the receiver on the main thread,
+     * unsynchronised, with a plain truncating write, so a commit whose own read lands just before that write (or
+     * on a torn, half-written file) sees the marker as still null even though the alarm has, by real wall-clock
+     * time, already rung - re-arming an instant Android now treats as past, firing it again immediately. See
+     * `J4 replay` below, which fails without this guard: it ties a commit's own instant to the exact same
+     * instant an already-armed target fires, mirroring the real race via NightReplay's own documented
+     * commit-first tie-break (its own class doc), and asserts no second, stale arming for that target.
+     *
+     * J4 nudge must-fix (owner-reported, 2026-09-21) also changes what this function RETURNS, not just what it
+     * arms: it is now `Boolean` (was `Unit`), mirroring NightOrchestrator.armPhoneAlarmIfNeeded's own FIX4/J4
+     * contract - true only when THIS call freshly armed [wakeAt], never merely on an already-fired marker match
+     * (see the exact-match branch below). [cancelNudgeIfSupersededByNap]'s own guard reads this, exactly like
+     * the production `napAlarmArmed` - see `J4 nudge replay` below, which fails without this change (a nap's
+     * own already-fired match used to supersede that SAME nap's own freshly-armed nudge).
      */
-    private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, tickStartedAt: Instant) {
+    private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, tickStartedAt: Instant, previousWakeAt: Instant?, armTimeNow: Instant): Boolean {
         val wakeAt = plan.wakeAt
         if (wakeAt == null) {
             armedAlarmAt = null
-            return
+            return false
         }
-        if (wakeAt == phoneAlarmFiredFor) return
-        if (!wakeAt.isAfter(tickStartedAt)) return
+        // J4 nudge must-fix: false, not true - an exact marker match still never re-arms, but no longer tells
+        // the nudge guard that a FRESH nap was armed this tick (see this function's own J4 nudge doc above).
+        if (wakeAt == phoneAlarmFiredFor) return false
+        if (!wakeAt.isAfter(tickStartedAt)) return false
+        if (wakeAt == previousWakeAt && !armTimeNow.isBefore(wakeAt)) return false
         armedAlarmAt = wakeAt
         armings.add(tickStartedAt to wakeAt)
+        return true
     }
 
     /** NightOrchestrator.latchMorningAlarmAt: only a FULL_CYCLES or DEADLINE_ONLY plan sets the night's morning alarm time, and a null wakeAt never erases it (H8). */

@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle.engine
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
@@ -20,6 +21,13 @@ import java.time.Duration
  * the full trace. That test and the `J2 must-fix 4 replay` case just below it together pin BOTH properties the
  * arm step must hold at once: a target that fired during its own tick's sync is never re-armed a second time,
  * and a target that has never fired is never refused, however expensive that tick's own sync turns out to be.
+ *
+ * J4 (owner-reported, 2026-09-21) ADDS two more cases, `J4 replay` and `J4 nudge replay`: a residual gap J3
+ * left in the same arm step (a stale re-arm racing the fired marker's own write, closed by
+ * NightOrchestrator.shouldRefuseStaleRearm) and a behaviour change J3 shipped unnoted in what a marker match
+ * returns to the nudge guard (see NightOrchestrator.kt's own J4 docs on `armPhoneAlarmIfNeeded` and
+ * `napSupersedesPendingNudge` for both). Both were verified failing without their own fix, by hand, before
+ * being restored - see AUTONOMOUS_DECISIONS_09_21_2026.md for the exact output.
  */
 class TickScheduleRaceTest {
     /**
@@ -138,6 +146,83 @@ class TickScheduleRaceTest {
         replay.advanceTo("2026-09-21T08:00:00")
         assertEquals(listOf(instant("2026-09-21T07:44:00")), replay.firings.map { it.firedFor }, replay.trace())
         assertEquals(instant("2026-09-21T07:44:00"), replay.wakeAlarmFiredAt, replay.trace())
+    }
+
+    @Test fun `J4 replay - a commit racing its own already-armed target's own firing does not stale-rearm it`() {
+        // The residual double-ring window J3 left open (owner-reported, 2026-09-21, NightOrchestrator.kt's own
+        // J4 doc): J3's fix re-reads the fired marker LIVE at commit time, but that marker is written by the
+        // real receiver on a different thread, unsynchronised, with a plain truncating write - there is a real
+        // window where a commit's own read lands just before that write and sees null even though the alarm has
+        // already rung. Modelled here via NightReplay's own documented commit-first tie-break: a tick's own
+        // commit landing at the EXACT same instant its own already-armed, unchanged target fires resolves
+        // commit-first, exactly mirroring "the read happens before the write becomes visible".
+        val replay = nightOwnerTraced()
+
+        // The 06:23:30 tick commits normally first, correctly arming 06:30 - matches "J2 must-fix 4 replay"'s
+        // own setup.
+        replay.advanceTo("2026-09-21T06:23:31")
+
+        // The 06:28:30 tick's own sync takes exactly 90 s, landing its own commit at 06:30:00 exactly - a TIE
+        // with the already-armed 06:30 target's own firing. Pre-J4: phoneAlarmFiredFor is still null at that
+        // instant (the tie resolves commit-first, so the fire has not been processed yet), wakeAt (06:30,
+        // unchanged from the previously committed plan, per J1.1) is still "after" this tick's own decisionNow
+        // (06:28:30), so the old arm step re-armed it anyway - at a real commit instant that has already reached
+        // the target. Android fires a past/at-now exact alarm immediately: a second ring, seconds after the
+        // first. J4 refuses this specific re-arm: same target as what is already armed, already reached by the
+        // real clock at the point of arming.
+        replay.advanceTo("2026-09-21T06:33:00", syncDuration = Duration.ofSeconds(90))
+
+        // The assertion that fails without the fix: no armings entry from the 06:28:30 tick's own commit.
+        assertFalse(replay.armings.any { it.first == instant("2026-09-21T06:28:30") }, replay.trace())
+
+        // The bound this is really about: still exactly one ring, not two.
+        assertEquals(listOf(instant("2026-09-21T06:30:00")), replay.firings.map { it.firedFor }, replay.trace())
+        assertEquals(1, replay.firings.size, replay.trace())
+        assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
+    }
+
+    @Test fun `J4 nudge replay - a mid-night nap firing during its own tick's sync keeps its own fresh nudge`() {
+        // The behaviour-change half of the same owner report (NightOrchestrator.kt's own J4 nudge doc): J3's
+        // live marker-match branch used to return true (armPhoneAlarmIfNeeded's own "or already fired" half of
+        // its old contract), which napSupersedesPendingNudge read as "a fresh nap was armed this tick" -
+        // cancelling whatever nudge is pending. When the marker match is reached by a firing that happened
+        // DURING this tick's own sync, the nudge it cancels is not some stale leftover from an earlier alarm; it
+        // is the SAME nap's own fresh nudge, armed by the SAME firing this match just confirmed. Same lattice as
+        // "J1_1 replay, the nap equivalent": deadline 01:30, 3 cycles, falling back asleep at 00:46:30
+        // establishes an ASLEEP rule 7 nap target of 01:06:30 (onset + napLength), correctly armed by the 00:50
+        // tick, re-confirmed unchanged by the 01:05 tick (J1.1).
+        val replay = NightReplay(settings(deadline = "2026-09-21T01:30:00", cycles = 3))
+        replay.startNight("2026-09-20T23:00:00")
+        replay.markAsleep("2026-09-20T23:00:00")
+        replay.markAwake("2026-09-21T00:31:00")
+        replay.advanceTo("2026-09-21T00:45:01")
+        replay.markAsleep("2026-09-21T00:46:30")
+
+        // Stop just short of the 01:05 tick (the 00:50 tick already ran and committed normally, correctly
+        // arming 01:06:30) - the 2-minute sync duration must apply to the 01:05 tick ITSELF, landing its own
+        // commit at 01:07:00, strictly AFTER the nap fires at 01:06:30 in between (mirrors the owner's own
+        // traced 03:18:30-tick/2-minute-sync sequence, on this file's own nap lattice instead of the morning
+        // one).
+        replay.advanceTo("2026-09-21T01:04:31")
+        // Target lands just past the 01:05 tick's own 01:07:00 commit, and strictly before the NEXT scheduled
+        // tick (01:10) - so the 2-minute sync duration applies to exactly that one tick, like "J2 must-fix 4
+        // replay" above does for its own single 06:28:30 tick (target 06:33:00, strictly before its own next
+        // tick at 06:33:30).
+        replay.advanceTo("2026-09-21T01:07:01", syncDuration = Duration.ofMinutes(2))
+
+        // The nap fired once (after the wake alarm's own earlier 00:30 firing, part of this setup - use
+        // firingsAfter to isolate it, like "J1_1 replay, the nap equivalent" above does), correctly, and D4
+        // armed its own fresh nudge 15 min later.
+        val napFirings = replay.firingsAfter("2026-09-21T00:46:30")
+        assertEquals(listOf(instant("2026-09-21T01:06:30")), napFirings.map { it.firedFor }, replay.trace())
+        assertEquals(AlarmMode.NAP, napFirings.single().mode, replay.trace())
+
+        // The assertion that fails without the fix: pre-J4, the 01:05 tick's own commit (01:07:00) re-read the
+        // LIVE fired marker, found it already equal to its own unchanged 01:06:30 target, and returned true from
+        // armPhoneAlarmIfNeeded - read by napSupersedesPendingNudge as "a fresh nap was armed this tick",
+        // cancelling that SAME nap's own just-armed 01:21:30 nudge (pendingNudgeAt null). Post-J4 the exact-match
+        // branch returns false, so nothing supersedes it.
+        assertEquals(instant("2026-09-21T01:21:30"), replay.pendingNudgeAt, replay.trace())
     }
 
     @Test fun `J1_1 replay - waking 4 minutes before the alarm and opening the app 90 s before it still rings correctly, once, attributed to the wake alarm`() {

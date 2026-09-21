@@ -57,6 +57,35 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
     wakeAt != null && wakeAt.isAfter(now) && wakeAt != phoneAlarmFiredFor
 
 /**
+ * J4 (owner-reported, 2026-09-21): the second, independent guard [armPhoneAlarmIfNeeded] checks right before
+ * actually arming, on top of [shouldArmPhoneAlarm] above. Closes the residual double-ring window J3 left open:
+ * [phoneAlarmFiredForNow] (the fired-marker file [armPhoneAlarmIfNeeded] re-reads at commit time) is written by
+ * the receiver on the main thread, unsynchronised, with a plain truncating write (see PhoneAlarmFiredStore.kt's
+ * own J4 doc for the write-side half of this fix). There is a real window, tens of milliseconds wide, where a
+ * commit's own fresh read lands BEFORE that write (or lands ON a torn, half-written file, which
+ * [readPhoneAlarmFiredFor] treats identically to absent - never throws) and sees null even though the alarm has
+ * already rung. [shouldArmPhoneAlarm] alone cannot catch this: it compares [wakeAt] against [now]
+ * (`decisionNow`, sampled once at tick start, per FIX1), not against the real clock at the point arming
+ * actually happens - so a target reached by real wall-clock time only DURING this tick's own sync still reads
+ * as "still ahead of now" and gets re-armed, an instant already in the past for AlarmManager's own purposes.
+ * Android fires a past exact alarm immediately: a second, full-volume ring seconds after the first - on a
+ * mid-night nap that is a second 3am ring, not a one-off morning annoyance.
+ *
+ * [wakeAt] == [previousWakeAt] (this tick's own plan target is UNCHANGED from the plan the last tick actually
+ * committed, [NightState.lastPlan]) is the load-bearing half of the guard: it is what tells "a stale re-arm of
+ * something already armed" apart from D8's own pull-forward recovery, which always produces a NEW, different
+ * target (`now + minAlarmLead`, never the spent instant it replaces - see [shouldKeepPreviousPlan]'s own J2
+ * must-fix 1 doc and the J3 doc on [armPhoneAlarmIfNeeded] below for why that recovery must never be refused).
+ * A pull-forward target can never equal [previousWakeAt], so this guard can never catch it; an ordinary
+ * still-pending re-arm of an unchanged target is refused ONLY once [realNow] has actually reached it - every
+ * tick before that keeps re-arming the same unchanged target exactly as before, harmlessly (Android's own
+ * re-arm of an identical future instant is a no-op). `internal`, not `private`: JVM-testable directly, and
+ * pinned by `TickScheduleRaceTest.kt`'s own `J4 replay` test, which fails without this guard.
+ */
+internal fun shouldRefuseStaleRearm(wakeAt: Instant, previousWakeAt: Instant?, realNow: Instant): Boolean =
+    wakeAt == previousWakeAt && !realNow.isBefore(wakeAt)
+
+/**
  * F6: whether a just-fired real (non-test, non-nudge) alarm should be attributed to the actual wake alarm -
  * true for any mode other than NAP. Used by PhoneAlarmReceiver at FIRE time (never by armPhoneAlarmIfNeeded,
  * which no longer touches this bookkeeping at all - F2 superseded the whole arm-time counting path this used
@@ -190,7 +219,12 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
             context, state.startedAt,
             NightLogEvent(
                 decisionNow, "stale_sync_keep_plan",
-                mapOf("cause" to "sync not ok and the previous plan already has a real alarm armed - keeping it rather than re-planning stale data", "wakeAt" to keptPlan.wakeAt.toString())
+                // S5/item 3c (reviewer note, 2026-09-21): reworded from "already has a real alarm armed" -
+                // shouldKeepPreviousPlan's own S5 doc says plainly that this guard never actually knows whether
+                // the previous plan's alarm is armed, only that its wakeAt is non-null and still ahead of now.
+                // On a night where the exact-alarm permission was revoked, the old wording asserted something
+                // false on exactly the log line someone diagnosing a missed alarm would read.
+                mapOf("cause" to "sync not ok and the previous plan's target is still pending (unfired, still ahead of now) - keeping it rather than re-planning stale data", "wakeAt" to keptPlan.wakeAt.toString())
             ),
             state.debugOptions.isAnyEnabled
         )
@@ -279,10 +313,17 @@ internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? 
  * replace it. Now requires BOTH: [sleepState] is a confirmed [SleepState.ASLEEP] (the same data this tick's own
  * plan was computed from, per H7.2's own accepted staleness - the stronger, freshly-re-synced check is
  * [shouldCancelNudgeForPreCheck]'s own job, not this one's), AND [napAlarmArmed] is true - the replacement nap
- * this predicate is trading the nudge away for must itself be a real, successfully armed (or already fired)
- * phone alarm, not a plan whose own arm attempt silently failed (exact-alarm permission revoked) or never ran
- * (F5's AWAKE safety net gap, wakeAt == null - already excluded below). `internal`, not `private`: the one pure
- * decision seam, JVM-testable directly without a Context.
+ * this predicate is trading the nudge away for must itself be a real, successfully armed phone alarm, not a
+ * plan whose own arm attempt silently failed (exact-alarm permission revoked) or never ran (F5's AWAKE safety
+ * net gap, wakeAt == null - already excluded below).
+ *
+ * J4 must-fix (owner-reported, 2026-09-21) NARROWS what counts as "successfully armed" here: through J3,
+ * [napAlarmArmed] was also true when the target had already fired (armPhoneAlarmIfNeeded's own exact-marker
+ * match), which reached this predicate for a nap whose OWN firing had already armed its own fresh nudge -
+ * superseding that fresh nudge with itself, losing it outright. [napAlarmArmed] no longer counts an
+ * already-fired match as armed (see armPhoneAlarmIfNeeded's own J4 doc); this predicate's own logic is
+ * unchanged, only what its caller now passes in. `internal`, not `private`: the one pure decision seam,
+ * JVM-testable directly without a Context.
  *
  * H8 reached this same defect from the other side and guarded on `!plan.onsetIsProjected`. That guard is
  * subsumed here and deliberately not kept as well: a projected onset is `now + fallAsleepEstimate`, produced
@@ -501,16 +542,29 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * (see its own call site doc below), never [now] itself - [now] here is `decisionNow`, still what every OTHER
  * decision in this function and its caller are built from.
  *
+ * SUPERSEDED BY J3 (owner-reported, 2026-09-21): the paragraph directly above is left in place rather than
+ * deleted (this function's history has already round-tripped on exactly this point once - see the J3 paragraph
+ * further down for the regression the clock re-read it describes turned out to cause), but it is no longer
+ * true. J3 removed every clock read from this function; the past-check compares against [now] (`decisionNow`)
+ * alone again, like every other decision in this tick. What IS re-read fresh at commit time now is the FIRED
+ * MARKER, not the clock - see [phoneAlarmFiredForNow] and its own J3 doc below for the corrected mechanism. A
+ * reader who stops at this paragraph gets the wrong model of the one function that decides whether the phone is
+ * armed; read the J3 paragraphs below before trusting anything above this line about what gets re-read.
+ *
  * F2 SUPERSEDES the original spec: this function no longer touches [NightState.napAlarmsUsed] at all - that
  * counter is now PhoneAlarmReceiver's own bookkeeping, incremented only when a nap alarm actually FIRES (see
  * PhoneAlarmReceiver.recordWakeOrNapFired), never at arm time here.
  *
- * FIX4: returns whether, after this call, [plan]'s own `wakeAt` is backed by a real armed (or already-fired)
- * phone alarm - true when [schedulePhoneAlarm] itself succeeds this tick, or when it already fired for this
- * exact instant ([NightState.phoneAlarmFiredFor], which means D4 already armed a fresh nudge of its own for
- * it); false when there is nothing to arm (`wakeAt == null`) or arming did not happen (already overdue) or
- * failed (exact-alarm permission revoked). [cancelNudgeIfSupersededByNap]'s own guard reads this, so a plan
- * whose own alarm attempt failed never counts as a replacement for the nudge it would otherwise cancel.
+ * FIX4: returns whether, after this call, [plan]'s own `wakeAt` was freshly armed by THIS tick - originally
+ * (through J3) also true on an already-fired exact match; false when there is nothing to arm (`wakeAt == null`),
+ * arming did not happen (already overdue, or refused by [shouldRefuseStaleRearm] below), or failed (exact-alarm
+ * permission revoked). [cancelNudgeIfSupersededByNap]'s own guard reads this, so a plan whose own alarm attempt
+ * failed never counts as a replacement for the nudge it would otherwise cancel.
+ *
+ * J4 must-fix (owner-reported, 2026-09-21) NARROWS what "already-fired" contributes to this return value: it no
+ * longer counts as a replacement nap for the nudge guard - see [phoneAlarmFiredForNow]'s own J4 paragraph below
+ * for the full reasoning and the behaviour this corrects (a real, observed loss of the out-of-bed nudge after a
+ * mid-night nap rings).
  *
  * J1.3 (owner-reported, 2026-09-21) ADDED a second line of defence here, on top of WakeAlarm.kt's own
  * `morningAlarmAlreadyRang` (the primary fix for the same re-ring loop): a [wakeAt] landing strictly after
@@ -533,9 +587,18 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * "close but not exact" window to catch any more, so there is nothing left here worth keeping, only a
  * false-positive risk to remove.
  *
- * J2 must-fix 4's own paragraph below (kept, not deleted, so this history stays legible) re-read the real
- * CLOCK right before the past-check, in place of reusing [now]/`decisionNow`. That closed the duplicate-ring
- * bug it describes, but J3 (owner-reported, 2026-09-21) found it opens the opposite one: D8's own pull-forward
+ * J3 CORRECTION (2026-09-21): "below" two sentences up is wrong - it names the SHORT paragraph ABOVE (the one
+ * starting "J2 must-fix 4: the \"at or before [now]\" past-check..."), now marked superseded in place, which is
+ * what was in fact kept so this history stays legible. What did NOT survive is different: J2 must-fix 4 also
+ * carried a roughly twenty-line CALL-SITE comment, right above the old `val armTimeNow = nowInstant()` line
+ * inside this function's own body, with its own worked trace ("A tick starting at 06:28:30 with a 3-minute
+ * sync..."). J3's own diff deleted that block outright rather than keeping it - it described a mechanism (a
+ * live clock re-read at arm time) that no longer exists in this function at all, so there was nothing left for
+ * it to document in place. The paragraph immediately below is a fresh recap of what that deleted block used to
+ * say, written from scratch for J3's own doc, not the original text carried forward.
+ *
+ * That original call-site block re-read the real CLOCK right before the past-check, in place of reusing
+ * [now]/`decisionNow`. That closed the duplicate-ring bug it describes, but J3 (owner-reported, 2026-09-21) found it opens the opposite one: D8's own pull-forward
  * target sits only [EngineConfig.minAlarmLead] (2 min, rounded up to the next whole minute) past `decisionNow`,
  * and a real dead-band sync can itself cost close to that much (`syncOrFail`'s own two 60 s timeouts) - so
  * whenever a sync outlives the very lead it just produced, the freshly re-read clock has already caught up to
@@ -559,6 +622,30 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * exactly, so nothing is re-armed and there is still exactly one ring - `TickScheduleRaceTest.kt`'s own `J2
  * must-fix 4 replay` test still asserts this, unchanged. A target that has never fired is never refused,
  * whatever the sync costs - pinned by that same file's `J3 replay` test, which fails without this fix.
+ *
+ * J4 must-fix (owner-reported, 2026-09-21) CORRECTS what J3's own exact-match branch RETURNS, not whether it
+ * re-arms (unchanged: still refuses to re-arm on a match, still one ring). Before J3 this branch compared
+ * against the tick-start snapshot [NightState.phoneAlarmFiredFor], which a firing DURING this tick's own sync
+ * could not yet have updated - so the match (and its `return true`) was reachable only for a firing that
+ * predated the whole tick. J3's own fresh, live read makes it ALSO reachable for a firing that happens WHILE
+ * this tick is pending, which is precisely the ordinary case for a mid-night rule 7 nap: the nap fires, its own
+ * PhoneAlarmReceiver firing arms a FRESH out-of-bed nudge (D4) for itself, and THEN this same tick commits,
+ * observes the live marker now matching its own plan's `wakeAt`, and used to return true here - which
+ * [cancelNudgeIfSupersededByNap] reads as "a nap was successfully armed, supersede whatever nudge is pending".
+ * The nudge that gets cancelled is not some stale leftover from an earlier, now-superseded alarm; it is the
+ * SAME nap's own fresh nudge, armed by the SAME firing this match just confirmed - cancelling it loses the one
+ * mechanism that gets the owner out of bed if they lie there after the nap. Traced sequence: a rule 7 nap armed
+ * for 03:20, a tick starting at 03:18:30 with a 2-minute sync, the nap rings at 03:20 (arming a fresh nudge for
+ * 03:35), the tick commits at 03:20:30, the live marker matches, `napSupersedesPendingNudge` fires, the fresh
+ * 03:35 nudge is cancelled - no nudge rings for that nap at all.
+ *
+ * This branch now returns false instead: an exact marker match still means "do not re-arm" (nothing about the
+ * ARM decision changes), but it no longer counts, to [cancelNudgeIfSupersededByNap]'s own guard, as a FRESH nap
+ * this tick itself armed. The FIX4 docstring above is updated to match - this function's return value has
+ * exactly one reader (`napAlarmArmed` at the call site in `runNightTickLocked`), so nothing else in the
+ * codebase depends on the old "or already fired" half of that contract. `TickScheduleRaceTest.kt`'s own `J2
+ * must-fix 4 replay` test is unaffected (it only asserts on ring count, never on the nudge), and a new `J4
+ * nudge replay` test pins the corrected nudge behaviour directly, failing without this change.
  */
 private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousPlan: AlarmPlan?, plan: AlarmPlan, now: Instant): Boolean {
     val debugNight = state.debugOptions.isAnyEnabled
@@ -578,7 +665,11 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
     // flaky read never regresses below what the pre-J3 code already knew.
     val phoneAlarmFiredForNow = readPhoneAlarmFiredFor(context) ?: state.phoneAlarmFiredFor
     if (wakeAt == phoneAlarmFiredForNow) {
-        return true
+        // J4 (owner-reported, 2026-09-21): false, not true - see this function's own J4 doc above. Still never
+        // re-arms (this is an early return, schedulePhoneAlarm below never runs), but no longer tells the nudge
+        // guard that a FRESH nap was armed this tick - the nap that fired already armed its own fresh nudge,
+        // and this branch only confirms that same firing, never a new one.
+        return false
     }
     if (!shouldArmPhoneAlarm(wakeAt, now, phoneAlarmFiredForNow)) {
         // NIT (reviewer note, 2026-09-21): the cause string now names the actual comparison instant ([now],
@@ -590,6 +681,23 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         appendNightLog(
             context, state.startedAt,
             NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "planned phone alarm $wakeAt is at or before $now, not arming - Android fires a past exact alarm immediately")),
+            debugNight
+        )
+        return false
+    }
+    // J4 (owner-reported, 2026-09-21): a second, independent guard on top of shouldArmPhoneAlarm above - see
+    // shouldRefuseStaleRearm's own doc for the residual double-ring race this closes (a torn or not-yet-visible
+    // fired-marker read racing the receiver's own write) and why it cannot reintroduce the J3 silence bug (D8's
+    // pull-forward always produces a NEW target, never previousPlan's own wakeAt). nowInstant() here is
+    // deliberately the REAL clock, re-read fresh at this exact point - not `now`/decisionNow, which is stale by
+    // however long this tick's own sync took.
+    if (shouldRefuseStaleRearm(wakeAt, previousPlan?.wakeAt, nowInstant())) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                now, "error",
+                mapOf("step" to "phone_alarm", "cause" to "refusing to re-arm unchanged target $wakeAt, already reached by the real clock - avoids a residual double ring (J4)")
+            ),
             debugNight
         )
         return false

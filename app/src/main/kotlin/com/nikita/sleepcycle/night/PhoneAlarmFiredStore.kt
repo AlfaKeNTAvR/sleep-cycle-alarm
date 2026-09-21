@@ -18,6 +18,17 @@ package com.nikita.sleepcycle.night
 // read-modify-write entirely: there is nothing to race, since nothing else ever writes them. loadNightState
 // merges all four in on every load, so they are always the freshest source of truth regardless of what stale
 // copy a concurrent tick's own blob still carries.
+//
+// J4 (owner-reported, 2026-09-21): [writeInstantFile] below now writes to a sibling temp file first, then
+// renames it over the real one, the same fix OutOfBedNudgeStore.kt's own [saveOutOfBedNudgePendingAt] got
+// earlier the same night - see its own doc for why the rename (both operations on the same app-private
+// directory) is atomic. Before this, a plain truncate-then-write left a window where a concurrent tick's own
+// commit-time read of [phoneAlarmFiredFor] ([readPhoneAlarmFiredFor]) could land mid-write and see a truncated,
+// unparsable file - treated identically to "absent" (never throws), so that tick could see null for an alarm
+// that, by real wall-clock time, had already fired. Combined with a stale-but-still-"future" re-arm check, that
+// window is the write-side half of the residual double ring closed by NightOrchestrator.shouldRefuseStaleRearm
+// (its own J4 doc covers the read-side half, and why a torn read alone is not enough to reintroduce it once
+// both halves are fixed). The rename makes the window disappear at its source instead of merely tolerating it.
 
 import android.content.Context
 import android.util.Log
@@ -104,9 +115,12 @@ internal fun mergeAlarmFiredStores(
         lastNapAlarmFiredAt = lastNapAlarmFiredAt ?: state.lastNapAlarmFiredAt
     )
 
+/** J4: temp-file-then-rename, not a plain truncate-then-write - see this file's own J4 doc for the torn-read window this closes. */
 private fun writeInstantFile(file: File, value: Instant): Boolean =
     try {
-        file.writeText(value.toString())
+        val temp = File(file.parentFile, "${file.name}.tmp")
+        temp.writeText(value.toString())
+        if (!temp.renameTo(file)) throw java.io.IOException("renameTo failed for $temp -> $file")
         true
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to write ${file.name}", error)

@@ -44,4 +44,32 @@ class PhoneAlarmArmingTest {
         val alarm = now.plusSeconds(60)
         assertTrue(shouldArmPhoneAlarm(alarm, now, phoneAlarmFiredFor = firedFor))
     }
+
+    // J4 (owner-reported, 2026-09-21): shouldRefuseStaleRearm, the second guard armPhoneAlarmIfNeeded checks
+    // right before actually arming - see its own doc in NightOrchestrator.kt for the residual double-ring race
+    // this closes.
+
+    @Test
+    fun `an unchanged target already reached by the real clock is refused`() {
+        val wakeAt = now
+        assertTrue(shouldRefuseStaleRearm(wakeAt, previousWakeAt = wakeAt, realNow = now))
+    }
+
+    @Test
+    fun `an unchanged target the real clock has not reached yet is not refused`() {
+        val wakeAt = now.plusSeconds(60)
+        assertFalse(shouldRefuseStaleRearm(wakeAt, previousWakeAt = wakeAt, realNow = now))
+    }
+
+    @Test
+    fun `a new target different from what was previously armed is never refused, even if already past`() {
+        val wakeAt = now.minusSeconds(1)
+        assertFalse(shouldRefuseStaleRearm(wakeAt, previousWakeAt = now.minusSeconds(600), realNow = now))
+    }
+
+    @Test
+    fun `a first-ever arm with no previous plan is never refused`() {
+        val wakeAt = now
+        assertFalse(shouldRefuseStaleRearm(wakeAt, previousWakeAt = null, realNow = now))
+    }
 }
