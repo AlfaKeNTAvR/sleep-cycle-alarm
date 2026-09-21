@@ -360,6 +360,69 @@ treated as my own regression, since `git status` throughout confirmed I never to
   ordinary case" half separately from the "phoneAlarmFiredFor alone can carry it" half the first test pins).
   Restored the fix, reran clean.
 
+### Must-fix 4 (landed) - re-arming a target that fired during the arming tick's own sync
+
+- In `armPhoneAlarmIfNeeded` (NightOrchestrator.kt), re-sampled the clock with a fresh `nowInstant()` call
+  right before the one comparison that decides whether `wakeAt` is still ahead of "now" (`shouldArmPhoneAlarm`),
+  instead of reusing `now` (`decisionNow`, sampled once at tick start per FIX1). Left every other use of `now`
+  in the same function (log timestamps, the J1.3 second-line-of-defence window check) untouched, exactly as
+  specified - this is a real-time safety check, not a decision-consistency one, and only that one check needed
+  the correction.
+- Verified this cannot reopen FIX1's own bug: FIX1's whole point was that a tick's DATA and PLAN must be built
+  from one consistent, non-decreasing instant across a racing pair of ticks - nothing here touches the plan
+  itself, only whether an arm attempt for an ALREADY-COMPUTED plan is still valid by the time it actually runs,
+  which by definition happens strictly after `decisionNow` (the sync that produced this tick's plan already
+  ran before `armPhoneAlarmIfNeeded` is ever called) - so `armTimeNow >= decisionNow` always, and re-reading it
+  can only make the safety check MORE conservative (refuse arming something that has since gone stale), never
+  less.
+- Extended `NightReplay.kt`'s own mirror the same way: `armPhoneAlarmIfNeeded`'s past-check now reads
+  `PendingTick.commitAt` (this tick's own real commit instant, after its sync) instead of `PendingTick.startedAt`
+  - `armings` (which tick armed something) still records `startedAt`, since that identifies WHICH tick did the
+  arming, not when the safety check itself ran.
+- Rewrote `TickScheduleRaceTest.kt`'s "rings twice, but never a third time" test - the one the finding named
+  directly, and the fifth instance of this project's own recurring failure mode (a green test pinning a live
+  defect as correct) - to expect exactly one ring instead of two, renamed to `J2 must-fix 4 replay`, and its
+  docstring rewritten to explain what used to happen and why it no longer does, rather than silently changing
+  the assertion with no trace of the history.
+- Verified BOTH directions by hand: (1) ran the test file BEFORE touching the test's own assertions, with only
+  the production+harness fix applied - it failed exactly as expected (`expected: <[..., ...]> but was: <[...]>`,
+  one firing where the old assertion expected two), confirming the fix actually changes this scenario's outcome;
+  (2) after rewriting the assertions to expect one ring, temporarily reverted ONLY the harness's own
+  `commitAt`-vs-`startedAt` change (kept the rewritten test), reran, saw `AssertionFailedError` at the same
+  line the two-firing assertion used to sit at - confirming the NEW test genuinely pins the NEW fix, not
+  something that would pass regardless. Restored both, full suite green.
+- Did not add a dedicated production-level unit test for `armPhoneAlarmIfNeeded`'s own fresh-clock-read line:
+  it is a private function calling real Android `AlarmManager`/`Context` APIs with no Robolectric available in
+  this environment (same constraint noted throughout J1.3's own entry above) - `TickScheduleRaceTest.kt`'s
+  engine-level harness mirror is the closest reachable regression coverage, exactly as it already was for the
+  J1.4 four-case suite this same file holds.
+
+### The J1.5 staleness-vs-failure question (recorded per the brief's own request, not fixed)
+
+The brief flagged that J1.5's freeze (`shouldKeepPreviousPlan`) triggers on `!outcome.syncOk`, which is true
+for BOTH an outright sync failure AND merely-stale data (`resolveSyncOutcome`'s own stale-data branch, e.g. an
+export file that has not changed since the last successful read) - so an ordinary first tick or two of a
+perfectly healthy night, before the band has had a chance to report anything new yet, can also freeze at the
+zero-data projection. Considered, not changed, for these reasons:
+- The freeze (post must-fix 1) is now bounded to `wakeAt.isAfter(now)` - it can only ever hold a plan whose own
+  alarm is still genuinely pending, and it releases itself the moment that stops being true, falling through to
+  the ordinary re-plan path. A stale-data freeze on an early tick, before any real alarm has even been computed
+  yet, is far less consequential than the dead-band case J1.5 targets: `previousPlan` at that point is
+  typically the zero-data projection ITSELF (a `wakeAt` computed from no real sleep data at all), so "freezing"
+  it just means one extra tick's worth of staying on the same not-yet-informed guess rather than recomputing an
+  equally uninformed one from a `now` that has moved a few minutes further - not a materially worse outcome.
+- Distinguishing failure from staleness would need `shouldKeepPreviousPlan` (or its caller) to see
+  `SyncOutcome.failureCause`, which IS already available (non-null only on genuine failure, per
+  `resolveSyncOutcome`'s own doc) - so the plumbing exists and this is a real, buildable option, not
+  hypothetical. Chose not to make it because the reviewer's own must-fix 1 trace (the actual reported bug) is
+  itself a FAILURE case (sync fails outright, band and phone both dead) - narrowing the freeze to
+  `failureCause != null` would not have changed that scenario's outcome at all, and would add a second
+  behavioural branch to a function that must-fix 1 already changed once this session, for a benefit (skipping
+  a freeze on stale-but-not-failed early-night data) that the freeze's own `now`-bound already mostly covers.
+- Recommend revisiting if a future night log ever shows the freeze actually firing repeatedly on stale (not
+  failed) data in a way that visibly delays a plan settling - not reproduced or observed in this session, so
+  left as a documented open question rather than spending scope on an unconfirmed problem.
+
 ## All six J1 findings landed
 
 J1.1 through J1.6 are all committed on `nikita/fix/overnight-hardening`: d594204, 7e73145, 12c9e51, ee9db3e,

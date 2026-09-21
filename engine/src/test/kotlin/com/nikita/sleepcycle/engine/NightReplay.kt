@@ -166,13 +166,16 @@ internal class NightReplay(
      * latch, save, schedule the next tick) until [syncDuration] later. A zero [syncDuration] commits right
      * away, same as every tick before J1.4's own sync-duration parameter existed.
      *
-     * J1.3's re-ring is reproduced through exactly this staleness: a tick that starts before an alarm fires but
-     * commits after it carries a plan computed WITHOUT knowing that firing happened (its own snapshot predates
-     * it) - the same [EngineConfig.minAlarmLead]-window target it already knew about is still "in the future"
-     * relative to its own [at], so J1.1's own fix does not save it here, and it re-arms the very target that,
-     * by the time this tick actually commits, has already rung. What J1.3 bounds is what happens AFTER that:
-     * the NEXT tick's own snapshot, loaded fresh after this one commits, sees the true phoneAlarmFiredFor and
-     * stops there - exactly one extra ring, never the unbounded loop from before J1.3.
+     * A tick that starts before an alarm fires but commits after it carries a plan computed WITHOUT knowing
+     * that firing happened (its own snapshot predates it) - the same target it already knew about is still "in
+     * the future" relative to its own [at], so nothing about the PLAN itself catches this. J2 must-fix 4 is
+     * what actually stops a re-arm here: [commitPendingTick]'s own arm step re-reads the clock at COMMIT time
+     * (this tick's own [PendingTick.commitAt], mirroring NightOrchestrator's fresh `nowInstant()` re-read right
+     * before arming - see its own doc), so by the time this tick's stale plan reaches the arm check, the target
+     * it is trying to (re-)arm is by then usually already in the past too (the real alarm having already rung
+     * normally, on schedule, from whatever the PREVIOUS tick committed) - and gets refused, not re-armed. See
+     * `TickScheduleRaceTest.kt`'s own "rings once, not twice" test for the scenario this was built to
+     * reproduce and, since must-fix 4 landed, now correctly resolves.
      */
     private fun runTick(at: Instant, syncDuration: Duration) {
         check(pendingTick == null) { "a tick is already pending at ${pendingTick?.startedAt} - NightReplay does not model overlapping ticks" }
@@ -185,11 +188,20 @@ internal class NightReplay(
         if (syncDuration.isZero) commitPendingTick()
     }
 
-    /** The pending tick's own arm/latch/save/reschedule, all at once - see [runTick]'s own doc for why the arm step also uses this tick's OWN (possibly stale) phoneAlarmFiredFor snapshot, never the live one. */
+    /**
+     * The pending tick's own arm/latch/save/reschedule, all at once - see [runTick]'s own doc for why the arm
+     * step also uses this tick's OWN (possibly stale) phoneAlarmFiredFor snapshot, never the live one.
+     *
+     * J2 must-fix 4: [armPhoneAlarmIfNeeded]'s past-check gets [PendingTick.commitAt] - this tick's own real
+     * commit instant, AFTER its sync - never [PendingTick.startedAt] (decisionNow), mirroring
+     * NightOrchestrator.armPhoneAlarmIfNeeded's own fresh `nowInstant()` re-read right before arming. Every
+     * OTHER fact this tick already computed (the plan itself, latching, the next tick's own schedule two lines
+     * down) still reflects [PendingTick.startedAt] unchanged - only the real-time safety check moved.
+     */
     private fun commitPendingTick() {
         val pending = checkNotNull(pendingTick) { "commitPendingTick called with nothing pending" }
         pendingTick = null
-        armPhoneAlarmIfNeeded(pending.plan, pending.phoneAlarmFiredForAtStart, pending.startedAt)
+        armPhoneAlarmIfNeeded(pending.plan, pending.phoneAlarmFiredForAtStart, pending.startedAt, pending.commitAt)
         morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, pending.plan)
         lastPlan = pending.plan
         plans.add(pending.plan)
@@ -235,24 +247,28 @@ internal class NightReplay(
      * J1.3 second line of defence: a wakeAt strictly after it but still within minAlarmLead is refused too, not
      * just an exact match. [phoneAlarmFiredForAtStart] is this PENDING tick's own snapshot, taken at
      * [PendingTick.startedAt] - see [runTick]'s own doc for why a stale-snapshot tick's arm step is stale here
-     * too, and why that is the accepted, BOUNDED cost the "rings twice" regression test below documents rather
-     * than hides.
+     * too.
+     *
+     * J2 must-fix 4: [tickStartedAt] and [armTimeNow] are now two DIFFERENT instants, not one - [tickStartedAt]
+     * (this tick's own decisionNow) is still what gets recorded in [armings] (identifying WHICH tick armed
+     * something, for [armedTargetsAfter]'s own use), but the actual past-check (`!wakeAt.isAfter(...)`) reads
+     * [armTimeNow] instead - this tick's own real commit instant. See [commitPendingTick]'s own doc for why.
      */
-    private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, phoneAlarmFiredForAtStart: Instant?, now: Instant) {
+    private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, phoneAlarmFiredForAtStart: Instant?, tickStartedAt: Instant, armTimeNow: Instant) {
         val wakeAt = plan.wakeAt
         if (wakeAt == null) {
             armedAlarmAt = null
             return
         }
         if (wakeAt == phoneAlarmFiredForAtStart) return
-        if (!wakeAt.isAfter(now)) return
+        if (!wakeAt.isAfter(armTimeNow)) return
         if (phoneAlarmFiredForAtStart != null && wakeAt.isAfter(phoneAlarmFiredForAtStart) &&
             !wakeAt.isAfter(phoneAlarmFiredForAtStart.plus(config.minAlarmLead))
         ) {
             return
         }
         armedAlarmAt = wakeAt
-        armings.add(now to wakeAt)
+        armings.add(tickStartedAt to wakeAt)
     }
 
     /** NightOrchestrator.latchMorningAlarmAt: only a FULL_CYCLES or DEADLINE_ONLY plan sets the night's morning alarm time, and a null wakeAt never erases it (H8). */

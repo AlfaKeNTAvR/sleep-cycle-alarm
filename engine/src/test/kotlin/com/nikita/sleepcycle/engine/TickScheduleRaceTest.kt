@@ -45,32 +45,23 @@ class TickScheduleRaceTest {
         assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
     }
 
-    @Test fun `J1_1 replay - the same lead-window tick with a slow sync rings twice, but never a third time`() {
+    @Test fun `J2 must-fix 4 replay - the same lead-window tick with a slow sync rings only once, not twice`() {
         // Advance to just before the 06:28:30 tick, then let THAT one tick run with a 3-minute sync duration:
         // its own input snapshot (taken at 06:28:30, before the 06:30 firing) still sees no wakeAlarmFiredAt
         // and no phoneAlarmFiredFor, so - exactly like the fast-tick case above - it computes 06:30 unchanged
-        // (J1.1) and, on committing at 06:31:30, re-arms that same already-fired target from its own stale
-        // snapshot (its own arm step reads phoneAlarmFiredFor exactly as it stood at 06:28:30, before the sync
-        // - see NightReplay.runTick's own doc). The already-armed 06:30 alarm fires normally in between, at
-        // 06:30, attributed correctly via the ordinary lastPlan match (H8's own pre-existing check, since
-        // lastPlan and firedFor agree throughout this scenario). Bounded to exactly two rings: the NEXT tick's
-        // own snapshot, loaded fresh after this one finally commits, sees the true wakeAlarmFiredAt and arms
-        // nothing further.
+        // (J1.1). The already-armed 06:30 alarm fires normally in between, at 06:30, attributed correctly via
+        // the ordinary lastPlan match. The 06:28:30 tick then finally commits at 06:31:30 (after its own
+        // 3-minute sync) - J2 must-fix 4's own re-read of the real clock right at that commit sees 06:31:30,
+        // not the tick's own stale 06:28:30 decisionNow, so the past-check correctly refuses to re-arm a target
+        // (06:30) that, by now, is already a minute and a half gone. One ring, never two.
         //
-        // NAMING NOTE, checked by hand rather than left assumed: this test's own name says J1.1, not J1.3, on
-        // purpose. It was originally written to pin J1.3's own phoneAlarmFiredFor threading in
-        // morningAlarmAlreadyRang, but temporarily reverting ONLY that guard (keeping J1.1 applied) left this
-        // test passing unchanged - because attribution never actually fails here (lastPlan always matches
-        // whatever fires in this scenario), H8's PRE-EXISTING wakeAlarmFiredAt-only check already bounds the
-        // loop to two rings on its own. Reverting J1.1 (see the test above) does fail it. J1.3's own
-        // phoneAlarmFiredFor threading is pinned directly and unambiguously instead by ComputeWakeAlarmTest.kt's
-        // `J1_3 a morning target is still spent when only phoneAlarmFiredFor recorded the firing` and its sibling
-        // - both verified to fail against the pre-J1.3 body of morningAlarmAlreadyRang when it landed. A
-        // genuine attribution-MISMATCH scenario (not just a stale re-arm of the same value) needs the receiver's
-        // own disk read to race a concurrent tick's save at sub-instant granularity - see
-        // AUTONOMOUS_DECISIONS_09_21_2026.md for why that could not be expressed deterministically at the whole-
-        // sequence level in this harness, and why this is reported plainly rather than papered over with a name
-        // that overclaims what got verified.
+        // CORRECTED, not just renamed: before must-fix 4, this exact scenario used to commit the stale
+        // 06:28:30 tick's own arm step against its OWN decisionNow (still 06:28:30), which believed 06:30 was
+        // still ahead of "now" and re-armed it - already in the real past, so Android fired it immediately. The
+        // test used to assert that SECOND ring as an accepted, "bounded" cost, in the same house failure mode
+        // this project has been bitten by five times running: a green test pinning a live defect as correct.
+        // This test is J1_1-adjacent groundwork with that defect intentionally FIXED under it now, renamed
+        // accordingly rather than left claiming a J1.1-only scope it no longer has.
         val replay = nightOwnerTraced()
 
         // Stop just short of the 06:28:30 tick (the previous one, at 06:23:30, still runs and commits
@@ -79,14 +70,14 @@ class TickScheduleRaceTest {
         replay.advanceTo("2026-09-21T06:23:31")
         replay.advanceTo("2026-09-21T06:33:00", syncDuration = Duration.ofMinutes(3))
         assertEquals(
-            listOf(instant("2026-09-21T06:30:00"), instant("2026-09-21T06:30:00")),
+            listOf(instant("2026-09-21T06:30:00")),
             replay.firings.map { it.firedFor },
             replay.trace()
         )
 
-        // The bound: keep advancing well past the alarm, and the ring count must never climb past two.
+        // The bound: keep advancing well past the alarm, and the ring count must never climb past one.
         replay.advanceTo("2026-09-21T08:00:00")
-        assertEquals(2, replay.firings.size, replay.trace())
+        assertEquals(1, replay.firings.size, replay.trace())
         assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
     }
 

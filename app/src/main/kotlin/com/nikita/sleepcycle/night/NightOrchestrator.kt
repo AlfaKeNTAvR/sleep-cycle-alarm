@@ -477,6 +477,10 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * (re)armed. "phone_alarm_set" is only logged when the target time actually changed; a scheduling failure is
  * logged as an error on every tick until it succeeds.
  *
+ * J2 must-fix 4: the "at or before [now]" past-check re-reads the real clock at the point it actually runs
+ * (see its own call site doc below), never [now] itself - [now] here is `decisionNow`, still what every OTHER
+ * decision in this function and its caller are built from.
+ *
  * F2 SUPERSEDES the original spec: this function no longer touches [NightState.napAlarmsUsed] at all - that
  * counter is now PhoneAlarmReceiver's own bookkeeping, incremented only when a nap alarm actually FIRES (see
  * PhoneAlarmReceiver.recordWakeOrNapFired), never at arm time here.
@@ -523,7 +527,28 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         )
         return false
     }
-    if (!shouldArmPhoneAlarm(wakeAt, now, state.phoneAlarmFiredFor)) {
+    // J2 must-fix 4 (owner-reported, 2026-09-21): re-sampled HERE, right before the actual past-check, rather
+    // than reusing [now] (`decisionNow`, sampled once at tick start per FIX1). This check is a REAL-TIME safety
+    // check - Android fires a past `AlarmManager.setAlarmClock` alarm immediately, so it must ask "is wakeAt
+    // still ahead of the actual clock RIGHT NOW", not "was it ahead of the clock back when this tick started
+    // deciding". `decisionNow` is deliberately reused everywhere else in this tick (the plan itself, every log
+    // timestamp, lastSyncAt, next-tick scheduling) for FIX1's own reason - two ticks racing the lock must
+    // always commit in non-decreasing `decisionNow` order - and none of that changes here: only this one
+    // comparison re-reads the clock, nothing written to state or logged uses [armTimeNow].
+    //
+    // The bug this closes: `readBandDataForTick`'s own sync can take up to ~2 min (syncOrFail's own doc) and
+    // runs BEFORE this function is ever called, so by the time execution reaches here, real time has already
+    // moved past `decisionNow` by however long that sync took - `decisionNow` alone could not see that. A tick
+    // starting at 06:28:30 with a 3-minute sync used to reach this check still believing `now` was 06:28:30,
+    // so a wakeAt of 06:30 (unchanged since J1.1, still correctly armed from an earlier tick and by now already
+    // RUNG normally) looked safely in the future and got rearmed - at real time 06:31:30, a full 90 seconds
+    // after it had already fired. Android fires an alarm request armed for the past immediately: a second,
+    // full-volume ring on top of the one that already happened. On the morning alarm that is merely annoying;
+    // on a mid-night nap (PhoneAlarmReceiver's own ring path is deliberately non-idempotent, D1) it is a second
+    // 3am ring. `TickScheduleRaceTest.kt`'s own "rings twice" test used to assert exactly this as an accepted,
+    // documented cost - it now asserts one ring, which is what actually happens once this reads the real clock.
+    val armTimeNow = nowInstant()
+    if (!shouldArmPhoneAlarm(wakeAt, armTimeNow, state.phoneAlarmFiredFor)) {
         appendNightLog(
             context, state.startedAt,
             NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "planned phone alarm $wakeAt is at or before now, not arming - Android fires a past exact alarm immediately")),
