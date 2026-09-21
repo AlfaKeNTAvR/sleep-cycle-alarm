@@ -512,6 +512,33 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * already closes the morning-side one - neither re-ring shape reaches this function with anything for a
  * "close but not exact" window to catch any more, so there is nothing left here worth keeping, only a
  * false-positive risk to remove.
+ *
+ * J2 must-fix 4's own paragraph below (kept, not deleted, so this history stays legible) re-read the real
+ * CLOCK right before the past-check, in place of reusing [now]/`decisionNow`. That closed the duplicate-ring
+ * bug it describes, but J3 (owner-reported, 2026-09-21) found it opens the opposite one: D8's own pull-forward
+ * target sits only [EngineConfig.minAlarmLead] (2 min, rounded up to the next whole minute) past `decisionNow`,
+ * and a real dead-band sync can itself cost close to that much (`syncOrFail`'s own two 60 s timeouts) - so
+ * whenever a sync outlives the very lead it just produced, the freshly re-read clock has already caught up to
+ * a target that has NEVER FIRED, and this refused to arm it: logged as an error, dropped, with no self-heal -
+ * the plan stays in the same near-alarm phase, so the identical tick 5 minutes later hits the identical
+ * refusal, forever, until the owner picks up the phone. Traced sequence: night starts 23:00, no deadline, 5
+ * cycles, plan FULL_CYCLES wakeAt 06:30, armed; the phone's battery dies at 04:10 (killing the armed alarm with
+ * it, per D8's own precondition - it never actually rang) and boots at 07:41 with the band also dead
+ * (Gadgetbridge unreachable, both of syncOrFail's own timeouts burned). The first tick samples `decisionNow` at
+ * 07:41:57; [shouldKeepPreviousPlan] correctly releases (06:30 is no longer ahead of `decisionNow`, J2 must-fix
+ * 1's own job) so the plan recomputes and D8 pulls 06:30 forward to 07:44:00 - but by the time arming runs, the
+ * re-read clock already reads 07:44:01, one second past it. This also puts J2 must-fix 1 and must-fix 4 in
+ * direct conflict: must-fix 1 exists precisely to let this pull-forward recovery run on a dead band, and
+ * must-fix 4 could refuse the very target it produces.
+ *
+ * J3's fix: stop re-sampling the CLOCK and re-sample the FIRED MARKER instead - see [phoneAlarmFiredForNow]
+ * below. The clock both checks compare against goes back to being [now] (`decisionNow`) throughout, matching
+ * every other decision in this tick (FIX1's own reason still holds unchanged). The must-fix 4 scenario (a
+ * target that rang DURING this tick's own sync) now resolves at the EARLIER check instead (`wakeAt ==
+ * phoneAlarmFiredForNow`, right below): the fresh marker read at commit time already equals the fired target
+ * exactly, so nothing is re-armed and there is still exactly one ring - `TickScheduleRaceTest.kt`'s own `J2
+ * must-fix 4 replay` test still asserts this, unchanged. A target that has never fired is never refused,
+ * whatever the sync costs - pinned by that same file's `J3 replay` test, which fails without this fix.
  */
 private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousPlan: AlarmPlan?, plan: AlarmPlan, now: Instant): Boolean {
     val debugNight = state.debugOptions.isAnyEnabled
@@ -520,34 +547,29 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         if (previousPlan?.wakeAt != null) cancelPhoneAlarm(context)
         return false
     }
-    if (wakeAt == state.phoneAlarmFiredFor) {
+    // J3 (owner-reported, 2026-09-21) CORRECTS J2 must-fix 4: re-sampled HERE, right before BOTH checks below
+    // (the exact-match early return just underneath, and shouldArmPhoneAlarm's own past-check), is the FIRED
+    // MARKER - a small, fast file read ([readPhoneAlarmFiredFor], PhoneAlarmFiredStore.kt) - never the clock.
+    // [now] (`decisionNow`) is what both checks compare against instead, unchanged from every other decision in
+    // this tick. See this function's own J3 doc above for the missed-ring regression this replaces, and why the
+    // marker, not the clock, is the thing that actually moves during a tick's own sync. Falls back to the
+    // tick-start snapshot ([NightState.phoneAlarmFiredFor]) only if the fresh read itself fails (never throws,
+    // per PhoneAlarmFiredStore.kt's own doc, but can still come back null on a transient I/O error) - so a
+    // flaky read never regresses below what the pre-J3 code already knew.
+    val phoneAlarmFiredForNow = readPhoneAlarmFiredFor(context) ?: state.phoneAlarmFiredFor
+    if (wakeAt == phoneAlarmFiredForNow) {
         return true
     }
-    // J2 must-fix 4 (owner-reported, 2026-09-21): re-sampled HERE, right before the actual past-check, rather
-    // than reusing [now] (`decisionNow`, sampled once at tick start per FIX1). This check is a REAL-TIME safety
-    // check - Android fires a past `AlarmManager.setAlarmClock` alarm immediately, so it must ask "is wakeAt
-    // still ahead of the actual clock RIGHT NOW", not "was it ahead of the clock back when this tick started
-    // deciding". `decisionNow` is deliberately reused everywhere else in this tick (the plan itself, every log
-    // timestamp, lastSyncAt, next-tick scheduling) for FIX1's own reason - two ticks racing the lock must
-    // always commit in non-decreasing `decisionNow` order - and none of that changes here: only this one
-    // comparison re-reads the clock, nothing written to state or logged uses [armTimeNow].
-    //
-    // The bug this closes: `readBandDataForTick`'s own sync can take up to ~2 min (syncOrFail's own doc) and
-    // runs BEFORE this function is ever called, so by the time execution reaches here, real time has already
-    // moved past `decisionNow` by however long that sync took - `decisionNow` alone could not see that. A tick
-    // starting at 06:28:30 with a 3-minute sync used to reach this check still believing `now` was 06:28:30,
-    // so a wakeAt of 06:30 (unchanged since J1.1, still correctly armed from an earlier tick and by now already
-    // RUNG normally) looked safely in the future and got rearmed - at real time 06:31:30, a full 90 seconds
-    // after it had already fired. Android fires an alarm request armed for the past immediately: a second,
-    // full-volume ring on top of the one that already happened. On the morning alarm that is merely annoying;
-    // on a mid-night nap (PhoneAlarmReceiver's own ring path is deliberately non-idempotent, D1) it is a second
-    // 3am ring. `TickScheduleRaceTest.kt`'s own "rings twice" test used to assert exactly this as an accepted,
-    // documented cost - it now asserts one ring, which is what actually happens once this reads the real clock.
-    val armTimeNow = nowInstant()
-    if (!shouldArmPhoneAlarm(wakeAt, armTimeNow, state.phoneAlarmFiredFor)) {
+    if (!shouldArmPhoneAlarm(wakeAt, now, phoneAlarmFiredForNow)) {
+        // NIT (reviewer note, 2026-09-21): the cause string now names the actual comparison instant ([now],
+        // `decisionNow`) instead of the word "now" alone - before J3 this line was stamped with `decisionNow`
+        // while the comparison itself ran against a different, later, re-read clock, so a log line timestamped
+        // 07:41:57 could refuse a 07:44:00 target as "at or before now" - correct in wording, misleading to read,
+        // and easy to mistake for a code bug rather than a slow sync. J3 removed the second clock entirely, so
+        // the timestamp and the comparison instant are now always the same value - this just says so explicitly.
         appendNightLog(
             context, state.startedAt,
-            NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "planned phone alarm $wakeAt is at or before now, not arming - Android fires a past exact alarm immediately")),
+            NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "planned phone alarm $wakeAt is at or before $now, not arming - Android fires a past exact alarm immediately")),
             debugNight
         )
         return false

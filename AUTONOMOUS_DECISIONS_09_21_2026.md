@@ -492,3 +492,64 @@ notes are recorded above rather than silently expanded into: the mid-night nap s
 race (asleepNapTarget has no equivalent of morningAlarmAlreadyRang, noted under J1.3), and the honest relabeling
 of two of J1.4's four regression tests once reverting the guard they were meant to pin left them passing
 unchanged (noted under J1.4, with the real pinning tests named).
+
+## J3 round (closing Opus review of the overnight-hardening branch, landed)
+
+### Must-fix (verified failing without the fix, output below)
+
+**Verified the reviewer's own reasoning before touching code.** Traced `pullForwardIfTooSoon` (WakeAlarm.kt)
+myself: `minAlarmLead` defaults to 2 min, `ceilToWholeMinute` can add up to another minute, so D8's own
+pull-forward target sits `decisionNow + 120..180s`. Traced `syncOrFail`'s own doc (two 60s timeouts) - a dead
+sync can cost close to that much. Reviewer's numbers (decisionNow 07:41:57, pulled-forward target 07:44:00,
+commit at 07:44:01) check out exactly against `pullForwardIfTooSoon`'s real arithmetic - confirmed with the
+regression test below before writing any production fix.
+
+**Fix, exactly as specified:** `armPhoneAlarmIfNeeded` (NightOrchestrator.kt) now reads
+`readPhoneAlarmFiredFor(context)` fresh, right before both the exact-match early return and the
+`shouldArmPhoneAlarm` call, falling back to `state.phoneAlarmFiredFor` only if the fresh read itself comes back
+null (transient I/O failure, never throws per PhoneAlarmFiredStore.kt's own doc) - a defensive floor, not
+required by the reviewer's own spec, added so a flaky read can never regress below the pre-J3 behaviour. `now`
+(`decisionNow`) is the clock in both checks, unchanged from FIX1's own convention - the commit-time clock
+re-read J2 must-fix 4 added is gone entirely.
+
+**Regression test lives in the engine module** (`TickScheduleRaceTest.kt`'s new `J3 replay` case), not the app
+module, because `armPhoneAlarmIfNeeded` is `private fun (context: Context, ...)` - no Context-based app-layer
+harness exists in this codebase to drive it end-to-end (checked: no test anywhere calls `runNightTick`
+directly). `NightReplay.kt` mirrors the function instead, per its own established pattern.
+
+**Confirmed the test fails without the fix.** Temporarily reverted `NightReplay.armPhoneAlarmIfNeeded` and
+`commitPendingTick` to the pre-J3 (J2 must-fix 4) shape - commit-time clock re-read (`pending.commitAt`) instead
+of `pending.startedAt`, everything else unchanged - reran `TickScheduleRaceTest`, restored immediately after
+capturing output:
+
+```
+TickScheduleRaceTest > J3 replay - a never-fired pull-forward target survives an expensive dead sync and still rings() FAILED
+    org.opentest4j.AssertionFailedError at TickScheduleRaceTest.kt:136
+...
+plan FULL_CYCLES wakeAt=2026-09-21T04:44:00Z
+ ==> expected: <[2026-09-21T04:44:00Z]> but was: <[]>
+5 tests completed, 1 failed
+```
+
+Exactly one test failed (the new one) - the pre-existing `J2 must-fix 4 replay` test (the duplicate-ring
+property) still passed under the reverted code, confirming that test was never accidentally depending on the
+J3 change and still correctly pins its own property either way. The failure shows the target was computed
+correctly (04:44:00Z = 07:44:00 local) but never armed (`armedTargetsAfter` returns `[]`) - the missed-ring
+regression, reproduced exactly. Restored the fix, reran, `BUILD SUCCESSFUL`.
+
+### SHOULD FIX 2 (landed, folded into the must-fix's own commit)
+
+The previous round's S3 decision (directly above, in the J2 section) declined a sync-failure mode for
+`NightReplay`, reasoning the app-layer freeze decision was out of the engine harness's own scope and branch
+coverage of `shouldKeepPreviousPlan` was already complete. The reviewer measured this wrong: reverting must-fix
+1 and must-fix 3 each failed unit tests only, zero sequence-level tests, despite both being live defects -
+branch coverage cannot catch a guard whose INPUTS are wrong (`shouldKeepPreviousPlan` had no `now` parameter at
+all pre-must-fix-1). Added `syncFails: Boolean` to `NightReplay.advanceTo`/`openApp`, a private
+`shouldKeepPreviousPlan` mirror, and a `lastSyncedSegments` snapshot (updated only on a successful sync,
+mirroring `resolveSyncOutcome`'s own `state.lastSegments` reuse on a failed/stale one) - this needed to be built
+anyway to construct the J3 regression test itself (the dead-band freeze IS part of that scenario:
+`shouldKeepPreviousPlan` correctly releases once `wakeAt` is no longer ahead of `now`, letting the recompute and
+pull-forward run), so building it earned both the should-fix and the must-fix's own test in one pass. Also
+added `batteryDies()` (clears the armed alarm and the ordinary tick schedule without ever firing, modeling
+total power loss - BootReceiver's own precondition, not its body, since BootReceiver correctly declining to
+re-arm a past target was never the bug in question).

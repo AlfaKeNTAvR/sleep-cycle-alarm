@@ -12,6 +12,7 @@ import java.time.Instant
  * Every rule below mirrors one named app-layer function; the engine module cannot import them (they live in
  * :app, on top of Android), so they are restated here and named in comments so a change on either side is
  * easy to find:
+ *  - the dead-band/stale-sync freeze: NightOrchestrator.shouldKeepPreviousPlan
  *  - arming: NightOrchestrator.armPhoneAlarmIfNeeded / shouldArmPhoneAlarm
  *  - fire-time attribution: PhoneAlarmReceiver.recordWakeOrNapFired / NightOrchestrator.firedAlarmIsWakeAlarm
  *  - the morning-alarm latch: NightOrchestrator.latchMorningAlarmAt
@@ -35,6 +36,20 @@ import java.time.Instant
  * finishes). An armed alarm can therefore fire WHILE such a tick is still pending, using whatever was
  * committed by the tick before it - see [runTick]'s own doc for what this is built to reproduce: J1.3's
  * re-ring, bounded now to exactly one extra ring rather than an unbounded loop.
+ *
+ * S2/SHOULD-FIX-2 (reviewer note, 2026-09-21) ADDS a sync-FAILURE mode, threaded through the same
+ * [advanceTo]/[openApp] calls as [syncFails]: a tick that becomes due during such a call mirrors
+ * `resolveSyncOutcome`'s two not-ok branches (an outright failure, or a success that turns out stale) by
+ * feeding [shouldKeepPreviousPlan] `syncOk = false` and, when it does not freeze, recomputing from
+ * [lastSyncedSegments] (the last segments a SUCCESSFUL sync actually saw) rather than this call's own live
+ * [segmentsAt] - exactly like `SyncOutcome.segments` staying `state.lastSegments` on a failed or stale read.
+ * The previous round declined this, arguing branch coverage of the guard was already complete and a
+ * sequence-level mirror would just duplicate an app-layer decision - the reviewer reverted must-fix 1 and
+ * must-fix 3 in turn and measured zero sequence-level test failures for either, despite both being live
+ * defects in a guard with full branch coverage; branch coverage cannot catch a guard whose INPUTS are wrong.
+ * This harness already mirrors [shouldKeepPreviousPlan] (added here for the first time this round, see its
+ * own doc below), [armPhoneAlarmIfNeeded], [firedAlarmIsWakeAlarm] and [latchMorningAlarmAt], so the
+ * duplication objection is spent - the last several rounds each had to edit these mirrors in lockstep anyway.
  */
 internal class NightReplay(
     private val setting: NightSettings,
@@ -48,12 +63,16 @@ internal class NightReplay(
 
     /**
      * A tick that has read its own input snapshot (at [startedAt]) but not yet committed.
-     * [phoneAlarmFiredForAtStart] is carried separately from the live field of the same name because a firing
-     * that happens WHILE this tick is pending must not retroactively change what this tick's own
-     * (already-computed) [plan] or arm decision sees - exactly like a real tick, whose `state.phoneAlarmFiredFor`
-     * is fixed at load time, before its own sync runs.
+     *
+     * J3 (owner-reported, 2026-09-21) REMOVES the [phoneAlarmFiredFor] snapshot this used to carry
+     * (`phoneAlarmFiredForAtStart`). J2 must-fix 4 kept that snapshot so a firing that happened WHILE this
+     * tick was pending could not retroactively change what this tick's own arm decision saw - but that is
+     * exactly the mechanism must-fix 4 turned out to get wrong: see [armPhoneAlarmIfNeeded]'s own J3 doc for
+     * why the arm step now deliberately reads the LIVE [phoneAlarmFiredFor] field at commit time instead. The
+     * PLAN itself (already computed and stored in [plan] here) still reflects only this tick's own [startedAt]
+     * snapshot, same as before - only the arm step's own fired-marker read moved.
      */
-    private data class PendingTick(val startedAt: Instant, val commitAt: Instant, val plan: AlarmPlan, val phoneAlarmFiredForAtStart: Instant?)
+    private data class PendingTick(val startedAt: Instant, val commitAt: Instant, val plan: AlarmPlan)
 
     private val marks = mutableListOf<SleepMark>()
     private var nextTickAt: Instant? = null
@@ -63,6 +82,9 @@ internal class NightReplay(
     private var lastNapAlarmFiredAt: Instant? = null
     private var morningAlarmAt: Instant? = null
     private var started = false
+
+    /** S2: the segments the last SUCCESSFUL sync actually saw - what a failed/stale sync's own tick recomputes from, mirroring `SyncOutcome.segments` staying `state.lastSegments` on either of `resolveSyncOutcome`'s not-ok branches. */
+    private var lastSyncedSegments: List<SleepSegment> = emptyList()
 
     /** F6: the instant the MAIN wake alarm fired, as PhoneAlarmReceiver would have recorded it. */
     var wakeAlarmFiredAt: Instant? = null
@@ -93,7 +115,7 @@ internal class NightReplay(
     fun startNight(at: String) {
         check(!started) { "startNight already called - one NightReplay models exactly one night" }
         started = true
-        runTick(instant(at), Duration.ZERO)
+        runTick(instant(at), Duration.ZERO, syncFails = false)
     }
 
     /** The Debug screen's "Asleep" toggle flipped to asleep at [at]; unlike before J1.4 this does NOT itself tick - see the class doc. */
@@ -106,22 +128,37 @@ internal class NightReplay(
         mark(asleep = false, at = at)
     }
 
-    /** Runs every tick and every alarm firing due up to and including [at]. [syncDuration] applies to any SCHEDULED tick that becomes due during this call - see the class doc. */
-    fun advanceTo(at: String, syncDuration: Duration = Duration.ZERO) {
-        advanceTo(instant(at), syncDuration)
+    /**
+     * D8/J3 (owner-reported, 2026-09-21): models total power loss - the phone's battery dies, taking every
+     * AlarmManager alarm with it (whatever was armed, per [armedAlarmAt], simply disappears without ever
+     * firing) and NightService along with it (no more ticks run on the ordinary schedule, per [nextTickAt],
+     * until something starts the app again). Mirrors BootReceiver.handleBoot's own precondition, not its body -
+     * BootReceiver correctly refuses to re-arm a target already in the past, which is not the bug under test;
+     * what matters here is the ordinary tick that runs once the app is alive again, driven by a later
+     * [openApp] call. Nothing else about state (segments, [lastPlan], [phoneAlarmFiredFor]) changes - exactly
+     * like a real power loss, which is not a tick, a firing, or any of PhoneAlarmReceiver's own bookkeeping.
+     */
+    fun batteryDies() {
+        armedAlarmAt = null
+        nextTickAt = null
+    }
+
+    /** Runs every tick and every alarm firing due up to and including [at]. [syncDuration] and [syncFails] apply to any SCHEDULED tick that becomes due during this call - see the class doc. */
+    fun advanceTo(at: String, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false) {
+        advanceTo(instant(at), syncDuration, syncFails)
     }
 
     /**
      * NightController.runImmediateTick (the Debug screen's own "check now", or simply opening the app while a
      * night is in progress): runs a tick right at [at] regardless of whether one is due on the ordinary
-     * schedule. First flushes anything already due up to [at] on the ordinary schedule (zero sync duration -
-     * only the app-open tick itself uses [syncDuration]), exactly like a real immediate tick can still race an
-     * already in-flight scheduled one.
+     * schedule. First flushes anything already due up to [at] on the ordinary schedule (zero sync duration,
+     * always a successful sync - only the app-open tick itself uses [syncDuration]/[syncFails]), exactly like
+     * a real immediate tick can still race an already in-flight scheduled one.
      */
-    fun openApp(at: String, syncDuration: Duration = Duration.ZERO) {
+    fun openApp(at: String, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false) {
         val whenAt = instant(at)
         advanceTo(whenAt)
-        runTick(whenAt, syncDuration)
+        runTick(whenAt, syncDuration, syncFails)
     }
 
     /** The distinct instants the phone alarm was armed for by the ticks from [at] onward - what the owner watching the night screen would see the alarm time do. */
@@ -143,7 +180,7 @@ internal class NightReplay(
         marks.add(SleepMark(asleep, markAt))
     }
 
-    private fun advanceTo(at: Instant, syncDuration: Duration = Duration.ZERO) {
+    private fun advanceTo(at: Instant, syncDuration: Duration = Duration.ZERO, syncFails: Boolean = false) {
         while (true) {
             // Ties (a pending tick's own commit landing at the exact instant an armed alarm fires) resolve
             // commit-first, deterministically - see the class doc's own note on what that is built to express.
@@ -154,7 +191,7 @@ internal class NightReplay(
             when (due) {
                 dueCommit -> commitPendingTick()
                 dueFire -> fireAlarm(due)
-                else -> runTick(due, syncDuration)
+                else -> runTick(due, syncDuration, syncFails)
             }
         }
     }
@@ -166,42 +203,61 @@ internal class NightReplay(
      * latch, save, schedule the next tick) until [syncDuration] later. A zero [syncDuration] commits right
      * away, same as every tick before J1.4's own sync-duration parameter existed.
      *
+     * S2 (reviewer note, 2026-09-21) ADDS [syncFails], mirroring NightOrchestrator.shouldKeepPreviousPlan: a
+     * failed sync first asks whether to freeze on [lastPlan] unchanged rather than recompute at all, and when
+     * it does not freeze, recomputes from [lastSyncedSegments] (frozen at the last SUCCESSFUL sync) rather
+     * than this tick's own live [segmentsAt] - a successful sync updates that snapshot before computing, a
+     * failed one leaves it untouched, exactly like `resolveSyncOutcome`'s two branches.
+     *
      * A tick that starts before an alarm fires but commits after it carries a plan computed WITHOUT knowing
      * that firing happened (its own snapshot predates it) - the same target it already knew about is still "in
-     * the future" relative to its own [at], so nothing about the PLAN itself catches this. J2 must-fix 4 is
-     * what actually stops a re-arm here: [commitPendingTick]'s own arm step re-reads the clock at COMMIT time
-     * (this tick's own [PendingTick.commitAt], mirroring NightOrchestrator's fresh `nowInstant()` re-read right
-     * before arming - see its own doc), so by the time this tick's stale plan reaches the arm check, the target
-     * it is trying to (re-)arm is by then usually already in the past too (the real alarm having already rung
-     * normally, on schedule, from whatever the PREVIOUS tick committed) - and gets refused, not re-armed. See
-     * `TickScheduleRaceTest.kt`'s own "rings once, not twice" test for the scenario this was built to
-     * reproduce and, since must-fix 4 landed, now correctly resolves.
+     * the future" relative to its own [at], so nothing about the PLAN itself catches this. [armPhoneAlarmIfNeeded]
+     * is what actually stops a re-arm here - see its own J3 doc for what changed and why, and
+     * `TickScheduleRaceTest.kt`'s own tests for the two scenarios this is built to reproduce and resolve.
      */
-    private fun runTick(at: Instant, syncDuration: Duration) {
+    private fun runTick(at: Instant, syncDuration: Duration, syncFails: Boolean) {
         check(pendingTick == null) { "a tick is already pending at ${pendingTick?.startedAt} - NightReplay does not model overlapping ticks" }
         nextTickAt = null
-        val plan = computeAlarmPlan(
-            segmentsAt(at), setting, at, morningAlarmAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed,
-            lastNapAlarmFiredAt, phoneAlarmFiredFor
-        )
-        pendingTick = PendingTick(at, at.plus(syncDuration), plan, phoneAlarmFiredFor)
+        val syncOk = !syncFails
+        val segments = if (syncOk) segmentsAt(at).also { lastSyncedSegments = it } else lastSyncedSegments
+        val plan = if (shouldKeepPreviousPlan(syncOk, lastPlan, phoneAlarmFiredFor, at)) {
+            checkNotNull(lastPlan)
+        } else {
+            computeAlarmPlan(
+                segments, setting, at, morningAlarmAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed,
+                lastNapAlarmFiredAt, phoneAlarmFiredFor
+            )
+        }
+        pendingTick = PendingTick(at, at.plus(syncDuration), plan)
         if (syncDuration.isZero) commitPendingTick()
     }
 
     /**
-     * The pending tick's own arm/latch/save/reschedule, all at once - see [runTick]'s own doc for why the arm
-     * step also uses this tick's OWN (possibly stale) phoneAlarmFiredFor snapshot, never the live one.
+     * NightOrchestrator.shouldKeepPreviousPlan (mirrored here for the first time this round - S2/SHOULD-FIX-2):
+     * whether this tick should skip re-planning entirely and keep [previousPlan] unchanged rather than feeding
+     * a failed/stale sync's own frozen segments through [computeAlarmPlan] against this tick's own moving
+     * [now]. True exactly when the sync did not succeed AND [previousPlan] already carries a real, still-
+     * pending armed alarm (`wakeAt` non-null, not yet matching [phoneAlarmFiredFor], and still strictly after
+     * [now] - J2 must-fix 1's own correction, without which this freezes forever once `now` catches up to a
+     * spent `wakeAt` nothing ever fired). See NightOrchestrator.kt's own doc for the full history (J1.5, J2
+     * must-fix 1).
+     */
+    private fun shouldKeepPreviousPlan(syncOk: Boolean, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?, now: Instant): Boolean {
+        val wakeAt = previousPlan?.wakeAt ?: return false
+        return !syncOk && wakeAt != phoneAlarmFiredFor && wakeAt.isAfter(now)
+    }
+
+    /**
+     * The pending tick's own arm/latch/save/reschedule, all at once.
      *
-     * J2 must-fix 4: [armPhoneAlarmIfNeeded]'s past-check gets [PendingTick.commitAt] - this tick's own real
-     * commit instant, AFTER its sync - never [PendingTick.startedAt] (decisionNow), mirroring
-     * NightOrchestrator.armPhoneAlarmIfNeeded's own fresh `nowInstant()` re-read right before arming. Every
-     * OTHER fact this tick already computed (the plan itself, latching, the next tick's own schedule two lines
-     * down) still reflects [PendingTick.startedAt] unchanged - only the real-time safety check moved.
+     * J3: the arm step reads the LIVE [phoneAlarmFiredFor] field (a firing that happened while this tick was
+     * pending IS visible to it now) rather than a tick-start snapshot - see [armPhoneAlarmIfNeeded]'s own doc
+     * for why.
      */
     private fun commitPendingTick() {
         val pending = checkNotNull(pendingTick) { "commitPendingTick called with nothing pending" }
         pendingTick = null
-        armPhoneAlarmIfNeeded(pending.plan, pending.phoneAlarmFiredForAtStart, pending.startedAt, pending.commitAt)
+        armPhoneAlarmIfNeeded(pending.plan, pending.startedAt)
         morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, pending.plan)
         lastPlan = pending.plan
         plans.add(pending.plan)
@@ -245,24 +301,36 @@ internal class NightReplay(
      * NightOrchestrator.armPhoneAlarmIfNeeded: a null wake time cancels, an instant that already fired or is
      * not in the future is left alone, anything else is (re-)armed.
      *
-     * J2 must-fix 4: [tickStartedAt] and [armTimeNow] are now two DIFFERENT instants, not one - [tickStartedAt]
-     * (this tick's own decisionNow) is still what gets recorded in [armings] (identifying WHICH tick armed
-     * something, for [armedTargetsAfter]'s own use), but the actual past-check (`!wakeAt.isAfter(...)`) reads
-     * [armTimeNow] instead - this tick's own real commit instant. See [commitPendingTick]'s own doc for why.
+     * J3 (owner-reported, 2026-09-21) CORRECTS J2 must-fix 4. Must-fix 4 re-read the real CLOCK right before
+     * this check (here, [armTimeNow] used to be [PendingTick.commitAt], the tick's own post-sync commit
+     * instant, rather than its [tickStartedAt]/decisionNow) to stop a stale-plan tick from re-arming a target
+     * that had already fired during its own sync. That closed the duplicate-ring bug, but opened the opposite
+     * one: D8's pull-forward target sits only [EngineConfig.minAlarmLead] (2 min, plus up to a minute of
+     * rounding) past decisionNow, while a real sync can itself cost close to that much - so whenever a sync
+     * outlives the very lead it produced, the commit-time clock has already caught up to (or passed) a target
+     * that has NEVER FIRED, and this refused to arm it. Unlike a duplicate ring, that failure does not
+     * self-heal: the next tick recomputes the identical shape (same dead sync, same near-target lead) and
+     * refuses again, forever, until the owner intervenes - see NightOrchestrator.kt's own J3 doc for the full
+     * traced sequence (phone battery dies, boots hours later with the band also dead) this fixes.
      *
-     * S1 (reviewer note): the J1.3 second-line-of-defence window this used to mirror (refusing a wakeAt
-     * strictly after phoneAlarmFiredForAtStart but still within minAlarmLead of it) is REMOVED, matching
-     * production's own removal - see NightOrchestrator.kt's own S1 doc for why it never actually caught the
-     * bug it was written for, and why must-fix 3 closes that hole at its real source instead.
+     * The corrected guard re-samples the FIRED MARKER instead of the clock: [phoneAlarmFiredFor] here is read
+     * LIVE (the class field, which [fireAlarm] updates the instant a firing happens, even while this tick was
+     * still pending) rather than a tick-start snapshot, and the clock both checks compare against goes back to
+     * being [tickStartedAt] (decisionNow) throughout, matching NightOrchestrator's own [now] parameter. The
+     * original must-fix 4 scenario (a target that rang DURING this tick's own sync) now resolves at the first
+     * check instead: the live [phoneAlarmFiredFor] already equals [wakeAt] exactly, so nothing is re-armed and
+     * there is still exactly one ring - see `J2 must-fix 4 replay` below, unchanged in what it asserts. A
+     * target that has never fired is never refused, whatever the sync costs - see `J3 replay` below, which
+     * fails without this fix.
      */
-    private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, phoneAlarmFiredForAtStart: Instant?, tickStartedAt: Instant, armTimeNow: Instant) {
+    private fun armPhoneAlarmIfNeeded(plan: AlarmPlan, tickStartedAt: Instant) {
         val wakeAt = plan.wakeAt
         if (wakeAt == null) {
             armedAlarmAt = null
             return
         }
-        if (wakeAt == phoneAlarmFiredForAtStart) return
-        if (!wakeAt.isAfter(armTimeNow)) return
+        if (wakeAt == phoneAlarmFiredFor) return
+        if (!wakeAt.isAfter(tickStartedAt)) return
         armedAlarmAt = wakeAt
         armings.add(tickStartedAt to wakeAt)
     }

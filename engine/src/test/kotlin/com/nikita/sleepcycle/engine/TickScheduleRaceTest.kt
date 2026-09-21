@@ -14,6 +14,12 @@ import java.time.Duration
  * checked this way, to depend on J1.1 alone rather than on J1.2 or J1.3 specifically - said so plainly in their
  * own comments rather than left implied, since a test whose docstring claims more than it verifies is exactly
  * the kind of vacuous coverage this project has been bitten by before.
+ *
+ * J3 (owner-reported, 2026-09-21) ADDS a fifth case below (`J3 replay`), pinning the regression J2 must-fix 4
+ * introduced: see NightReplay.armPhoneAlarmIfNeeded's own J3 doc, and NightOrchestrator.kt's own J3 doc, for
+ * the full trace. That test and the `J2 must-fix 4 replay` case just below it together pin BOTH properties the
+ * arm step must hold at once: a target that fired during its own tick's sync is never re-armed a second time,
+ * and a target that has never fired is never refused, however expensive that tick's own sync turns out to be.
  */
 class TickScheduleRaceTest {
     /**
@@ -51,9 +57,7 @@ class TickScheduleRaceTest {
         // and no phoneAlarmFiredFor, so - exactly like the fast-tick case above - it computes 06:30 unchanged
         // (J1.1). The already-armed 06:30 alarm fires normally in between, at 06:30, attributed correctly via
         // the ordinary lastPlan match. The 06:28:30 tick then finally commits at 06:31:30 (after its own
-        // 3-minute sync) - J2 must-fix 4's own re-read of the real clock right at that commit sees 06:31:30,
-        // not the tick's own stale 06:28:30 decisionNow, so the past-check correctly refuses to re-arm a target
-        // (06:30) that, by now, is already a minute and a half gone. One ring, never two.
+        // 3-minute sync). One ring, never two.
         //
         // CORRECTED, not just renamed: before must-fix 4, this exact scenario used to commit the stale
         // 06:28:30 tick's own arm step against its OWN decisionNow (still 06:28:30), which believed 06:30 was
@@ -62,6 +66,16 @@ class TickScheduleRaceTest {
         // this project has been bitten by five times running: a green test pinning a live defect as correct.
         // This test is J1_1-adjacent groundwork with that defect intentionally FIXED under it now, renamed
         // accordingly rather than left claiming a J1.1-only scope it no longer has.
+        //
+        // J3 (owner-reported, 2026-09-21) CORRECTS must-fix 4's own mechanism, not the property this test pins:
+        // must-fix 4 closed the double-ring by re-reading the real CLOCK at commit time (06:31:30, catching the
+        // now-past 06:30 target). That traded a duplicate ring for a DIFFERENT bug - a never-fired target could
+        // now be refused forever once its own sync outlived its lead (see the `J3 replay` test below, and
+        // NightOrchestrator.kt's own J3 doc for the full trace). J3 instead re-reads the FIRED MARKER live at
+        // commit time and keeps the CLOCK check on the tick's own decisionNow (06:28:30) throughout - this
+        // scenario now resolves at the marker check instead: the live phoneAlarmFiredFor is exactly 06:30 by
+        // the time this tick commits (the alarm having fired normally in between), matching wakeAt exactly, so
+        // arming is refused there, on an exact match, never on the clock. Same one ring, different reason.
         val replay = nightOwnerTraced()
 
         // Stop just short of the 06:28:30 tick (the previous one, at 06:23:30, still runs and commits
@@ -79,6 +93,51 @@ class TickScheduleRaceTest {
         replay.advanceTo("2026-09-21T08:00:00")
         assertEquals(1, replay.firings.size, replay.trace())
         assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
+    }
+
+    @Test fun `J3 replay - a never-fired pull-forward target survives an expensive dead sync and still rings`() {
+        // This is the MUST-FIX regression: J2 must-fix 4's own commit-time clock re-read fixed the scenario
+        // above (a duplicate ring) by opening this one (a MISSED ring, with no recovery). The owner's own
+        // traced sequence: night starts, no deadline, 5 cycles, plan FULL_CYCLES wakeAt 06:30, correctly armed.
+        // The phone's battery dies before 06:30 ever arrives (D8's own precondition for the recovery this test
+        // pins: a target the phone never actually got to ring), and it boots hours later, past the target, with
+        // the band also dead (Gadgetbridge unreachable, both of syncOrFail's own 60 s timeouts burned on the
+        // first post-boot sync).
+        val replay = nightOwnerTraced()
+
+        // Well before 06:30, undisturbed: confirm the target is correctly armed going into the outage.
+        replay.advanceTo("2026-09-21T04:00:00")
+        assertEquals(listOf(instant("2026-09-21T06:30:00")), replay.armedTargetsAfter("2026-09-20T23:00:00"), replay.trace())
+
+        // The battery dies: the armed 06:30 alarm and the ordinary tick schedule both disappear, without the
+        // alarm ever ringing. Nothing else changes - the owner is still asleep the whole time.
+        replay.batteryDies()
+
+        // Boots at 07:41:57, past the spent 06:30 target, and the first tick's own sync costs 124 s and fails
+        // (dead band) - the reviewer's own traced numbers. shouldKeepPreviousPlan correctly releases the freeze
+        // (06:30 is no longer ahead of decisionNow, so there is nothing pending left to protect - J2 must-fix
+        // 1's own job), so this recomputes: FULL_CYCLES still applies (the owner never woke, so the onset is
+        // still 23:00 regardless of how stale the frozen segments are), raw is still the spent 06:30, and D8's
+        // own pull-forward moves it to decisionNow + minAlarmLead (2 min), rounded up to the whole minute -
+        // 07:44:00. The tick's own sync outlives that same 2-minute lead: it commits at 07:41:57 + 124 s =
+        // 07:44:01, one second AFTER the target it just computed.
+        replay.openApp("2026-09-21T07:41:57", syncDuration = Duration.ofSeconds(124), syncFails = true)
+
+        // The tick itself only committed the PLAN (07:44:00) right away - the arm step does not run until the
+        // pending tick's own commit, at 07:44:01 (decisionNow + the 124 s sync). Advance just past it.
+        replay.advanceTo("2026-09-21T07:44:01")
+
+        // Pre-J3 (must-fix 4's own commit-time clock re-read): armTimeNow was 07:44:01, strictly after the
+        // 07:44:00 target, so this was refused - logged as an error and dropped, never armed, and the plan
+        // stays FULL_CYCLES with a target inside the near-alarm window, so every following tick (same dead
+        // sync, same phase) recomputes the identical shape and refuses again, forever. Post-J3, the arm check
+        // compares against decisionNow (07:41:57) instead, still well ahead of the 07:44:00 target, so it arms
+        // correctly - this assertion is what fails without the fix.
+        assertEquals(listOf(instant("2026-09-21T07:44:00")), replay.armedTargetsAfter("2026-09-21T07:41:57"), replay.trace())
+
+        replay.advanceTo("2026-09-21T08:00:00")
+        assertEquals(listOf(instant("2026-09-21T07:44:00")), replay.firings.map { it.firedFor }, replay.trace())
+        assertEquals(instant("2026-09-21T07:44:00"), replay.wakeAlarmFiredAt, replay.trace())
     }
 
     @Test fun `J1_1 replay - waking 4 minutes before the alarm and opening the app 90 s before it still rings correctly, once, attributed to the wake alarm`() {
