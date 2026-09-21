@@ -225,51 +225,51 @@ class OutOfBedNudgeSupersessionTest {
         )
     }
 
-    // ---- H7.3: shouldCancelNudgeForPreCheck --------------------------------------------------------------
+    // ---- M1 (owner-reported, 2026-09-21): shouldCancelNudgeForPreCheck now asks whether another alarm is
+    // actually armed and still ahead - REPLACES the H7.3 confirmed-ASLEEP test below outright and SUBSUMES
+    // L2.2's own separate FINISHED carve-out (a FINISHED plan's wakeAt is always null, which this already
+    // treats as nothing armed) - see OutOfBedPreNudgeCheck.kt's own M1 doc and docs/decisions.md's M1 record.
+
+    private val preCheckNow = Instant.parse("2026-09-21T07:15:00Z")
 
     @Test
-    fun `H7_3 the pre-nudge check cancels the nudge only on a confirmed ASLEEP reading`() {
-        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.FULL_CYCLES))
+    fun `M1 a live target still ahead of now, never fired, cancels the nudge - something else is genuinely taking over`() {
+        assertTrue(shouldCancelNudgeForPreCheck(preCheckNow, Instant.parse("2026-09-21T07:20:00Z"), phoneAlarmFiredFor = null))
     }
 
     @Test
-    fun `H7_3 the pre-nudge check rings when the sync failed, timed out, or returned stale data (represented as null)`() {
-        assertFalse(shouldCancelNudgeForPreCheck(null, AlarmMode.FULL_CYCLES))
+    fun `M1 no plan target at all rings the nudge - nothing to hand the wake-up over to`() {
+        assertFalse(shouldCancelNudgeForPreCheck(preCheckNow, plannedWakeAt = null, phoneAlarmFiredFor = null))
     }
 
     @Test
-    fun `H7_3 the pre-nudge check rings when the owner is still awake`() {
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.AWAKE, AlarmMode.FULL_CYCLES))
+    fun `M1 a target that already fired rings the nudge, even though it is still numerically ahead of a stale now`() {
+        val target = Instant.parse("2026-09-21T07:20:00Z")
+        assertFalse(shouldCancelNudgeForPreCheck(preCheckNow, target, phoneAlarmFiredFor = target))
     }
 
     @Test
-    fun `H7_3 the pre-nudge check rings when there is no sleep data at all yet`() {
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.NOT_YET_ASLEEP, AlarmMode.FULL_CYCLES))
-    }
-
-    // ---- L2.2 (owner decision, 2026-09-21): the pre-check must not silence a FINISHED night's chain --------
-
-    @Test
-    fun `L2_2 a confirmed ASLEEP reading on a FINISHED night does NOT cancel - past the deadline that is the reason to ring`() {
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.FINISHED))
+    fun `M1 a target that has already passed rings the nudge - a spent promise, not something still coming`() {
+        assertFalse(shouldCancelNudgeForPreCheck(preCheckNow, plannedWakeAt = preCheckNow.minusSeconds(1), phoneAlarmFiredFor = null))
     }
 
     @Test
-    fun `L2_2 a confirmed ASLEEP reading still cancels on every mode that is not FINISHED - unchanged from H7_3`() {
-        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.FULL_CYCLES))
-        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.DEADLINE_ONLY))
-        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, AlarmMode.NAP))
+    fun `M1 a FINISHED night rings the nudge - subsumed automatically, a FINISHED plan's wakeAt is always null`() {
+        // No `mode` parameter any more (L2.2 folded in) - a FINISHED plan is represented here exactly as
+        // NightOrchestrator/WakeAlarm produce one: wakeAt null, whatever fired earlier in the night.
+        assertFalse(shouldCancelNudgeForPreCheck(preCheckNow, plannedWakeAt = null, phoneAlarmFiredFor = Instant.parse("2026-09-21T06:00:00Z")))
     }
 
     @Test
-    fun `L2_2 a null mode (no plan loaded) is treated as not-FINISHED - an ASLEEP reading still cancels`() {
-        assertTrue(shouldCancelNudgeForPreCheck(SleepState.ASLEEP, null))
-    }
-
-    @Test
-    fun `L2_2 a FINISHED night still rings for every other reading, same as before - FINISHED only changes the ASLEEP case`() {
-        assertFalse(shouldCancelNudgeForPreCheck(null, AlarmMode.FINISHED))
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.AWAKE, AlarmMode.FINISHED))
-        assertFalse(shouldCancelNudgeForPreCheck(SleepState.NOT_YET_ASLEEP, AlarmMode.FINISHED))
+    fun `M1 night-log 2026-09-21T1719 regression - wake alarm fired, no awakening ever recorded, nothing else armed, the nudge must ring`() {
+        // The owner's own traced night (docs/decisions.md's M1 record, files/nightlogs/night-sim-20260921-
+        // 1719.jsonl): the wake alarm fires 01:56, the owner presses Stop without "I'm awake", the band reads
+        // ASLEEP for the rest of the night with no awakening ever recorded (rule 7 needs one to arm a nap at
+        // all), so the very next tick's own plan carries a null wakeAt (the morning alarm already rang - see
+        // WakeAlarm.morningAlarmAlreadyRang) and nothing else is ever armed. Before M1 the old ASLEEP-only test
+        // cancelled the nudge here into total silence for the rest of the night; the fix must let it ring.
+        val wakeAlarmFiredAt = Instant.parse("2026-09-22T01:56:00Z")
+        val preCheckAt = Instant.parse("2026-09-22T02:12:01Z")
+        assertFalse(shouldCancelNudgeForPreCheck(preCheckAt, plannedWakeAt = null, phoneAlarmFiredFor = wakeAlarmFiredAt))
     }
 }
