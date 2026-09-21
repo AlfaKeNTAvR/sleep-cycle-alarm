@@ -330,6 +330,36 @@ treated as my own regression, since `git status` throughout confirmed I never to
   committing in between (should have committed first - noting the process slip rather than silently moving
   on). From must-fix 3 onward, committing before starting the next fix, as instructed.
 
+### Must-fix 3 (landed) - unbounded 3am nap re-ring, symmetrical fix to J1.3
+
+- Threaded `phoneAlarmFiredFor: Instant?` through `napAlarm` into `asleepNapTarget` (WakeAlarm.kt), exactly
+  mirroring how `computeWakeAlarm` already threads it into `morningAlarmAlreadyRang` for the FULL_CYCLES/
+  DEADLINE_ONLY side (J1.3). `computeWakeAlarm` already had the parameter in scope (added for J1.3 in the
+  morning path), so no public signature changed - only the two private functions between it and
+  `asleepNapTarget`.
+- `asleepNapTarget` now anchors on `laterOf(lastNapAlarmFiredAt, phoneAlarmFiredFor)` rather than
+  `lastNapAlarmFiredAt` alone, reusing the same `laterOf` helper J1.3 already added (WakeAlarm.kt, private,
+  file-scoped) rather than duplicating it.
+- Traced why this is safe against the concern that `phoneAlarmFiredFor` can belong to the MAIN wake alarm's
+  own firing, not just a nap: the existing `!latestFired.isBefore(referenceOnset)` check already requires
+  the marker to be AT OR AFTER this stretch's own onset to count - and a wake alarm firing that happened
+  BEFORE the owner fell back asleep (the ordinary case: alarm rings, owner is awake, returns to sleep some
+  time later) is by construction before the new stretch's own onset, so it is excluded the same way an
+  earlier nap's own firing already was pre-fix. No new test needed for this specific interaction since the
+  existing "not before the reference onset" H2 test already exercises the identical guard on the
+  lastNapAlarmFiredAt side, and the reasoning is symmetric.
+- Added 2 regression cases to `ComputeWakeAlarmTest.kt`: one reproducing the owner's traced 03:05-nap-fires-
+  mid-sync sequence directly (`lastNapAlarmFiredAt` null, `phoneAlarmFiredFor` 03:05, expects the target
+  anchored on 03:05 + napLength = 03:25, not a re-pulled-forward 03:10), one confirming the later-of logic
+  specifically (an earlier, unrelated `phoneAlarmFiredFor` must not override a later `lastNapAlarmFiredAt`).
+- Verified the first new test fails without the fix (temporarily reverted `asleepNapTarget` to read
+  `lastNapAlarmFiredAt` alone, ran `ComputeWakeAlarmTest`, saw `AssertionFailedError` at line 311, the other
+  30 including the second new test unaffected - the second test's own expected result does not depend on
+  `phoneAlarmFiredFor` mattering at all when `lastNapAlarmFiredAt` is already later, so it correctly stayed
+  green through the revert; that is by design, not a gap - it pins the "later-of, no regression on the
+  ordinary case" half separately from the "phoneAlarmFiredFor alone can carry it" half the first test pins).
+  Restored the fix, reran clean.
+
 ## All six J1 findings landed
 
 J1.1 through J1.6 are all committed on `nikita/fix/overnight-hardening`: d594204, 7e73145, 12c9e51, ee9db3e,

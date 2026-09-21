@@ -33,7 +33,7 @@ fun computeWakeAlarm(
         PlanRule.FINISHED -> return null
         // Rule 7: 20 min after falling back asleep (or after now, while still awake), never past the deadline.
         // F5/H1: the AWAKE branch can itself decide there is nothing left to arm - see napAlarm's own doc.
-        PlanRule.NAP -> napAlarm(state, referenceOnset, deadline, now, config, wakeAlarmFiredAt, morningAlarmAt, lastNapAlarmFiredAt) ?: return null
+        PlanRule.NAP -> napAlarm(state, referenceOnset, deadline, now, config, wakeAlarmFiredAt, morningAlarmAt, lastNapAlarmFiredAt, phoneAlarmFiredFor) ?: return null
         // Rule 5: the alarm rings exactly at the deadline.
         PlanRule.DEADLINE_ONLY -> deadline ?: now.plus(config.minAlarmLead)
         // Rules 3, 4, 6: the reference onset plus the whole cycles that fit.
@@ -128,11 +128,13 @@ private fun napAlarm(
     config: EngineConfig,
     wakeAlarmFiredAt: Instant?,
     morningAlarmAt: Instant?,
-    lastNapAlarmFiredAt: Instant?
+    lastNapAlarmFiredAt: Instant?,
+    /** J2 must-fix 3: threaded through to [asleepNapTarget] - see its own doc for why. */
+    phoneAlarmFiredFor: Instant?
 ): Instant? {
     val napEnd = when (state) {
         SleepState.AWAKE -> awakeNapTarget(morningAlarmAt, wakeAlarmFiredAt, now, config) ?: return null
-        else -> asleepNapTarget(referenceOnset, lastNapAlarmFiredAt, config)
+        else -> asleepNapTarget(referenceOnset, lastNapAlarmFiredAt, phoneAlarmFiredFor, config)
     }
     return if (deadline == null) napEnd else minOf(napEnd, deadline)
 }
@@ -188,10 +190,31 @@ private fun awakeSlidingNapMustStop(wakeAlarmFiredAt: Instant?, morningAlarmAt: 
  * alarm computed in the past after a reboot, [lastNapAlarmFiredAt] belonging to an earlier, already-ended
  * stretch - is untouched: those still fall through to the ordinary `referenceOnset + napLength` and the
  * ordinary pull-forward.
+ *
+ * J2 must-fix 3 (owner-reported, 2026-09-21) ADDS [phoneAlarmFiredFor] to the test, taking the LATER of it and
+ * [lastNapAlarmFiredAt] - the exact same correction J1.3 already made to [morningAlarmAlreadyRang], applied
+ * here because this branch has the identical hole. J1.3 only closed the stale-load attribution race
+ * (PhoneAlarmReceiver.recordWakeOrNapFired loading `state.lastPlan` before the in-flight tick that armed the
+ * alarm has saved its own plan, so attribution bails out and logs rather than guessing) for the MORNING path -
+ * but when that race skips attribution, it skips THREE facts at once, not one: [wakeAlarmFiredAt],
+ * `napAlarmsUsed`, AND [lastNapAlarmFiredAt] alike, all guarded by the same `firedPlan == null` bail-out. This
+ * function keyed entirely on [lastNapAlarmFiredAt], so a nap whose attribution was skipped this way was
+ * invisible to it - `referenceOnset` unchanged (the band still reports the SAME onset, since nothing about
+ * sleep state changed), the ordinary target recomputed as already in the past, and `pullForwardIfTooSoon`
+ * squeezed it into a fresh `now + minAlarmLead` ring - and because [lastNapAlarmFiredAt] never gets a chance to
+ * update either, the SAME thing happens again next tick, and the next, unbounded: `napAlarmsUsed` also never
+ * increments on this path, so the two-nap cap that would otherwise stop it never engages, and NAP mode ticks
+ * every 5 minutes, so a tick is nearly always near enough to the just-pulled-forward target to repeat. Taking
+ * the later of the two (never [phoneAlarmFiredFor] alone) matters for the same reason it did in J1.3: a nap
+ * whose attribution succeeded ordinarily can have a [phoneAlarmFiredFor] belonging to an EARLIER, unrelated
+ * firing (the wake alarm itself, or an earlier already-ended nap stretch) while [lastNapAlarmFiredAt] holds the
+ * correct, later value - the "not before the reference onset" check below already stops an earlier firing from
+ * contaminating a later onset regardless of which of the two markers it came from.
  */
-private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instant?, config: EngineConfig): Instant {
-    val napAlreadyFiredForThisOnset = lastNapAlarmFiredAt != null && !lastNapAlarmFiredAt.isBefore(referenceOnset)
-    return if (napAlreadyFiredForThisOnset) lastNapAlarmFiredAt.plus(config.napLength) else referenceOnset.plus(config.napLength)
+private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?, config: EngineConfig): Instant {
+    val latestFired = laterOf(lastNapAlarmFiredAt, phoneAlarmFiredFor)
+    val napAlreadyFiredForThisOnset = latestFired != null && !latestFired.isBefore(referenceOnset)
+    return if (napAlreadyFiredForThisOnset) latestFired.plus(config.napLength) else referenceOnset.plus(config.napLength)
 }
 
 /**

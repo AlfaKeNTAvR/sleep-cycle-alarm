@@ -286,4 +286,42 @@ class ComputeWakeAlarmTest {
         )
         assertEquals(instant("2026-09-17T07:33"), result)
     }
+
+    // ---- J2 must-fix 3 (owner-reported, 2026-09-21): the ASLEEP branch (asleepNapTarget) has the exact same
+    // stale-load-attribution hole J1.3 fixed on the morning path - PhoneAlarmReceiver.recordWakeOrNapFired's
+    // own firedPlan == null bail-out skips wakeAlarmFiredAt, napAlarmsUsed AND lastNapAlarmFiredAt together, not
+    // just one of the three - so a nap whose attribution was skipped this way was invisible to a branch keyed
+    // on lastNapAlarmFiredAt alone, and re-rang unbounded (napAlarmsUsed never incrementing means the two-nap
+    // cap never engages either). Now takes the LATER of lastNapAlarmFiredAt and phoneAlarmFiredFor, mirroring
+    // morningAlarmAlreadyRang's own J1.3 fix exactly. -----------------------------------------------------
+
+    @Test fun `J2 must-fix 3 - the ASLEEP branch anchors on phoneAlarmFiredFor when lastNapAlarmFiredAt's own attribution was skipped`() {
+        // The owner's traced sequence: onset 02:45, nap target 03:05 armed, a tick's own sync straddles the
+        // 03:05 firing so PhoneAlarmReceiver's attribution is skipped - lastNapAlarmFiredAt stays null, but
+        // phoneAlarmFiredFor (written unconditionally, before attribution ever runs) is 03:05. Without this
+        // fix, referenceOnset (02:45, unchanged - the band still reports the same onset) plus napLength would
+        // recompute to 03:05, already in the past at now=03:08, and get pulled forward to a fresh 03:10 ring -
+        // a second alarm for the same nap. With the fix, 03:05 (phoneAlarmFiredFor) is at or after referenceOnset,
+        // so the target is anchored on it instead: 03:05 + napLength (20 min) = 03:25, still ahead of now.
+        val result = computeWakeAlarm(
+            PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T02:45"), null, 0,
+            instant("2026-09-17T03:08"), config, wakeAlarmFiredAt = null, morningAlarmAt = null,
+            lastNapAlarmFiredAt = null, phoneAlarmFiredFor = instant("2026-09-17T03:05")
+        )
+        assertEquals(instant("2026-09-17T03:25"), result)
+    }
+
+    @Test fun `J2 must-fix 3 - the LATER of lastNapAlarmFiredAt and phoneAlarmFiredFor decides the ASLEEP branch too`() {
+        // phoneAlarmFiredFor here belongs to an EARLIER, unrelated firing (before referenceOnset) - only
+        // lastNapAlarmFiredAt, at or after referenceOnset, marks THIS stretch's own nap as already spent. Same
+        // numbers as the existing H2 "already fired for THIS onset" test above, with an earlier
+        // phoneAlarmFiredFor added and no change to the expected result - proving the later-of logic, not just
+        // the plain lastNapAlarmFiredAt path, which the test above already covers on its own.
+        val result = computeWakeAlarm(
+            PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
+            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null,
+            lastNapAlarmFiredAt = instant("2026-09-17T07:30"), phoneAlarmFiredFor = instant("2026-09-17T05:00")
+        )
+        assertEquals(instant("2026-09-17T07:50"), result)
+    }
 }
