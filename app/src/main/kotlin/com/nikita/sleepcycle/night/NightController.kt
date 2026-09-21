@@ -255,12 +255,27 @@ suspend fun rearmAfterSpeedChange(context: Context) {
 
 /** Asks the tracking service to run one sync-plan cycle right away, e.g. when the user opens the Night screen. Goes through the same transaction lock as every other tick. */
 fun requestImmediateTick(context: Context) {
-    controllerScope.launch {
-        val newState = runNightTick(context, nowInstant())
-        if (newState != null) {
-            nightStateFlow.value = newState
-            finishNightIfNeeded(context, newState)
-        }
+    controllerScope.launch { runImmediateTick(context) }
+}
+
+/**
+ * The awaitable body of [requestImmediateTick].
+ *
+ * W10 (owner-reported, 2026-09-20): a caller that arms a tick of its own AFTER asking for an immediate one -
+ * the simulator's debounce re-tick, DebugScreenController.recordEvent, is the only one today - must await this
+ * rather than fire [requestImmediateTick] and carry on. A tick re-arms the next tick itself, and tick
+ * scheduling is cancel-and-replace, so anything armed while a tick is still in flight is thrown away the
+ * moment that tick lands, leaving only the ordinary 5-to-15-minute cadence behind.
+ *
+ * Runs its own work on [Dispatchers.Default], the same dispatcher [requestImmediateTick]'s own scope uses, so
+ * a caller awaiting this from the main thread (the Debug controller does) never blocks it on a tick's disk
+ * reads and writes.
+ */
+suspend fun runImmediateTick(context: Context) = withContext(Dispatchers.Default) {
+    val newState = runNightTick(context, nowInstant())
+    if (newState != null) {
+        nightStateFlow.value = newState
+        finishNightIfNeeded(context, newState)
     }
 }
 

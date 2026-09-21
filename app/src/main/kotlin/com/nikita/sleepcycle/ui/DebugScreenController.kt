@@ -41,6 +41,7 @@ import com.nikita.sleepcycle.night.readDebugOptionsLastChangedAt
 import com.nikita.sleepcycle.night.readSimulatedSleepEvents
 import com.nikita.sleepcycle.night.rearmAfterSpeedChange
 import com.nikita.sleepcycle.night.requestImmediateTick
+import com.nikita.sleepcycle.night.runImmediateTick
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.night.scheduleTick
 import com.nikita.sleepcycle.night.resetDebugOptionsAndClock
@@ -244,6 +245,13 @@ class DebugScreenController(private val context: Context, private val scope: Cor
      * next scheduled sync, 5 to 15 minutes of the app's own clock later, which is where the wait came from.
      * So a second tick is booked for just past the debounce, when the mark first becomes significant. Falling
      * asleep has no equivalent floor, which is exactly why that direction always felt instant.
+     *
+     * W10: W9 alone did nothing, because the immediate tick was fired and not awaited. Every tick arms the
+     * next one for itself, and tick scheduling is cancel-and-replace, so the tick still in flight landed after
+     * the debounce re-tick below and replaced it with the ordinary cadence - which is exactly what the owner
+     * saw: the switch only ever took effect on a sync line, and waiting a fixed number of SIMULATED minutes
+     * meant the lag shrank with speed (about 10 real seconds at 60x, about 1 at 600x). Awaiting the tick puts
+     * the debounce re-tick last, so it is the one that survives.
      */
     private fun recordEvent(kind: SimulatedSleepEventKind) {
         scope.launch {
@@ -251,7 +259,7 @@ class DebugScreenController(private val context: Context, private val scope: Cor
             val at = nowInstant()
             val updated = appendSimulatedSleepEvent(simulatedSleepEvents.value, kind, at)
             writeSimulatedSleepEvents(context, updated)
-            requestImmediateTick(context)
+            runImmediateTick(context)
             if (kind == SimulatedSleepEventKind.AWAKE) {
                 scheduleTick(context, at + resolveEngineConfig(effectiveOptions()).minAwakening + DEBOUNCE_RETICK_MARGIN)
             }
