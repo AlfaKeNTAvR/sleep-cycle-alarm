@@ -24,7 +24,9 @@ fun computeWakeAlarm(
     /** H1 SUPERSEDES G3's `previousWakeAt`: the night's own morning alarm time, LATCHED by the app layer (NightState.morningAlarmAt) and never overwritten by a NAP plan's own slid `wakeAt` - see computeAlarmPlan's own doc for why the earlier "previous tick's own wakeAt" reading was unreachable. Only [napAlarm]'s AWAKE branch reads this. */
     morningAlarmAt: Instant?,
     /** H2: the most recent nap alarm's own fired instant, mid-night or post-wake alike - null until the first nap alarm ever fires this night. Only [napAlarm]'s ASLEEP branch reads this - see its own doc. */
-    lastNapAlarmFiredAt: Instant?
+    lastNapAlarmFiredAt: Instant?,
+    /** J1.3 (owner-reported, 2026-09-21): NightState.phoneAlarmFiredFor, the last phone alarm instant that fired AT ALL, written unconditionally by PhoneAlarmReceiver.markPhoneAlarmFired even when the same firing's attribution to wakeAlarmFiredAt was skipped (a stale state.lastPlan read racing the in-flight tick's own save). See [morningAlarmAlreadyRang]'s own doc for why this closes the hole [wakeAlarmFiredAt] alone left open. */
+    phoneAlarmFiredFor: Instant?
 ): Instant? {
     val raw = when (rule) {
         // Rule 1: the night is already over, there is no alarm to schedule.
@@ -40,7 +42,7 @@ fun computeWakeAlarm(
     // H8: a morning target the wake alarm has already rung for is spent - it must never be pulled forward
     // into a brand new alarm two minutes out. Rule 7's own targets are exempt: a nap is measured from an
     // onset or a firing of its own, and D5/G8's post-wake naps legitimately come after [wakeAlarmFiredAt].
-    if (rule != PlanRule.NAP && morningAlarmAlreadyRang(raw, wakeAlarmFiredAt)) return null
+    if (rule != PlanRule.NAP && morningAlarmAlreadyRang(raw, wakeAlarmFiredAt, phoneAlarmFiredFor)) return null
     return pullForwardIfTooSoon(raw, deadline, now, config)
 }
 
@@ -60,9 +62,34 @@ fun computeWakeAlarm(
  * pull-forward - that is the whole case D8 exists for. Only [wakeAlarmFiredAt], the app layer's record of an
  * actual firing (PhoneAlarmReceiver.recordWakeOrNapFired), suppresses it, and only for the target that firing
  * belongs to: a later target, were one ever computed, is still armed normally.
+ *
+ * J1.3 (owner-reported, 2026-09-21) ADDS [phoneAlarmFiredFor] to the test, taking whichever of the two firing
+ * markers is LATER: PhoneAlarmReceiver.recordWakeOrNapFired loads night state BEFORE the in-flight tick that
+ * armed the alarm has saved its own plan, so `state.lastPlan.wakeAt` can still read the PREVIOUS tick's target
+ * at the moment the alarm actually fires - the guard that attributes a firing to [wakeAlarmFiredAt] bails out
+ * on that mismatch (logged, never silent, see recordWakeOrNapFired's own doc) and [wakeAlarmFiredAt] is left
+ * null. Without this, [raw] (a fixed instant for the whole night) stayed unspent forever from this function's
+ * own point of view: every following tick recomputed the same [raw], found it in the past, pulled it forward
+ * to `now + minAlarmLead`, and rang it again - the SAME re-ring loop H8 already fixed for the case where
+ * attribution succeeds, reopened by the one case where it does not. [phoneAlarmFiredFor]
+ * (NightState.phoneAlarmFiredFor) is written unconditionally by markPhoneAlarmFired, before the attribution
+ * check that can skip [wakeAlarmFiredAt] ever runs, so it survives exactly the race that leaves
+ * [wakeAlarmFiredAt] null and closes the hole. Taking the LATER of the two (rather than [phoneAlarmFiredFor]
+ * alone) matters because [wakeAlarmFiredAt] can legitimately be null-forever on a night whose spent marker
+ * comes from an earlier stretch's own firing while a fresh [raw] is still pending - see the ASLEEP branch's
+ * own [asleepNapTarget] for the parallel reasoning on the nap side.
  */
-private fun morningAlarmAlreadyRang(raw: Instant, wakeAlarmFiredAt: Instant?): Boolean =
-    wakeAlarmFiredAt != null && !raw.isAfter(wakeAlarmFiredAt)
+private fun morningAlarmAlreadyRang(raw: Instant, wakeAlarmFiredAt: Instant?, phoneAlarmFiredFor: Instant?): Boolean {
+    val latestFired = laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor) ?: return false
+    return !raw.isAfter(latestFired)
+}
+
+/** J1.3: the later of two possibly-null fired instants, or the one that is non-null, or null if both are. */
+private fun laterOf(a: Instant?, b: Instant?): Instant? = when {
+    a == null -> b
+    b == null -> a
+    else -> maxOf(a, b)
+}
 
 /**
  * Rule 7's nap alarm: slides forward while still awake, fixed [EngineConfig.napLength] after sleep once it

@@ -9,9 +9,11 @@ import java.time.Instant
 class ComputeAlarmPlanTest {
     private fun plan(
         segments: List<SleepSegment>, setting: NightSettings, now: String, previous: AlarmPlan? = null,
-        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null
+        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null,
+        phoneAlarmFiredFor: Instant? = null
     ) = computeAlarmPlan(
-        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
+        phoneAlarmFiredFor
     )
 
     @Test fun `no deadline uses the picked cycles from the reference onset`() {
@@ -93,7 +95,7 @@ class ComputeAlarmPlanTest {
         val morningAlarmAt = instant("2026-09-17T08:00")
         fun tick(segments: List<SleepSegment>, now: String) = computeAlarmPlan(
             segments, setting, instant(now), morningAlarmAt, testZone, EngineConfig(),
-            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null
+            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
 
         val segments = listOf(

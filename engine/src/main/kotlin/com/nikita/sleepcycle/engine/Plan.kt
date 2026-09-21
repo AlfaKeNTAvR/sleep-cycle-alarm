@@ -47,7 +47,16 @@ fun computeAlarmPlan(
      * after a reboot) - only the first case must skip the ordinary 2-minute pull-forward for a genuinely fresh
      * napLength instead. See WakeAlarm.kt's own doc.
      */
-    lastNapAlarmFiredAt: Instant?
+    lastNapAlarmFiredAt: Instant?,
+    /**
+     * J1.3 (owner-reported, 2026-09-21): NightState.phoneAlarmFiredFor, the last phone alarm instant that
+     * fired at all (wake, nap, or a rule 7 mid-night nap alike) - null until the first firing this night.
+     * Written unconditionally by PhoneAlarmReceiver.markPhoneAlarmFired, even on the one race where the SAME
+     * firing's attribution to [wakeAlarmFiredAt] gets skipped (a stale `state.lastPlan` read beating the
+     * in-flight tick's own save to disk) - see WakeAlarm.kt's own `morningAlarmAlreadyRang` for why a spent
+     * target must check both markers, not [wakeAlarmFiredAt] alone.
+     */
+    phoneAlarmFiredFor: Instant?
 ): AlarmPlan {
     validateConfig(config)
     validateSettings(settings, config)
@@ -74,7 +83,8 @@ fun computeAlarmPlan(
     // (rule 7's sliding nap) tell that the morning's alarm time has already passed even when no firing was
     // ever recorded for it, and tell it PERMANENTLY rather than for one tick - see WakeAlarm.kt's own doc.
     val wakeAt = computeWakeAlarm(
-        rule, state, reference.onset, settings.deadline, cycles, now, config, wakeAlarmFiredAt, morningAlarmAt, lastNapAlarmFiredAt
+        rule, state, reference.onset, settings.deadline, cycles, now, config, wakeAlarmFiredAt, morningAlarmAt, lastNapAlarmFiredAt,
+        phoneAlarmFiredFor
     )
     val mode = modeOf(rule)
 

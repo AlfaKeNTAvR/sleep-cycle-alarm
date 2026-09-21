@@ -10,9 +10,11 @@ import java.time.Instant
 class WholeNightSequenceTest {
     private fun plan(
         segments: List<SleepSegment>, setting: NightSettings, now: String, previous: AlarmPlan?,
-        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null
+        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null,
+        phoneAlarmFiredFor: Instant? = null
     ) = computeAlarmPlan(
-        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
+        phoneAlarmFiredFor
     )
 
     @Test fun `a full night with a brief awakening owes only the rest of the total, then is pulled forward, then finishes at the deadline`() {

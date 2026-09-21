@@ -165,11 +165,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
 
     val plan = computeAlarmPlan(
         outcome.segments, state.settings, decisionNow, state.morningAlarmAt, currentZone(), config,
-        state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt
+        state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt, state.phoneAlarmFiredFor
     )
     logDataAndPlan(context, state, outcome, plan, decisionNow)
 
-    val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, decisionNow)
+    val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, config, decisionNow)
     // H7.2/FIX4: right after arming (or not) the phone alarm for this tick's own plan - a nap the tick just
     // armed supersedes any nudge still pending from an earlier alarm, but only once it is CONFIRMED - see
     // napSupersedesPendingNudge's own doc for what changed and why.
@@ -372,8 +372,17 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * it); false when there is nothing to arm (`wakeAt == null`) or arming did not happen (already overdue) or
  * failed (exact-alarm permission revoked). [cancelNudgeIfSupersededByNap]'s own guard reads this, so a plan
  * whose own alarm attempt failed never counts as a replacement for the nudge it would otherwise cancel.
+ *
+ * J1.3 (owner-reported, 2026-09-21) ADDS a second line of defence, on top of WakeAlarm.kt's own
+ * `morningAlarmAlreadyRang` (the primary fix for the same re-ring loop): a [wakeAt] landing strictly after
+ * [NightState.phoneAlarmFiredFor] but still within [EngineConfig.minAlarmLead] of it is refused too, not just
+ * an exact match. The exact-match check right above already catches the ordinary case; this one is a backstop
+ * for a plan that, for whatever reason not yet accounted for, still computes something close to an instant
+ * that JUST fired - the shape every version of this bug has taken, whichever rule produced the recomputed
+ * target. Nothing legitimate is ever this close: the shortest real gap between two consecutive alarms is
+ * [EngineConfig.napLength] (20 min), far outside this window.
  */
-private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousPlan: AlarmPlan?, plan: AlarmPlan, now: Instant): Boolean {
+private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousPlan: AlarmPlan?, plan: AlarmPlan, config: EngineConfig, now: Instant): Boolean {
     val debugNight = state.debugOptions.isAnyEnabled
     val wakeAt = plan.wakeAt
     if (wakeAt == null) {
@@ -382,6 +391,22 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
     }
     if (wakeAt == state.phoneAlarmFiredFor) {
         return true
+    }
+    val firedFor = state.phoneAlarmFiredFor
+    if (firedFor != null && wakeAt.isAfter(firedFor) && !wakeAt.isAfter(firedFor.plus(config.minAlarmLead))) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(
+                now, "error",
+                mapOf(
+                    "step" to "phone_alarm",
+                    "cause" to "planned phone alarm $wakeAt is within minAlarmLead of the alarm that already fired at $firedFor - " +
+                        "not arming (J1.3's second line of defence against the re-ring loop)"
+                )
+            ),
+            debugNight
+        )
+        return false
     }
     if (!shouldArmPhoneAlarm(wakeAt, now, state.phoneAlarmFiredFor)) {
         appendNightLog(

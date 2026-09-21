@@ -10,7 +10,7 @@ class ComputeWakeAlarmTest {
     @Test fun `rule 1 FINISHED produces no alarm`() {
         val result = computeWakeAlarm(
             PlanRule.FINISHED, SleepState.AWAKE, instant("2026-09-17T00:30"), null, 0,
-            instant("2026-09-17T08:00"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T08:00"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertNull(result)
     }
@@ -18,7 +18,7 @@ class ComputeWakeAlarmTest {
     @Test fun `rule 5 DEADLINE_ONLY sets the alarm exactly at the deadline`() {
         val result = computeWakeAlarm(
             PlanRule.DEADLINE_ONLY, SleepState.NOT_YET_ASLEEP, instant("2026-09-17T00:40"),
-            instant("2026-09-17T00:50"), 0, instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T00:50"), 0, instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T00:50"), result)
     }
@@ -26,7 +26,7 @@ class ComputeWakeAlarmTest {
     @Test fun `rule 4 FULL_CYCLES adds the picked cycles to the onset`() {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
-            instant("2026-09-17T01:00"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T01:00"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T08:00"), result)
     }
@@ -35,7 +35,7 @@ class ComputeWakeAlarmTest {
         // now + 20 min would be 01:00, but the deadline at 00:55 cuts it short.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T00:30"), instant("2026-09-17T00:55"), 0,
-            instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T00:55"), result)
     }
@@ -43,7 +43,7 @@ class ComputeWakeAlarmTest {
     @Test fun `rule 7 NAP with no deadline runs the full napLength, with nothing to cap it`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T00:30"), null, 0,
-            instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T01:00"), result)
     }
@@ -51,7 +51,7 @@ class ComputeWakeAlarmTest {
     @Test fun `rule 7 NAP once asleep is 20 min after onset`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T01:10"), instant("2026-09-17T01:40"), 0,
-            instant("2026-09-17T01:12"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T01:12"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T01:30"), result)
     }
@@ -59,7 +59,7 @@ class ComputeWakeAlarmTest {
     @Test fun `F5 rule 7 NAP once asleep still arms even after the wake alarm has fired - only the AWAKE branch is affected`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
-            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = instant("2026-09-17T07:00"), morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = instant("2026-09-17T07:00"), morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:30"), result)
     }
@@ -67,7 +67,7 @@ class ComputeWakeAlarmTest {
     @Test fun `F5 rule 7's AWAKE safety net arms nothing once the wake alarm has already fired`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T07:00"), null, 0,
-            instant("2026-09-17T07:20"), config, wakeAlarmFiredAt = instant("2026-09-17T07:00"), morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T07:20"), config, wakeAlarmFiredAt = instant("2026-09-17T07:00"), morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertNull(result)
     }
@@ -75,7 +75,7 @@ class ComputeWakeAlarmTest {
     @Test fun `F5 rule 7's AWAKE safety net still slides normally before any wake alarm has fired`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T00:30"), null, 0,
-            instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T01:00"), result)
     }
@@ -92,7 +92,7 @@ class ComputeWakeAlarmTest {
         // WholeMorningSequenceTest's sequence test for that part.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T06:50"), null, 0,
-            instant("2026-09-17T07:10"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null
+            instant("2026-09-17T07:10"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertNull(result)
     }
@@ -100,7 +100,7 @@ class ComputeWakeAlarmTest {
     @Test fun `H1 rule 7's AWAKE safety net arms nothing when the latched morningAlarmAt is exactly now`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T06:30"), null, 0,
-            instant("2026-09-17T06:45"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null
+            instant("2026-09-17T06:45"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertNull(result)
     }
@@ -113,7 +113,7 @@ class ComputeWakeAlarmTest {
         // `awakeNapTarget`, and AlarmSequenceReplayTest for the whole sequence this comes from.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T06:30"), null, 0,
-            instant("2026-09-17T06:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null
+            instant("2026-09-17T06:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T06:45"), result)
     }
@@ -122,7 +122,7 @@ class ComputeWakeAlarmTest {
         // morningAlarmAt null and no firing recorded: nothing to keep, so the pre-H8 safety net is unchanged.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T06:30"), null, 0,
-            instant("2026-09-17T06:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T06:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:00"), result)
     }
@@ -133,7 +133,33 @@ class ComputeWakeAlarmTest {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
             instant("2026-09-17T08:03"), config, wakeAlarmFiredAt = instant("2026-09-17T08:00"), morningAlarmAt = instant("2026-09-17T08:00"),
-            lastNapAlarmFiredAt = null
+            lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
+        )
+        assertNull(result)
+    }
+
+    @Test fun `J1_3 a morning target is still spent when only phoneAlarmFiredFor recorded the firing`() {
+        // The re-ring loop: the wake alarm fired at 08:00, but PhoneAlarmReceiver.recordWakeOrNapFired's own
+        // attribution to wakeAlarmFiredAt was skipped (a stale state.lastPlan read racing the in-flight tick's
+        // own save) - so wakeAlarmFiredAt is still null here, exactly like D8's own overdue case above. Without
+        // J1.3, this is indistinguishable from D8 and gets pulled forward to a fresh alarm, ringing again.
+        // phoneAlarmFiredFor (08:00), written unconditionally regardless of the attribution race, is what
+        // tells the two apart.
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
+            instant("2026-09-17T08:05"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T08:00"),
+            lastNapAlarmFiredAt = null, phoneAlarmFiredFor = instant("2026-09-17T08:00")
+        )
+        assertNull(result)
+    }
+
+    @Test fun `J1_3 the LATER of wakeAlarmFiredAt and phoneAlarmFiredFor decides whether the target is spent`() {
+        // wakeAlarmFiredAt here belongs to an EARLIER stretch's own firing (before raw), so it alone would not
+        // mark today's raw target spent - only phoneAlarmFiredFor, at or after raw, does.
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
+            instant("2026-09-17T08:05"), config, wakeAlarmFiredAt = instant("2026-09-17T05:00"), morningAlarmAt = instant("2026-09-17T08:00"),
+            lastNapAlarmFiredAt = null, phoneAlarmFiredFor = instant("2026-09-17T08:00")
         )
         assertNull(result)
     }
@@ -143,7 +169,7 @@ class ComputeWakeAlarmTest {
         // failed, a reboot landed late): D8's pull-forward is untouched.
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
-            instant("2026-09-17T08:03"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T08:00"), lastNapAlarmFiredAt = null
+            instant("2026-09-17T08:03"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T08:00"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T08:05"), result)
     }
@@ -151,7 +177,7 @@ class ComputeWakeAlarmTest {
     @Test fun `an alarm too close to now is pulled forward to now plus minAlarmLead`() {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
-            instant("2026-09-17T08:05"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T08:05"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T08:07"), result)
     }
@@ -159,7 +185,7 @@ class ComputeWakeAlarmTest {
     @Test fun `C1 a pull-forward from a mid-minute now rounds up to the next whole minute`() {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
-            instant("2026-09-17T08:05:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T08:05:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T08:08"), result)
     }
@@ -167,7 +193,7 @@ class ComputeWakeAlarmTest {
     @Test fun `C1 a pull-forward exactly on a whole minute is left unchanged`() {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
-            instant("2026-09-17T08:05:00"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T08:05:00"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T08:07"), result)
     }
@@ -175,7 +201,7 @@ class ComputeWakeAlarmTest {
     @Test fun `a pull-forward is still capped by an imminent deadline, even closer than minAlarmLead`() {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"),
-            instant("2026-09-17T08:31"), 5, instant("2026-09-17T08:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T08:31"), 5, instant("2026-09-17T08:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T08:31"), result)
     }
@@ -189,7 +215,7 @@ class ComputeWakeAlarmTest {
         // (D8/H8's actual overdue case) may still be pulled forward.
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T23:00"), null, 5,
-            instant("2026-09-18T06:28:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-18T06:28:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-18T06:30:00"), result)
     }
@@ -203,7 +229,7 @@ class ComputeWakeAlarmTest {
     @Test fun `H2 the ASLEEP branch is the ordinary onset plus napLength when no nap has fired yet`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
-            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:30"), result)
     }
@@ -214,7 +240,7 @@ class ComputeWakeAlarmTest {
         // target (07:30) is still in the future here, so nothing is pulled forward either.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
-            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:05")
+            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:05"), phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:30"), result)
     }
@@ -226,7 +252,7 @@ class ComputeWakeAlarmTest {
         // 07:30) is already in the past at now=07:31, and pullForwardIfTooSoon would squeeze it to 07:33.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
-            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:30")
+            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:30"), phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:50"), result)
     }
@@ -237,7 +263,7 @@ class ComputeWakeAlarmTest {
         // tick above - never a further-out instant that would keep the alarm from ever actually arriving.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
-            instant("2026-09-17T07:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:30")
+            instant("2026-09-17T07:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:30"), phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:50"), result)
     }
@@ -245,7 +271,7 @@ class ComputeWakeAlarmTest {
     @Test fun `H2 the fresh napLength is still capped by an imminent deadline`() {
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), instant("2026-09-17T07:40"), 0,
-            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:30")
+            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = instant("2026-09-17T07:30"), phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:40"), result)
     }
@@ -256,7 +282,7 @@ class ComputeWakeAlarmTest {
         // job for this case (D8).
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
-            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+            instant("2026-09-17T07:31"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
         assertEquals(instant("2026-09-17T07:33"), result)
     }

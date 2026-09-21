@@ -16,9 +16,11 @@ import org.junit.jupiter.api.Test
 class ExtraNightScenariosTest {
     private fun plan(
         segments: List<SleepSegment>, setting: NightSettings, now: String, previous: AlarmPlan?,
-        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null
+        wakeAlarmFiredAt: Instant? = null, napAlarmsUsed: Int = 0, lastNapAlarmFiredAt: Instant? = null,
+        phoneAlarmFiredFor: Instant? = null
     ) = computeAlarmPlan(
-        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+        segments, setting, instant(now), previous?.wakeAt, testZone, EngineConfig(), wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
+        phoneAlarmFiredFor
     )
 
     @Test fun `a projected pre-sleep plan slides until real sleep replaces it, then holds steady`() {
@@ -66,7 +68,7 @@ class ExtraNightScenariosTest {
         val morningAlarmAt = instant("2026-09-17T08:00")
         fun tick(segments: List<SleepSegment>, now: String) = computeAlarmPlan(
             segments, setting, instant(now), morningAlarmAt, testZone, EngineConfig(),
-            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null
+            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
 
         val established = plan(establishNight, setting, "2026-09-17T07:00", null)

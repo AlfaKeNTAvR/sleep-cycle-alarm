@@ -91,7 +91,10 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
             val zone = ZoneId.systemDefault()
             val initialPlan = computeAlarmPlan(
                 emptyList(), settings, now, morningAlarmAt = null, zone, resolveEngineConfig(debugOptions),
-                wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null
+                wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null,
+                // J1.3: clearAlarmFiredStores just ran above, so this brand new night genuinely has no
+                // phoneAlarmFiredFor yet - not a default standing in for a caller that forgot to pass one.
+                phoneAlarmFiredFor = null
             )
             val state = NightState(
                 startedAt = now,

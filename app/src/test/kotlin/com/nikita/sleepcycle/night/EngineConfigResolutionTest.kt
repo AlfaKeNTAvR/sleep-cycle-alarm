@@ -52,7 +52,7 @@ class EngineConfigResolutionTest {
         assertDoesNotThrow {
             computeAlarmPlan(
                 emptyList(), settings, now, morningAlarmAt = null, zone, config,
-                wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null
+                wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
             )
         }
     }

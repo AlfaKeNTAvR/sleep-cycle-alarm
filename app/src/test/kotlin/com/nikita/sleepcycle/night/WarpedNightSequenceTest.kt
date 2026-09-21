@@ -84,7 +84,10 @@ class WarpedNightSequenceTest {
             val segments = buildSimulatedSegments(events, now)
             val plan = computeAlarmPlan(
                 segments, settings, now, morningAlarmAt, zone, config,
-                wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+                wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
+                // J1.3: this harness never models phoneAlarmFiredFor at all (see shouldArmPhoneAlarm's own
+                // hardcoded null a few lines below) - untouched here for the same reason.
+                phoneAlarmFiredFor = null
             )
             val phoneAlarmShouldArm = shouldArmPhoneAlarm(plan.wakeAt, now, phoneAlarmFiredFor = null)
             // FIX4: mirrors NightOrchestrator.cancelNudgeIfSupersededByNap's own two extra guards - a confirmed

@@ -51,17 +51,21 @@ class WholeMorningSequenceTest {
         var wakeAlarmFiredAt: Instant? = null
         var napAlarmsUsed = 0
         var lastNapAlarmFiredAt: Instant? = null
+        // J1.3: mirrors NightState.phoneAlarmFiredFor, written unconditionally by
+        // PhoneAlarmReceiver.markPhoneAlarmFired - see recordFiring's own doc below.
+        var phoneAlarmFiredFor: Instant? = null
 
         /** Models NightOrchestrator.runNightTickLocked: compute the plan from the CURRENT latch, then re-latch from its own result - see NightOrchestrator.latchMorningAlarmAt. */
         fun tick(segments: List<SleepSegment>, now: String): AlarmPlan {
-            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt)
+            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor)
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
             return plan
         }
 
-        /** Models PhoneAlarmReceiver.recordWakeOrNapFired for a plan whose own wakeAt has just fired. G8: a NAP firing always counts, mid-night or post-wake alike - no further guard. H2: also records lastNapAlarmFiredAt. */
+        /** Models PhoneAlarmReceiver.recordWakeOrNapFired for a plan whose own wakeAt has just fired. G8: a NAP firing always counts, mid-night or post-wake alike - no further guard. H2: also records lastNapAlarmFiredAt. J1.3: phoneAlarmFiredFor is set unconditionally, exactly like markPhoneAlarmFired - this harness never simulates the stale-load race that can skip the branch below, only its always-written counterpart. */
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
+            phoneAlarmFiredFor = firedFor
             if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
@@ -177,15 +181,19 @@ class WholeMorningSequenceTest {
         var wakeAlarmFiredAt: Instant? = at("2026-09-17T07:00:00")
         var napAlarmsUsed = MAX_NAP_ALARMS
         var lastNapAlarmFiredAt: Instant? = null
+        // J1.3: mirrors NightState.phoneAlarmFiredFor - starts at the same instant wakeAlarmFiredAt is
+        // pre-set to above, since that firing is what set both in the real app.
+        var phoneAlarmFiredFor: Instant? = at("2026-09-17T07:00:00")
 
         fun tick(segments: List<SleepSegment>, now: String): AlarmPlan {
-            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt)
+            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor)
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
             return plan
         }
 
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
+            phoneAlarmFiredFor = firedFor
             if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
@@ -242,15 +250,18 @@ class WholeMorningSequenceTest {
         var wakeAlarmFiredAt: Instant? = null
         var napAlarmsUsed = 0
         var lastNapAlarmFiredAt: Instant? = null
+        // J1.3: mirrors NightState.phoneAlarmFiredFor - see the first scenario's own note above.
+        var phoneAlarmFiredFor: Instant? = null
 
         fun tick(segments: List<SleepSegment>, now: String): AlarmPlan {
-            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt)
+            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor)
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
             return plan
         }
 
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
+            phoneAlarmFiredFor = firedFor
             if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
@@ -364,7 +375,9 @@ class SlidingAwakeNapSequenceTest {
         val lastNapAlarmFiredAt: Instant? = null
 
         fun tick(now: String): AlarmPlan {
-            val plan = computeAlarmPlan(awakeSince0630(now), setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt)
+            // J1.3: the wake alarm never fires in this scenario (see wakeAlarmFiredAt's own comment above),
+            // so phoneAlarmFiredFor is always null too - nothing to mirror here.
+            val plan = computeAlarmPlan(awakeSince0630(now), setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor = null)
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
             return plan
         }

@@ -124,7 +124,8 @@ internal class NightReplay(
     /** NightOrchestrator.runNightTick: read the timeline, compute the plan, arm the alarm, latch the morning alarm, schedule the next tick. */
     private fun runTick(at: Instant) {
         val plan = computeAlarmPlan(
-            segmentsAt(at), setting, at, morningAlarmAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+            segmentsAt(at), setting, at, morningAlarmAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
+            phoneAlarmFiredFor
         )
         armPhoneAlarmIfNeeded(plan, at)
         morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)

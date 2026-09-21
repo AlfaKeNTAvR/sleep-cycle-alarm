@@ -20,9 +20,10 @@ class PostWakeNapTest {
 
     private fun plan(
         segments: List<SleepSegment>, now: String, previous: AlarmPlan?, wakeAlarmFiredAt: Instant?, napAlarmsUsed: Int,
-        lastNapAlarmFiredAt: Instant? = null
+        lastNapAlarmFiredAt: Instant? = null, phoneAlarmFiredFor: Instant? = null
     ) = computeAlarmPlan(
-        segments, setting, instant(now), previous?.wakeAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
+        segments, setting, instant(now), previous?.wakeAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
+        phoneAlarmFiredFor
     )
 
     @Test fun `a first nap, a second nap, and a genuinely new third return to sleep FINISHES the night`() {
@@ -149,7 +150,7 @@ class PostWakeNapTest {
         fun planWithDeadline(segments: List<SleepSegment>, now: String, previous: AlarmPlan?, wakeAlarmFiredAt: Instant?, napAlarmsUsed: Int) =
             computeAlarmPlan(
                 segments, deadlineSetting, instant(now), previous?.wakeAt, testZone, config, wakeAlarmFiredAt, napAlarmsUsed,
-                lastNapAlarmFiredAt = null
+                lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
             )
 
         val secondNapHeld = AlarmPlan(AlarmMode.NAP, instant("2026-09-17T07:55"), 0, instant("2026-09-17T07:35"), false, "r")
