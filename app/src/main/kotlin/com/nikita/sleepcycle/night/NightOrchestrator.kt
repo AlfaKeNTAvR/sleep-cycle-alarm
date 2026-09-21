@@ -345,9 +345,31 @@ internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? 
  * subsumed here and deliberately not kept as well: a projected onset is `now + fallAsleepEstimate`, produced
  * precisely because the owner is NOT asleep, so a confirmed [SleepState.ASLEEP] already implies a real onset.
  * One reason for this predicate is worth more than two overlapping ones.
+ *
+ * J5 must-fix (owner-reported, 2026-09-21) ADDS the [pendingNudgeAt] < `plan.wakeAt` test, closing the OTHER
+ * ordering of the same self-cancelling nap J4 fixed one half of. J4's own fix covers a firing that precedes
+ * [armPhoneAlarmIfNeeded]'s own marker read (the match returns false, so [napAlarmArmed] is false). It does NOT
+ * cover a firing that lands AFTER a genuinely successful arm: light 23:00 to 06:28, awake 06:28 to 06:30, light
+ * again from 06:30, five cycles - the nap target is 06:50, a tick arms it just before 06:50 and [napAlarmArmed]
+ * is legitimately true, then the receiver handles the 06:50 firing and writes its own fresh 07:05 nudge BEFORE
+ * [cancelNudgeIfSupersededByNap] gets around to reading [readOutOfBedNudgePendingAt]. The tick then cancels
+ * 07:05 on the strength of an arm result computed earlier in the same tick - the nap cancelling its own fresh
+ * nudge again, by a different route.
+ *
+ * The fix is to stop trusting [napAlarmArmed] alone as evidence about the nudge and compare the nudge against
+ * the TARGET it is being traded for. A nudge due at or after `plan.wakeAt` is not something this nap supersedes:
+ * the nap rings FIRST and, per D4, arms its own fresh nudge unconditionally at that moment, so such a nudge is
+ * either that firing's own (the race above) or something later still. Only a nudge strictly BEFORE the nap's
+ * own target is the one that would ring mid-nap, which is the entire premise of this predicate. The equal case
+ * is deliberately NOT cancelled: at worst the nudge rings alongside the nap it duplicates, which is the
+ * direction this project errs in. [napAlarmArmed] stays as well - it still carries FIX4's own separate fact,
+ * that a plan whose arm attempt FAILED is no replacement for anything.
  */
-internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?, sleepState: SleepState, napAlarmArmed: Boolean): Boolean =
-    plan.mode == AlarmMode.NAP && plan.wakeAt != null && pendingNudgeAt != null && sleepState == SleepState.ASLEEP && napAlarmArmed
+internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?, sleepState: SleepState, napAlarmArmed: Boolean): Boolean {
+    val napWakeAt = plan.wakeAt ?: return false
+    if (pendingNudgeAt == null) return false
+    return plan.mode == AlarmMode.NAP && sleepState == SleepState.ASLEEP && napAlarmArmed && pendingNudgeAt.isBefore(napWakeAt)
+}
 
 /**
  * H7.2: cancels a still-pending out-of-bed nudge once a tick arms a nap - see [napSupersedesPendingNudge]'s

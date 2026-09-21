@@ -288,11 +288,19 @@ internal class NightReplay(
      * module cannot import the app module's `internal` originals - see this class's own header). Recomputes the
      * SAME [SleepState] this tick's own [plan] was built from, from [segments] and this tick's own [now]
      * (`decisionNow`/[PendingTick.startedAt] - never the commit instant, matching production).
+     *
+     * J5 must-fix: mirrors the added "[pendingNudgeAt] strictly before the nap's own target" test - only a
+     * nudge that would ring MID-nap is superseded, never one due at or after the nap itself, which can only be
+     * that nap's own fresh D4 nudge or something later. See NightOrchestrator.napSupersedesPendingNudge's own
+     * J5 doc for the ordering this closes (a firing landing AFTER a genuinely successful arm, which
+     * [napAlarmArmed] alone cannot tell apart from an ordinary supersession).
      */
     private fun cancelNudgeIfSupersededByNap(plan: AlarmPlan, segments: List<SleepSegment>, now: Instant, napAlarmArmed: Boolean) {
+        val napWakeAt = plan.wakeAt ?: return
+        val nudgeAt = pendingNudgeAt ?: return
         val sleepState = detectSleepState(normalizeSegments(segments, now, config))
-        val supersedes = plan.mode == AlarmMode.NAP && plan.wakeAt != null && pendingNudgeAt != null &&
-            sleepState == SleepState.ASLEEP && napAlarmArmed
+        val supersedes = plan.mode == AlarmMode.NAP && sleepState == SleepState.ASLEEP && napAlarmArmed &&
+            nudgeAt.isBefore(napWakeAt)
         if (supersedes) pendingNudgeAt = null
     }
 

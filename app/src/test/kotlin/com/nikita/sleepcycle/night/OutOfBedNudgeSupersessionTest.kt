@@ -100,6 +100,42 @@ class OutOfBedNudgeSupersessionTest {
         )
     }
 
+    // ---- J5 must-fix (owner-reported, 2026-09-21): the nudge is compared against the target it is traded for -
+
+    @Test
+    fun `J5 a nudge due AFTER the nap's own target is never superseded - it is that nap's own fresh nudge, not a stale leftover`() {
+        // The ordering J4's own fix does not reach: the nap is armed SUCCESSFULLY (napAlarmArmed genuinely
+        // true, nothing to do with an already-fired marker match), and only THEN does the receiver handle the
+        // firing and write its own fresh nudge - before cancelNudgeIfSupersededByNap gets around to reading the
+        // pending instant. The owner's own traced night: light 23:00 to 06:28, awake 06:28 to 06:30, light
+        // again from 06:30, five cycles, so the nap target is 06:50 and the nap's own fresh nudge is 07:05.
+        // Pre-J5 this returned true on the strength of napAlarmArmed alone, cancelling that 07:05 nudge - the
+        // nap silencing its own follow-up by a second route.
+        val napWakeAt = Instant.parse("2026-09-21T06:50:00Z")
+        assertFalse(
+            napSupersedesPendingNudge(
+                plan(AlarmMode.NAP, napWakeAt), Instant.parse("2026-09-21T07:05:00Z"), SleepState.ASLEEP, napAlarmArmed = true
+            )
+        )
+    }
+
+    @Test
+    fun `J5 a nudge due exactly AT the nap's own target is not superseded either - the tie errs toward ringing`() {
+        val napWakeAt = Instant.parse("2026-09-21T06:50:00Z")
+        assertFalse(napSupersedesPendingNudge(plan(AlarmMode.NAP, napWakeAt), napWakeAt, SleepState.ASLEEP, napAlarmArmed = true))
+    }
+
+    @Test
+    fun `J5 a nudge due strictly BEFORE the nap's own target is still superseded - the one case this predicate exists for`() {
+        // The unchanged, load-bearing case: the nudge would ring mid-nap, at full alarm volume.
+        val napWakeAt = Instant.parse("2026-09-21T06:53:00Z")
+        assertTrue(
+            napSupersedesPendingNudge(
+                plan(AlarmMode.NAP, napWakeAt), Instant.parse("2026-09-21T06:45:00Z"), SleepState.ASLEEP, napAlarmArmed = true
+            )
+        )
+    }
+
     // ---- H7.3: shouldCancelNudgeForPreCheck --------------------------------------------------------------
 
     @Test

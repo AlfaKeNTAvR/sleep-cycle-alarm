@@ -193,11 +193,18 @@ class TickScheduleRaceTest {
         assertEquals(listOf(instant("2026-09-21T01:06:30")), napFirings.map { it.firedFor }, replay.trace())
         assertEquals(AlarmMode.NAP, napFirings.single().mode, replay.trace())
 
-        // The assertion that fails without the fix: pre-J4, the 01:05 tick's own commit (01:07:00) re-read the
-        // LIVE fired marker, found it already equal to its own unchanged 01:06:30 target, and returned true from
-        // armPhoneAlarmIfNeeded - read by napSupersedesPendingNudge as "a fresh nap was armed this tick",
-        // cancelling that SAME nap's own just-armed 01:21:30 nudge (pendingNudgeAt null). Post-J4 the exact-match
-        // branch returns false, so nothing supersedes it.
+        // The assertion that failed without the J4 fix: pre-J4, the 01:05 tick's own commit (01:07:00) re-read
+        // the LIVE fired marker, found it already equal to its own unchanged 01:06:30 target, and returned true
+        // from armPhoneAlarmIfNeeded - read by napSupersedesPendingNudge as "a fresh nap was armed this tick",
+        // cancelling that SAME nap's own just-armed 01:21:30 nudge (pendingNudgeAt null). Post-J4 the
+        // exact-match branch returns false, so nothing supersedes it.
+        //
+        // SCOPE NOTE, checked by hand rather than left implied: since J5's own must-fix this assertion no
+        // longer pins J4 ALONE. J5 added a second, independent reason the same cancellation cannot happen here
+        // (the 01:21:30 nudge is due AFTER the 01:06:30 nap target, so it is never a candidate for
+        // supersession), so reverting J4's exact-match return by itself now leaves this test passing. Both
+        // guards are still pinned, just not both by this one test - the J5 ordering has its own direct unit
+        // tests in `OutOfBedNudgeSupersessionTest.kt`, which is where a reverted J5 shows up as a failure.
         assertEquals(instant("2026-09-21T01:21:30"), replay.pendingNudgeAt, replay.trace())
     }
 
