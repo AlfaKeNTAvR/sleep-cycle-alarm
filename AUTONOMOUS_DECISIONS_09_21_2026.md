@@ -622,3 +622,140 @@ the touched modules' own Kotlin compile tasks (`:engine:compileKotlin :engine:co
 :app:compileDebugKotlin :app:compileDebugUnitTestKotlin --rerun-tasks`, unaffected by the R.jar lock since none
 of those four tasks touch it) - zero `w:` lines. The ordinary (non-`--rerun-tasks`) verify command above ran
 clean on every invocation throughout this session, incremental or not.
+
+## J4 round (marker J4, final cleanup pass after two independent sign-offs, same branch)
+
+Two reviewers had already signed off on the logic itself (Opus SATISFIED, Fable SAFE TO SLEEP ON) before this
+round started; nothing here was blocking. Five items: one residual ring-behaviour gap, one unnoted behaviour
+change, three comments arguing against the code beside them, stale spec/decision docs, and a handful of small
+ones. Worked in the order given, item 1 first, verifying after each.
+
+### Item 1 (landed) - the residual double ring
+
+Verified the reviewer's own reasoning before implementing: `wakeAt == previousPlan?.wakeAt` can only be true
+for a RE-arm of an unchanged target (the ordinary "nothing changed this tick" case), never for D8's own
+pull-forward recovery, which by construction always produces a NEW instant (`now + minAlarmLead`, never the
+spent target it replaces) - confirmed by reading `pullForwardIfTooSoon` and the J3 traced sequence in
+NightOrchestrator.kt directly, not just taking the claim on faith. Extracted the one-line guard into its own
+pure, `internal` function (`shouldRefuseStaleRearm`), matching this codebase's own established pattern
+(`shouldArmPhoneAlarm`) for making an Android-Context-bound decision unit-testable without Robolectric (which
+this repo does not have - see WarpedNightSequenceTest.kt's own header for why that matters here).
+
+Also fixed the write-side half at its source, per the task's own suggestion: `PhoneAlarmFiredStore.kt`'s
+`writeInstantFile` now writes to a temp file and renames over the real one, identical to the fix
+`OutOfBedNudgeStore.kt` already had. This removes the torn-read window outright rather than only tolerating it
+via the read-side guard - both are in, since the read-side guard is still needed for the "read lands just
+before the write, not mid-write" half of the race, which an atomic rename cannot close on its own.
+
+Regression test: added `J4 replay` to `TickScheduleRaceTest.kt` (engine module), reusing the existing
+`nightOwnerTraced()` lattice and NightReplay's own documented commit-first tie-break to model the race
+deterministically - a tick's commit landing at the EXACT same instant its own already-armed target fires.
+Verified failing without the fix by hand: commented out the new guard line in `NightReplay.kt`'s own
+`armPhoneAlarmIfNeeded` mirror, ran `:engine:test --tests TickScheduleRaceTest`, got exactly one failure
+(`J4 replay`, `armings` contained a stale re-arm entry the assertion says must not exist), all six other tests
+in the file still green, restored the line immediately. Also added four direct unit tests of
+`shouldRefuseStaleRearm` itself to `PhoneAlarmArmingTest.kt` (no Context needed, pure function).
+
+Decision: `nowInstant()`, not the tick's own `decisionNow`, is the correct clock to compare against here - it
+is deliberately a SECOND, independent real-clock read at the exact point arming runs, mirroring what J2
+must-fix 4 tried and J3 had to correct (re-reading the clock at the wrong SCOPE, comparing against every
+decision in the tick, not just this one guard). Scoping the fresh clock read to only this one comparison, and
+only when the target is unchanged, is what keeps it from reopening J3's own regression.
+
+### Item 2 (landed) - the unnoted behaviour change: decided to keep the nudge
+
+Traced the reviewer's ordering by hand against the current code (post-J3) and confirmed it: J3 made the
+fired-marker match at `wakeAt == phoneAlarmFiredForNow` read LIVE, which is correct for the ring-count property
+it exists for, but that same live read also flows into `napAlarmArmed`, the ONLY input
+`cancelNudgeIfSupersededByNap`'s guard reads. For a nap that fires DURING its own tick's sync (the ordinary
+shape for a mid-night rule 7 nap under real sync latency, not an edge case), the match now resolves to true at
+commit time, and `napSupersedesPendingNudge` reads that as "a fresh nap was armed this tick" - cancelling the
+SAME nap's own fresh nudge, armed by the SAME firing the match just confirmed.
+
+Decision: the nudge must survive. Reasoning, in order of weight:
+1. The out-of-bed nudge's whole job (D4) is to get the owner out of bed when they are awake and not getting up
+   after an alarm. Losing it silently after every mid-night nap that happens to fire mid-sync is a real,
+   recurring loss of function, not a cosmetic one - and mid-sync firings are not rare on a real (non-simulated)
+   night, where a sync can cost real seconds to tens of seconds.
+2. The thing being "superseded" is not a stale nudge from an earlier, now-irrelevant alarm (H7.2's actual
+   intended case, which this fix does not touch) - it is that SAME nap's own nudge, which the receiver had
+   already armed moments before, at fire time. There is nothing left here worth trading away for.
+3. `armPhoneAlarmIfNeeded`'s own return value has exactly one reader (checked directly - grepped for
+   `napAlarmArmed` and for calls to the function), so narrowing what "true" means costs nothing elsewhere.
+
+Implemented as: the marker-match branch now returns `false` instead of `true` - still never re-arms (unchanged,
+an early return before `schedulePhoneAlarm` either way), but no longer counts as a fresh arm for the nudge
+guard. Updated the FIX4 docstring on `armPhoneAlarmIfNeeded` and the H7.2 docstring on
+`napSupersedesPendingNudge` to state the corrected contract explicitly, per the task's own instruction not to
+leave a kept behaviour implicit if going the other way - the same applies here in reverse: the CHANGED
+behaviour, and why, is now explicit in both places a future reader would check.
+
+Regression test: added `J4 nudge replay` to `TickScheduleRaceTest.kt`, extending `NightReplay.kt` to model
+`pendingNudgeAt` and a reimplementation of `napSupersedesPendingNudge`/`cancelNudgeIfSupersededByNap` (the
+engine module cannot import the app module's `internal` originals - same constraint as every other mirror in
+that file). First attempt used too wide an `advanceTo` window and picked up two more ticks than intended,
+applying the injected sync duration to three ticks instead of one and producing a second, unrelated nap target
+- caught by the trace output in the assertion failure message, narrowed the window to land just past the
+intended tick's own commit and before the next scheduled one (same technique `J2 must-fix 4 replay` already
+uses). Verified failing without the fix by hand: temporarily made the marker-match branch return `true` again
+(pre-J4 behaviour) in the `NightReplay.kt` mirror, ran the test, got exactly the expected failure
+(`pendingNudgeAt` was `null`, expected the nap's own fresh nudge instant), `J2 must-fix 4 replay` in the same
+file still green (confirming the ring-count property is independent of this fix), restored the fix immediately.
+
+### Item 3 (landed) - three comments corrected in place
+
+a. NightOrchestrator.kt's J2-must-fix-4 KDoc paragraph (near the top of `armPhoneAlarmIfNeeded`'s own doc)
+   marked SUPERSEDED BY J3 in place, not deleted - it still describes reasoning later paragraphs refer back to.
+b. The "kept, not deleted" sentence corrected: it named the wrong paragraph ("below" when it meant the short
+   mention above, now marked superseded per (a)), and asserted a roughly twenty-line call-site comment block
+   (with its own worked trace) was kept when J3's own diff (checked directly with `git show`) shows it was in
+   fact deleted outright. Corrected the direction and said plainly that the paragraph immediately following is
+   a fresh recap written for J3's own doc, not the original text carried forward.
+c. The `stale_sync_keep_plan` log line's cause string reworded from "already has a real alarm armed" (asserting
+   something `shouldKeepPreviousPlan`'s own S5 doc says this guard cannot know) to "still pending (unfired,
+   still ahead of now)" - accurate on a night where the exact-alarm permission was revoked and arming never
+   actually succeeded.
+
+### Item 4 (landed) - specs and decisions.md
+
+`docs/engine-spec.md`: corrected the `minAlarmLead` table row, the "Pull-forward rule" paragraph, and the
+"Deadline 30 s ahead" worked example - all three stated or relied on the pre-J1.1 rule (pulls forward anything
+within `minAlarmLead` of `now`) rather than the current one (only a target at or before `now`). Read
+`pullForwardIfTooSoon` directly to confirm the corrected wording before writing it, per the task's own
+instruction not to infer.
+
+`docs/decisions.md`: added a new "Overnight hardening" section (J1-J4) with one entry per decision a future
+reader must not silently reverse: the pull-forward scope (J1.1), the attribution window tried and reverted
+(J1.2/J2 must-fix 2), both spent-target checks keying on the later of their own marker and `phoneAlarmFiredFor`
+(J1.3/J2 must-fix 3), the stale-sync freeze and its bound (J1.5/J2 must-fix 1/S6 rename), the band query
+lookback (J1.6), and this round's own two J4 decisions (the stale-rearm guard, and keeping the nudge). Kept
+each entry to the decision and its reason, in the style of the entries already there, and did not touch any
+existing entry's own wording (H8's section and earlier are untouched).
+
+### Item 5 (landed, all three)
+
+- `NightReplay.kt`'s dangling `[armTimeNow]` KDoc link in the J3 paragraph reworded to plain text. Note: this
+  round's own item-1 fix happens to add a genuinely new parameter named `armTimeNow` to the SAME function for
+  an unrelated reason, which would have made the old dangling reference silently "resolve" again - to the wrong
+  symbol, with the wrong historical meaning attached. Worth flagging: a dangling link and a wrongly-resolving
+  link look identical in an IDE's "no error" sense; only reading the prose catches the second kind.
+- `AlarmSequenceReplayTest.kt`: added a note before the offset sweep's `@ValueSource` stating that only
+  30/60/90 were confirmed by hand (revert-and-rerun) to fail without J1.1, and that the remaining seven offsets
+  (120-300) are broader lattice-phase coverage of the same "never moves later" invariant, not individually
+  confirmed regression cases - so a future reader does not read the whole ten-value sweep as equally strong
+  evidence for the pull-forward rule specifically.
+- `DeadBandPlanTest.kt` renamed to `StaleSyncPlanTest.kt` (`git mv`, class name and header comment updated to
+  match). Decided this was a clean rename, unlike the broader "dead band" terminology rename SHOULD FIX 6
+  explicitly declined earlier the same night: nothing outside the file references the class by identifier
+  (checked directly with grep across all `.kt` files), so nothing cascades. The two historical
+  `AUTONOMOUS_DECISIONS_09_21_2026*.md` files still say `DeadBandPlanTest` in their own past-tense entries -
+  left untouched, since those are point-in-time records of what was decided when, not living docs (same
+  principle as decisions.md's own superseded-in-place sections, applied to a file name instead of a rule).
+
+### Final verify
+
+`JAVA_HOME=.../jdk-21.0.12.1+1 ANDROID_HOME=.../sdk ./gradlew :engine:test :app:testDebugUnitTest :app:lintDebug
+:app:assembleDebug` - `BUILD SUCCESSFUL`, 560 tests, 0 failures, 0 errors, 0 skipped (baseline 554, net +6: four
+new `shouldRefuseStaleRearm` unit tests in `PhoneAlarmArmingTest.kt`, plus `J4 replay` and `J4 nudge replay` in
+`TickScheduleRaceTest.kt`). No `R.jar` lock encountered this round. Zero Kotlin compiler warnings on every
+invocation, including a standalone `:app:compileDebugKotlin` run before the first full verify.
