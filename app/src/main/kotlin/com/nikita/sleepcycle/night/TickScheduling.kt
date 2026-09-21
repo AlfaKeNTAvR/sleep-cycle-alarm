@@ -74,11 +74,19 @@ fun inProcessTickDelay(realDelay: Duration): Duration = if (realDelay < IN_PROCE
  */
 @SuppressLint("MissingPermission")
 fun scheduleTick(context: Context, at: Instant) {
-    cancelTick(context)
     val realAt = AppClock.toRealInstant(at)
     if (shouldScheduleTickInProcess(AppClock.warp() != null)) {
+        // Taking the in-process path, so any AlarmManager tick left from the unwarped path must go.
+        cancelAlarmManagerTick(context)
         scheduleTickInProcess(context, Duration.between(Instant.now(), realAt), at)
     } else {
+        // W19 (review finding): this branch deliberately does NOT cancel first. `setExactAndAllowWhileIdle`
+        // with FLAG_UPDATE_CURRENT replaces the pending alarm atomically, by PendingIntent identity, so a
+        // cancel-then-arm only creates a window in which a REAL night has no tick armed at all - and if the
+        // process is killed inside it, or the arm below throws the SecurityException it already anticipates,
+        // the night loses every remaining tick with no recovery short of a reboot. The in-process job is still
+        // cancelled unconditionally, since nothing replaces that one implicitly.
+        cancelInProcessTick()
         armTickAlarmManager(context, realAt, at)
     }
 }
@@ -115,7 +123,17 @@ private fun scheduleTickInProcess(context: Context, realDelay: Duration, at: Ins
 
 /** Cancels a pending tick, if any - both the AlarmManager alarm and T6's in-process job, since a caller cancelling a tick must never leave the other path still armed. The two are cancelled independently, so a missing AlarmManager service (should not happen) can never skip cancelling the in-process job. */
 fun cancelTick(context: Context) {
+    cancelAlarmManagerTick(context)
+    cancelInProcessTick()
+}
+
+/** One half of [cancelTick], on its own so [scheduleTick] can cancel the path it is NOT about to arm without opening a window on the path it is - see its own comment. */
+private fun cancelAlarmManagerTick(context: Context) {
     context.getSystemService<AlarmManager>()?.cancel(tickPendingIntent(context, at = null))
+}
+
+/** The other half of [cancelTick]; nothing replaces an in-process job implicitly, so every arming path cancels this one first. */
+private fun cancelInProcessTick() {
     synchronized(inProcessTickLock) {
         inProcessTickJob?.cancel()
         inProcessTickJob = null

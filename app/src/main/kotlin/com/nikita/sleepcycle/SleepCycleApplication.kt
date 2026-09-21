@@ -24,11 +24,28 @@ package com.nikita.sleepcycle
 
 import android.app.Application
 import com.nikita.sleepcycle.night.writeClockWarp
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/**
+ * W19 (review finding): the clear below used to be a `runBlocking`, which put a first-touch DataStore open and
+ * an `edit{}` fsync on the MAIN THREAD of every process start in a debug build - and the owner sleeps on a
+ * debug build. Android cold-starts this process to deliver PhoneAlarmReceiver when the wake alarm fires at
+ * 3 a.m., and Application.onCreate runs before it, so that blocking write was charged to the alarm receiver's
+ * own dispatch budget on a cold, throttled filesystem: an ANR and late-alarm risk on the one path that must
+ * never be late.
+ *
+ * Nothing needs it to be synchronous. [com.nikita.sleepcycle.night.AppClock] starts at `warp = null` in
+ * memory, so every `nowInstant()` in this process is already real time from the instant the process exists;
+ * this only removes the stale row from disk so nothing can read it back afterwards.
+ */
+private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 class SleepCycleApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        if (BuildConfig.DEBUG) runBlocking { writeClockWarp(this@SleepCycleApplication, null) }
+        if (BuildConfig.DEBUG) startupScope.launch { writeClockWarp(this@SleepCycleApplication, null) }
     }
 }
