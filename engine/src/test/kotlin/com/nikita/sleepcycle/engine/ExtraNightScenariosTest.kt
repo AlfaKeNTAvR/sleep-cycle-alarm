@@ -57,26 +57,37 @@ class ExtraNightScenariosTest {
     }
 
     @Test fun `a nap survives a second awakening, tracking the latest onset while capped by the deadline`() {
+        // H8: morningAlarmAt is threaded the way NightOrchestrator.latchMorningAlarmAt really does it - the
+        // 08:00 alarm the FULL_CYCLES plan below established, never rewritten by any of the NAP plans that
+        // follow. An AWAKE tick now keeps that pending alarm instead of arming a nap over it; only the ASLEEP
+        // ticks arm naps of their own, which is what this sequence is really about.
         val establishNight = listOf(segment("2026-09-17T00:30", "2026-09-18T00:00", SegmentKind.LIGHT))
         val setting = settings(deadline = "2026-09-17T08:00", cycles = 5)
+        val morningAlarmAt = instant("2026-09-17T08:00")
+        fun tick(segments: List<SleepSegment>, now: String) = computeAlarmPlan(
+            segments, setting, instant(now), morningAlarmAt, testZone, EngineConfig(),
+            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null
+        )
+
         val established = plan(establishNight, setting, "2026-09-17T07:00", null)
         assertEquals(AlarmMode.FULL_CYCLES, established.mode)
         assertEquals("08:00", formatTime(established.wakeAt!!, testZone))
+        assertEquals(morningAlarmAt, established.wakeAt)
 
         val wakesAt0710 = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:10", SegmentKind.LIGHT),
             segment("2026-09-17T07:10", "2026-09-18T00:00", SegmentKind.AWAKE)
         )
-        val firstNap = plan(wakesAt0710, setting, "2026-09-17T07:11", established)
+        val firstNap = tick(wakesAt0710, "2026-09-17T07:11")
         assertEquals(AlarmMode.NAP, firstNap.mode)
-        assertEquals("07:31", formatTime(firstNap.wakeAt!!, testZone))
+        assertEquals("08:00", formatTime(firstNap.wakeAt!!, testZone))
 
         val backAsleep0720 = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:10", SegmentKind.LIGHT),
             segment("2026-09-17T07:10", "2026-09-17T07:20", SegmentKind.AWAKE),
             segment("2026-09-17T07:20", "2026-09-18T00:00", SegmentKind.LIGHT)
         )
-        val secondNap = plan(backAsleep0720, setting, "2026-09-17T07:21", firstNap)
+        val secondNap = tick(backAsleep0720, "2026-09-17T07:21")
         assertEquals(AlarmMode.NAP, secondNap.mode)
         assertEquals("07:40", formatTime(secondNap.wakeAt!!, testZone))
 
@@ -86,9 +97,10 @@ class ExtraNightScenariosTest {
             segment("2026-09-17T07:20", "2026-09-17T07:30", SegmentKind.LIGHT),
             segment("2026-09-17T07:30", "2026-09-18T00:00", SegmentKind.AWAKE)
         )
-        val thirdNap = plan(wakesAgain0730, setting, "2026-09-17T07:31", secondNap)
+        // Awake again at 07:30, still before the 08:00 alarm: H8 keeps that alarm rather than sliding to 07:51.
+        val thirdNap = tick(wakesAgain0730, "2026-09-17T07:31")
         assertEquals(AlarmMode.NAP, thirdNap.mode)
-        assertEquals("07:51", formatTime(thirdNap.wakeAt!!, testZone))
+        assertEquals("08:00", formatTime(thirdNap.wakeAt!!, testZone))
 
         val backAsleep0735 = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:10", SegmentKind.LIGHT),
@@ -97,7 +109,7 @@ class ExtraNightScenariosTest {
             segment("2026-09-17T07:30", "2026-09-17T07:35", SegmentKind.AWAKE),
             segment("2026-09-17T07:35", "2026-09-18T00:00", SegmentKind.LIGHT)
         )
-        val fourthNap = plan(backAsleep0735, setting, "2026-09-17T07:36", thirdNap)
+        val fourthNap = tick(backAsleep0735, "2026-09-17T07:36")
         assertEquals(AlarmMode.NAP, fourthNap.mode)
         assertEquals("07:55", formatTime(fourthNap.wakeAt!!, testZone))
 

@@ -62,7 +62,7 @@ class WholeMorningSequenceTest {
         /** Models PhoneAlarmReceiver.recordWakeOrNapFired for a plan whose own wakeAt has just fired. G8: a NAP firing always counts, mid-night or post-wake alike - no further guard. H2: also records lastNapAlarmFiredAt. */
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
-            if (firedAlarmIsWakeAlarm(plan.mode)) {
+            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
                 napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
@@ -186,7 +186,7 @@ class WholeMorningSequenceTest {
 
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
-            if (firedAlarmIsWakeAlarm(plan.mode)) {
+            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
                 napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
@@ -251,7 +251,7 @@ class WholeMorningSequenceTest {
 
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
-            if (firedAlarmIsWakeAlarm(plan.mode)) {
+            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
                 napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
@@ -319,10 +319,10 @@ class WholeMorningSequenceTest {
  * drops a zero-length mark entirely, which would leave the state ASLEEP instead of AWAKE on the very first tick):
  *
  * - 06:31 (owner woke at 06:30, this tick catches it a minute later): state AWAKE, afterAwakening, owedCycles
- *   0 -> rule 7 NAP. AWAKE branch: morningAlarmAt (06:45, latched from the FULL_CYCLES plan that armed the
- *   real alarm) is still after now (06:31) -> arms now + napLength = 06:51.
- * - 06:36: same reasoning, morningAlarmAt (06:45) still after now (06:36) -> arms 06:36 + 20 = 06:56.
- * - 06:41: morningAlarmAt (06:45) still after now (06:41) -> arms 06:41 + 20 = 07:01.
+ *   0 -> rule 7 NAP. AWAKE branch, H8: morningAlarmAt (06:45, latched from the FULL_CYCLES plan that armed
+ *   the real alarm) is still AHEAD, so the plan keeps 06:45 rather than arming a nap over it.
+ * - 06:36: same reasoning -> 06:45, unchanged.
+ * - 06:41: same reasoning -> 06:45, unchanged.
  * - 06:46 (now has passed morningAlarmAt): `!morningAlarmAt.isAfter(now)` is true -> arms NOTHING. This is the
  *   permanent stop; morningAlarmAt is never rewritten by any of this (a NAP plan never latches it), so nothing
  *   between here and the end of the trace can ever re-open the gate.
@@ -330,6 +330,12 @@ class WholeMorningSequenceTest {
  *   - arms nothing.
  * - 08:56 (a Doze-deferred tick, per the contract's own failure narrative): still stops - arms nothing, over
  *   two hours after morningAlarmAt passed.
+ *
+ * H8 SUPERSEDES the first three ticks above, which used to assert 06:51 / 06:56 / 07:01. Sliding there is the
+ * defect behind the owner's "the alarm never fired" report: the phone has ONE alarm slot for the wake alarm
+ * and every nap (PhoneAlarmScheduler's PHONE_ALARM_REQUEST_CODE), so each slid target overwrote the 06:45
+ * alarm that was already armed, and the permanent stop at tick 4 then cancelled what was left - a night that
+ * ends with no alarm at all. AlarmSequenceReplayTest (engine) walks that whole sequence armed and rung.
  *
  * Before H1, the guard compared against `previousPlan?.wakeAt` - the PREVIOUS TICK's own plan, which in this
  * exact sliding case IS the slid nap itself (`now + napLength` from one tick before), always ~15-19 min ahead
@@ -375,18 +381,18 @@ class SlidingAwakeNapSequenceTest {
         // (06:45) is still ahead of now, so the AWAKE branch slides.
         val tick1 = tick("2026-09-17T06:31:00")
         assertEquals(AlarmMode.NAP, tick1.mode)
-        assertEquals(at("2026-09-17T06:51:00"), tick1.wakeAt)
+        assertEquals(at("2026-09-17T06:45:00"), tick1.wakeAt)
         assertEquals(at("2026-09-17T06:45:00"), morningAlarmAt, "a NAP plan must never rewrite the latch")
 
-        // Tick 2, 06:36: still sliding - morningAlarmAt (06:45) still ahead.
+        // Tick 2, 06:36: unchanged - the morning alarm stays exactly where it is.
         val tick2 = tick("2026-09-17T06:36:00")
         assertEquals(AlarmMode.NAP, tick2.mode)
-        assertEquals(at("2026-09-17T06:56:00"), tick2.wakeAt)
+        assertEquals(at("2026-09-17T06:45:00"), tick2.wakeAt)
 
-        // Tick 3, 06:41: still sliding - morningAlarmAt (06:45) still ahead.
+        // Tick 3, 06:41: still unchanged.
         val tick3 = tick("2026-09-17T06:41:00")
         assertEquals(AlarmMode.NAP, tick3.mode)
-        assertEquals(at("2026-09-17T07:01:00"), tick3.wakeAt)
+        assertEquals(at("2026-09-17T06:45:00"), tick3.wakeAt)
 
         // Tick 4, 06:46: now has passed morningAlarmAt (06:45) - the stop fires for the first time. This is
         // the one tick G3's own dead-code guard could reach (see H1's contract) - the difference is what

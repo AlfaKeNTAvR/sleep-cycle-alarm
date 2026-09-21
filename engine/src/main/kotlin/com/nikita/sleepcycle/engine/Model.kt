@@ -31,8 +31,9 @@ data class NightSettings(
  * The engine's decision for one sync. `referenceOnset` is null exactly when [mode] is [AlarmMode.FINISHED]:
  * the night is over, there is nothing left to plan. `wakeAt` is null in that same case, and - since F5 - also
  * in the one case where [mode] is [AlarmMode.NAP] but rule 7's AWAKE safety net has nothing left to arm once
- * the wake alarm has already fired (see WakeAlarm.kt's `napAlarm`): a caller must not assume a non-FINISHED
- * mode always carries an alarm. Otherwise `wakeAt` is the single alarm for the night: every tick arms the
+ * the wake alarm has already fired (see WakeAlarm.kt's `napAlarm`), and - since H8 - in the matching case for
+ * rules 3/4/5/6, where the morning alarm this plan would name has ALREADY rung (see WakeAlarm.kt's
+ * `morningAlarmAlreadyRang`): a caller must not assume a non-FINISHED mode always carries an alarm. Otherwise `wakeAt` is the single alarm for the night: every tick arms the
  * phone at this instant (D1), the band is a sensor only. `reason` is one plain-English sentence for the night
  * log.
  *

@@ -105,12 +105,47 @@ class ComputeWakeAlarmTest {
         assertNull(result)
     }
 
-    @Test fun `H1 rule 7's AWAKE safety net still slides when the latched morningAlarmAt is still ahead`() {
+    @Test fun `H8 SUPERSEDES H1 - rule 7's AWAKE branch keeps a morningAlarmAt that is still ahead instead of sliding past it`() {
+        // H1 let this slide to now + napLength (07:00), which is LATER than the morning alarm the phone is
+        // already armed at (06:45): every tick re-armed the phone past it, so the alarm the owner actually
+        // asked for never rang, and once 06:45 passed the sliding stopped for good - a night with no alarm at
+        // all. Keeping 06:45 leaves the phone armed exactly where it already is. See WakeAlarm.kt's
+        // `awakeNapTarget`, and AlarmSequenceReplayTest for the whole sequence this comes from.
         val result = computeWakeAlarm(
             PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T06:30"), null, 0,
             instant("2026-09-17T06:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T06:45"), lastNapAlarmFiredAt = null
         )
+        assertEquals(instant("2026-09-17T06:45"), result)
+    }
+
+    @Test fun `H8 rule 7's AWAKE branch still slides by napLength on a night with no morning alarm to defer to`() {
+        // morningAlarmAt null and no firing recorded: nothing to keep, so the pre-H8 safety net is unchanged.
+        val result = computeWakeAlarm(
+            PlanRule.NAP, SleepState.AWAKE, instant("2026-09-17T06:30"), null, 0,
+            instant("2026-09-17T06:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+        )
         assertEquals(instant("2026-09-17T07:00"), result)
+    }
+
+    @Test fun `H8 a morning target the wake alarm already rang for is not pulled forward into a fresh alarm`() {
+        // 00:30 + 5 cycles = 08:00, already rung at 08:00 and now three minutes gone. Without H8 this came
+        // back as 08:05 (now + minAlarmLead), a brand new alarm armed and rung on every following tick.
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
+            instant("2026-09-17T08:03"), config, wakeAlarmFiredAt = instant("2026-09-17T08:00"), morningAlarmAt = instant("2026-09-17T08:00"),
+            lastNapAlarmFiredAt = null
+        )
+        assertNull(result)
+    }
+
+    @Test fun `D8 an overdue morning target that never rang is still pulled forward`() {
+        // The same overdue target, with no firing ever recorded (the phone dozed through the tick, arming
+        // failed, a reboot landed late): D8's pull-forward is untouched.
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,
+            instant("2026-09-17T08:03"), config, wakeAlarmFiredAt = null, morningAlarmAt = instant("2026-09-17T08:00"), lastNapAlarmFiredAt = null
+        )
+        assertEquals(instant("2026-09-17T08:05"), result)
     }
 
     @Test fun `an alarm too close to now is pulled forward to now plus minAlarmLead`() {

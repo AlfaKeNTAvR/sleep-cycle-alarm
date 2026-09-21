@@ -167,7 +167,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             )
             return
         }
-        if (firedAlarmIsWakeAlarm(firedPlan.mode)) {
+        if (firedAlarmIsWakeAlarm(firedPlan.mode, firedFor, state.morningAlarmAt)) {
             if (!saveWakeAlarmFiredAt(context, firedFor)) {
                 appendNightLog(
                     context, state.startedAt,

@@ -55,8 +55,16 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * this function returns false, with no further guard of its own (the old `firedAlarmIsPostWakeNap`, which
  * required the wake alarm to have already fired, is gone: it was the reason the cap could never engage on a
  * night that reaches naps without the main wake alarm ever ringing).
+ *
+ * H8 ADDS the second test: a firing at the night's own latched morning alarm time ([NightState.morningAlarmAt])
+ * is the wake alarm whatever mode the plan that armed it carried. Since H8, a NAP plan can legitimately carry
+ * the still-pending morning alarm as its own `wakeAt` (see WakeAlarm.kt's `awakeNapTarget`: lying awake in the
+ * last few minutes before the alarm is rule 7, and rule 7 now defers to the morning alarm instead of re-arming
+ * the phone past it), so the mode alone would attribute the night's real wake-up to a nap - spending one of the
+ * two nap alarms on it and leaving wakeAlarmFiredAt unrecorded.
  */
-fun firedAlarmIsWakeAlarm(firedPlanMode: AlarmMode): Boolean = firedPlanMode != AlarmMode.NAP
+fun firedAlarmIsWakeAlarm(firedPlanMode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean =
+    firedPlanMode != AlarmMode.NAP || firedFor == morningAlarmAt
 
 /**
  * Runs one full night cycle: load state, sync and read band data (keeping the previous segments and
@@ -151,7 +159,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
  * `private`: JVM-testable directly, and reused by `startNight`'s own initial plan.
  */
 internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? = when (plan.mode) {
-    AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> plan.wakeAt
+    // H8: `?: previous` - a FULL_CYCLES or DEADLINE_ONLY plan can now carry a null wakeAt (the morning alarm
+    // has already rung, so there is nothing left to arm - see WakeAlarm.kt's `morningAlarmAlreadyRang`), and
+    // that must never ERASE the latch. Erasing it would take away the one fact rule 7's AWAKE branch has left
+    // once a firing goes unrecorded, which is the whole reason H1 introduced this latch.
+    AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> plan.wakeAt ?: previous
     AlarmMode.NAP, AlarmMode.FINISHED -> previous
 }
 
@@ -278,7 +290,7 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         )
         return
     }
-    val armed = schedulePhoneAlarm(context, wakeAt, alarmLabelFor(plan.mode))
+    val armed = schedulePhoneAlarm(context, wakeAt, alarmLabelFor(plan.mode, wakeAt, state.morningAlarmAt))
     val changed = wakeAt != previousPlan?.wakeAt
     val event = when {
         !armed -> NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "exact alarm permission was likely revoked, will retry next tick"))

@@ -95,7 +95,7 @@ class WarpedNightSequenceTest {
         /** Simulates the wake/nap alarm at [plan]'s own wakeAt actually firing: PhoneAlarmReceiver's own bookkeeping (F2/F6/H2/D4), through [firedAlarmIsWakeAlarm]. Also arms the out-of-bed nudge, H7.1's own +15 min. */
         fun fireAlarm(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
-            if (firedAlarmIsWakeAlarm(plan.mode)) {
+            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
                 napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)

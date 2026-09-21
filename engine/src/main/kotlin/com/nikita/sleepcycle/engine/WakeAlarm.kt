@@ -37,8 +37,32 @@ fun computeWakeAlarm(
         // Rules 3, 4, 6: the reference onset plus the whole cycles that fit.
         PlanRule.FULL_CYCLES -> referenceOnset.plus(config.cycleLength.multipliedBy(cycles.toLong()))
     }
+    // H8: a morning target the wake alarm has already rung for is spent - it must never be pulled forward
+    // into a brand new alarm two minutes out. Rule 7's own targets are exempt: a nap is measured from an
+    // onset or a firing of its own, and D5/G8's post-wake naps legitimately come after [wakeAlarmFiredAt].
+    if (rule != PlanRule.NAP && morningAlarmAlreadyRang(raw, wakeAlarmFiredAt)) return null
     return pullForwardIfTooSoon(raw, deadline, now, config)
 }
+
+/**
+ * H8: whether the instant rules 3/4/5/6 just produced is one the MAIN wake alarm has already rung for
+ * ([wakeAlarmFiredAt] at or after [raw]). Once it has, [pullForwardIfTooSoon] must not resurrect it: [raw] is
+ * a fixed instant for the whole night (the reference onset plus whole cycles, or the deadline), so every
+ * later tick recomputes that same spent instant, finds it in the past, and moves it to `now + minAlarmLead` -
+ * a brand new alarm two minutes out, armed and rung again on every tick for as long as the owner stays
+ * asleep. That is the owner's own report of it ("it shifts the alarm a couple of minutes forward, every
+ * single time"), and it is the same mistake F5 already fixed for rule 7's AWAKE branch: once the wake alarm
+ * has rung, D4's out-of-bed nudge and D5/G8's naps own the follow-up, never a reprise of the alarm that just
+ * rang.
+ *
+ * D8 itself is untouched for an alarm that never rang: a target computed in the past because the phone dozed
+ * through its tick, because arming failed, or because a reboot landed late still gets its ordinary
+ * pull-forward - that is the whole case D8 exists for. Only [wakeAlarmFiredAt], the app layer's record of an
+ * actual firing (PhoneAlarmReceiver.recordWakeOrNapFired), suppresses it, and only for the target that firing
+ * belongs to: a later target, were one ever computed, is still armed normally.
+ */
+private fun morningAlarmAlreadyRang(raw: Instant, wakeAlarmFiredAt: Instant?): Boolean =
+    wakeAlarmFiredAt != null && !raw.isAfter(wakeAlarmFiredAt)
 
 /**
  * Rule 7's nap alarm: slides forward while still awake, fixed [EngineConfig.napLength] after sleep once it
@@ -80,10 +104,35 @@ private fun napAlarm(
     lastNapAlarmFiredAt: Instant?
 ): Instant? {
     val napEnd = when (state) {
-        SleepState.AWAKE -> if (awakeSlidingNapMustStop(wakeAlarmFiredAt, morningAlarmAt, now)) return null else now.plus(config.napLength)
+        SleepState.AWAKE -> awakeNapTarget(morningAlarmAt, wakeAlarmFiredAt, now, config) ?: return null
         else -> asleepNapTarget(referenceOnset, lastNapAlarmFiredAt, config)
     }
     return if (deadline == null) napEnd else minOf(napEnd, deadline)
+}
+
+/**
+ * H8: rule 7's AWAKE branch, in full - null once the sliding nap must stop for good
+ * ([awakeSlidingNapMustStop]), the night's own morning alarm while that alarm is still PENDING, and the
+ * sliding `now + napLength` only when there is no morning alarm to defer to at all.
+ *
+ * The middle case is what H8 adds, and without it the alarm could end up never ringing AT ALL. Waking a few
+ * minutes before the morning alarm (the ordinary way a sleep-cycle alarm night ends) puts the owner in AWAKE
+ * with the picked total already used up, which is exactly rule 7 - and the slid `now + napLength` is LATER
+ * than the morning alarm, so every tick re-armed the phone PAST an alarm that was already armed correctly,
+ * and the morning alarm itself was never reached. Then, the moment its own time passed,
+ * [awakeSlidingNapMustStop] ended the sliding for good and the night arrived at no alarm whatsoever - the
+ * owner's own report of it ("the alarm never fired"). Handing [morningAlarmAt] back instead leaves the phone
+ * armed at exactly the instant it is already armed at, so nothing moves and the alarm rings when it was meant
+ * to. Nothing is lost by not arming a nap of its own here: if the owner does doze off, the very next tick
+ * sees ASLEEP and [asleepNapTarget] arms a real nap from that onset, which is D5/G8's own path anyway.
+ *
+ * [morningAlarmAt] is known to be strictly after [now] by the time it is returned - [awakeSlidingNapMustStop]
+ * has already ended the night's sliding nap for any morning alarm at or before [now].
+ */
+private fun awakeNapTarget(morningAlarmAt: Instant?, wakeAlarmFiredAt: Instant?, now: Instant, config: EngineConfig): Instant? = when {
+    awakeSlidingNapMustStop(wakeAlarmFiredAt, morningAlarmAt, now) -> null
+    morningAlarmAt != null -> morningAlarmAt
+    else -> now.plus(config.napLength)
 }
 
 /** H1: either condition alone ends rule 7's sliding AWAKE nap, permanently - see [napAlarm]'s own doc. */

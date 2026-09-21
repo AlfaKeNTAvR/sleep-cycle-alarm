@@ -19,7 +19,14 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
-/** Shown instead of a real time when the engine has not produced an alarm for the current mode (should not normally happen). */
+/**
+ * Shown instead of a real time when the engine has not produced an alarm for the current mode. H8 adds one
+ * legitimate case to what used to be "should not normally happen": the morning alarm has already rung while
+ * the band still reads ASLEEP, so the plan is FULL_CYCLES with nothing left to arm (see WakeAlarm.kt's
+ * `morningAlarmAlreadyRang`). That lasts until the band reports the owner awake, and it is honest - there is
+ * no next alarm. Before H8 those same minutes showed a live time that was really the one spent alarm being
+ * re-armed two minutes out, over and over.
+ */
 const val MISSING_TIME_LABEL = "--:--"
 
 /**

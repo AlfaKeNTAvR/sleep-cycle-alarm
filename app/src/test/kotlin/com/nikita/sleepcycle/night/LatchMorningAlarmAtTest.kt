@@ -47,4 +47,14 @@ class LatchMorningAlarmAtTest {
         val newer = Instant.parse("2026-09-17T08:15:00Z")
         assertEquals(newer, latchMorningAlarmAt(previous, plan(AlarmMode.FULL_CYCLES, newer)))
     }
+
+    @Test
+    fun `H8 a FULL_CYCLES plan with no alarm left to arm keeps the latch instead of erasing it`() {
+        // Since H8 a FULL_CYCLES or DEADLINE_ONLY plan can carry a null wakeAt: the morning alarm has already
+        // rung, so there is nothing left to arm (WakeAlarm.kt's morningAlarmAlreadyRang). Latching that null
+        // would throw away the one fact rule 7's AWAKE branch still has when a firing goes unrecorded.
+        val previous = Instant.parse("2026-09-17T06:45:00Z")
+        assertEquals(previous, latchMorningAlarmAt(previous, plan(AlarmMode.FULL_CYCLES, wakeAt = null)))
+        assertEquals(previous, latchMorningAlarmAt(previous, plan(AlarmMode.DEADLINE_ONLY, wakeAt = null)))
+    }
 }

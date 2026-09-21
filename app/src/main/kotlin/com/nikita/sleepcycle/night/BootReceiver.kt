@@ -70,7 +70,8 @@ class BootReceiver : BroadcastReceiver() {
         // T4: virtual - compared against plan.wakeAt, which is night state.
         val now = nowInstant()
         if (plan != null && shouldArmPhoneAlarm(plan.wakeAt, now, nonNullState.phoneAlarmFiredFor)) {
-            schedulePhoneAlarm(context, requireNotNull(plan.wakeAt), alarmLabelFor(plan.mode))
+            val wakeAt = requireNotNull(plan.wakeAt)
+            schedulePhoneAlarm(context, wakeAt, alarmLabelFor(plan.mode, wakeAt, nonNullState.morningAlarmAt))
         }
         startServiceForTickSafely(context, nonNullState)
     }

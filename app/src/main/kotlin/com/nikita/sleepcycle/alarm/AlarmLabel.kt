@@ -15,6 +15,8 @@ import android.content.Intent
 import androidx.annotation.StringRes
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.night.firedAlarmIsWakeAlarm
+import java.time.Instant
 
 /** Which of the app's four rings this is, for the ring screen's and the notification's own wording. */
 enum class AlarmLabel { MORNING, NAP, OUT_OF_BED, TEST }
@@ -23,11 +25,18 @@ enum class AlarmLabel { MORNING, NAP, OUT_OF_BED, TEST }
 const val EXTRA_ALARM_LABEL = "alarmLabel"
 
 /**
- * The label a wake alarm armed for [mode] should ring under. Only NAP mode is a nap; FULL_CYCLES and
+ * The label an alarm armed for [armedFor] by a plan of [mode] should ring under. FULL_CYCLES and
  * DEADLINE_ONLY are both the morning alarm as far as the owner is concerned, and FINISHED never arms an alarm
  * at all (AlarmPlan.wakeAt is null by construction there), so it can only be reached as a caller's fallback.
+ *
+ * H8: NAP mode alone no longer decides, because a NAP plan can now carry the night's own still-pending
+ * morning alarm as its `wakeAt` (lying awake in the last minutes before it is rule 7 - see WakeAlarm.kt's
+ * `awakeNapTarget`), and that alarm must not ring calling itself a nap. Delegates to [firedAlarmIsWakeAlarm],
+ * the same predicate PhoneAlarmReceiver attributes the firing with, so the name an alarm rings under and the
+ * bookkeeping it lands in can never disagree.
  */
-fun alarmLabelFor(mode: AlarmMode): AlarmLabel = if (mode == AlarmMode.NAP) AlarmLabel.NAP else AlarmLabel.MORNING
+fun alarmLabelFor(mode: AlarmMode, armedFor: Instant, morningAlarmAt: Instant?): AlarmLabel =
+    if (firedAlarmIsWakeAlarm(mode, armedFor, morningAlarmAt)) AlarmLabel.MORNING else AlarmLabel.NAP
 
 /** The alarm's own name, shown above the ring screen's headline and as the notification's title. */
 @StringRes

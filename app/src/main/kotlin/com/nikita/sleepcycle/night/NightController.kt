@@ -101,7 +101,8 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
             // D1: the same guard used every tick and after a reboot - degenerate but possible with a deadline
             // already at or before "now" (a deadline always drives the phone alarm, in every mode).
             if (shouldArmPhoneAlarm(initialPlan.wakeAt, now, phoneAlarmFiredFor = null)) {
-                schedulePhoneAlarm(context, requireNotNull(initialPlan.wakeAt), alarmLabelFor(initialPlan.mode))
+                val wakeAt = requireNotNull(initialPlan.wakeAt)
+                schedulePhoneAlarm(context, wakeAt, alarmLabelFor(initialPlan.mode, wakeAt, state.morningAlarmAt))
             }
             if (!saveNightState(context, state)) {
                 appendNightLog(context, now, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to save the initial night state")), debugOptions.isAnyEnabled)

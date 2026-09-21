@@ -80,35 +80,43 @@ class ComputeAlarmPlanTest {
         assertEquals("06:25", formatTime(result.wakeAt!!, testZone))
     }
 
-    @Test fun `nap mode slides while awake, then fixes once asleep`() {
+    @Test fun `H8 nap mode keeps the pending morning alarm while awake, then fixes on the new onset once asleep`() {
         // Each round's "now" stays before the previous round's own alarm: once state is AWAKE and now
         // reaches or passes that alarm, rule 1 (already awake at alarm time) ends the night, by design.
         // The 08:00 deadline is what makes this a nap at all: one more cycle no longer fits before it.
+        //
+        // morningAlarmAt is threaded here the way NightOrchestrator.latchMorningAlarmAt really does it (only a
+        // FULL_CYCLES or DEADLINE_ONLY plan ever sets it), rather than as "the previous plan's own wakeAt":
+        // the two part company from the first NAP plan onward, and which of them the AWAKE branch sees is the
+        // whole point of this sequence.
         val setting = settings(deadline = "2026-09-17T08:00", cycles = 5)
-        val previous = AlarmPlan(
-            AlarmMode.FULL_CYCLES, instant("2026-09-17T08:00"), 5, instant("2026-09-17T00:30"), false, "r"
+        val morningAlarmAt = instant("2026-09-17T08:00")
+        fun tick(segments: List<SleepSegment>, now: String) = computeAlarmPlan(
+            segments, setting, instant(now), morningAlarmAt, testZone, EngineConfig(),
+            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null
         )
+
         val segments = listOf(
             segment("2026-09-17T00:30", "2026-09-17T07:00", SegmentKind.LIGHT),
             segment("2026-09-17T07:00", "2026-09-17T07:05", SegmentKind.AWAKE)
         )
-        val awake = plan(segments, setting, "2026-09-17T07:05", previous)
+        // H8: awake at 07:05 with the 08:00 alarm still pending, so the plan KEEPS that alarm instead of
+        // arming a 07:25 nap over it - which would have left 08:00 unarmed and never rung.
+        val awake = tick(segments, "2026-09-17T07:05")
         assertEquals(AlarmMode.NAP, awake.mode)
-        assertEquals("07:25", formatTime(awake.wakeAt!!, testZone))
+        assertEquals("08:00", formatTime(awake.wakeAt!!, testZone))
 
-        val stillAwake = plan(segments, setting, "2026-09-17T07:15", awake)
+        val stillAwake = tick(segments, "2026-09-17T07:15")
         assertEquals(AlarmMode.NAP, stillAwake.mode)
-        assertEquals("07:35", formatTime(stillAwake.wakeAt!!, testZone))
+        assertEquals("08:00", formatTime(stillAwake.wakeAt!!, testZone))
 
+        // Asleep again at 07:16: the ASLEEP branch owns the nap from here, onset + napLength, unchanged.
         val backAsleep = segments + segment("2026-09-17T07:16", "2026-09-17T07:20", SegmentKind.LIGHT)
-        val asleepAgain = plan(backAsleep, setting, "2026-09-17T07:20", stillAwake)
+        val asleepAgain = tick(backAsleep, "2026-09-17T07:20")
         assertEquals(AlarmMode.NAP, asleepAgain.mode)
         assertEquals("07:36", formatTime(asleepAgain.wakeAt!!, testZone))
 
-        val stillAsleep = plan(
-            backAsleep + segment("2026-09-17T07:20", "2026-09-17T07:30", SegmentKind.LIGHT),
-            setting, "2026-09-17T07:30", asleepAgain
-        )
+        val stillAsleep = tick(backAsleep + segment("2026-09-17T07:20", "2026-09-17T07:30", SegmentKind.LIGHT), "2026-09-17T07:30")
         assertEquals(AlarmMode.NAP, stillAsleep.mode)
         assertEquals("07:36", formatTime(stillAsleep.wakeAt!!, testZone))
     }
