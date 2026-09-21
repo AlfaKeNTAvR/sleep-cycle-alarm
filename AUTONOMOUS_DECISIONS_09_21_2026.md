@@ -609,3 +609,16 @@ here rather than silently expanded into.
   automatic once the must-fix removed the second (commit-time) clock - the comparison instant and the log
   timestamp are the same value now - but written out explicitly in the string itself anyway, per the reviewer's
   own ask, rather than left implicit.
+
+### Final verify
+
+`JAVA_HOME=.../jdk-21.0.12.1+1 ANDROID_HOME=.../sdk ./gradlew :engine:test :app:testDebugUnitTest :app:lintDebug
+:app:assembleDebug` - `BUILD SUCCESSFUL`, 554 tests, 0 failures, 0 errors, 0 skipped (baseline 554, net +1: the
+new `J3 replay` regression test, -1: `AlarmSequenceReplayTest`'s offset-0 sweep case dropped per SHOULD FIX 3).
+Hit the documented transient Windows `R.jar` file lock once while forcing a `--rerun-tasks` recompile to double
+-check for compiler warnings; retried per the environment brief, still locked on the retry (a concurrent holder,
+not this session's own doing), so warnings were instead confirmed clean via a narrower forced recompile of just
+the touched modules' own Kotlin compile tasks (`:engine:compileKotlin :engine:compileTestKotlin
+:app:compileDebugKotlin :app:compileDebugUnitTestKotlin --rerun-tasks`, unaffected by the R.jar lock since none
+of those four tasks touch it) - zero `w:` lines. The ordinary (non-`--rerun-tasks`) verify command above ran
+clean on every invocation throughout this session, incremental or not.
