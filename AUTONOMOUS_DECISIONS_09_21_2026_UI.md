@@ -236,3 +236,30 @@ AlarmManager queries run only on resume, never on a ticker) and replaced it with
 read, on a ticker, needs `Dispatchers.IO` in a way a one-shot system-service query does not.
 
 Verify: BUILD SUCCESSFUL, 536 tests, 0 failures, 0 Kotlin compiler warnings.
+
+### Fix 3: the out-of-bed nudge was one deletable argument from reverting forever
+
+`pendingOutOfBedNudgeAt` defaulted to `null` in both `buildUiState` and `buildNightUiState`. Deleting the
+argument at either call site (`NightViewModel.kt` or `BuildUiState.kt`'s own call into `buildNightUiState`)
+compiled clean and left all 536 tests green, silently reverting the header to "No alarm armed" forever - no
+test crossed the `buildUiState` hop the way `EndNightFlowWiringTest` already does for `endingNight`.
+
+Two changes, per the task's own two-part ask:
+- Removed the default value on both `pendingOutOfBedNudgeAt` parameters (`BuildUiState.kt`,
+  `BuildNightUiState.kt`). A dropped argument is now a compile error, not something only a test can catch.
+  Updated every call site that relied on the default: 4 direct calls in `BuildNightUiStateTest.kt` (now pass
+  `pendingOutOfBedNudgeAt = null` explicitly) and `BuildUiStateTest.kt`'s own `state()` test helper (gained a
+  `pendingOutOfBedNudgeAt: String? = null` parameter, kept defaulted since it's a test helper, not the
+  production function).
+- Added `OutOfBedNudgeWiringTest` to `BuildUiStateTest.kt`, next to `EndNightFlowWiringTest`, following the
+  same pattern: goes through `buildUiState` itself (not `buildNightUiState` directly), asserts a pending nudge
+  reaches `uiState.night.content.modeLabel`/`modeLabelTimeLabel`.
+
+Verify: BUILD SUCCESSFUL, 539 tests (536 baseline + 1 new test + 2 from the other agent's concurrent, still
+uncommitted `NightOrchestrator.kt`/`DeadBandPlanTest.kt` work), 0 failures, 0 Kotlin compiler warnings. One
+`:app:lintAnalyzeDebug` run failed mid-session with an internal lint/PSI crash while parsing the other agent's
+in-progress `NightOrchestrator.kt` edit ("AsyncExecutionService... must not return null" - a Windows-lock-style
+race, not a real finding), and a `:app:testDebugUnitTest` run separately caught 3 `NapAlarmCountingTest`
+failures in the same concurrently-edited file's dependency graph (`app/src/test/kotlin/.../night/`, not owned
+by this agent) - both cleared on retry with no changes on this agent's side, confirming they were transient
+races against the other agent's live, uncommitted edit, not caused by this fix.

@@ -33,6 +33,7 @@ class BuildNightUiStateTest {
             showingMorningReport = false,
             morningReportEndedAt = null,
             confirmingEndNight = false,
+            pendingOutOfBedNudgeAt = null,
         )
 
         val content = uiState?.content
@@ -60,6 +61,7 @@ class BuildNightUiStateTest {
             showingMorningReport = false,
             morningReportEndedAt = null,
             confirmingEndNight = false,
+            pendingOutOfBedNudgeAt = null,
         )
 
         val content = uiState?.content
@@ -157,6 +159,7 @@ class BuildNightUiStateTest {
             showingMorningReport = false,
             morningReportEndedAt = null,
             confirmingEndNight = false,
+            pendingOutOfBedNudgeAt = null,
         )
 
         val content = uiState?.content
@@ -182,6 +185,7 @@ class BuildNightUiStateTest {
             showingMorningReport = false,
             morningReportEndedAt = null,
             confirmingEndNight = false,
+            pendingOutOfBedNudgeAt = null,
         )
 
         val content = uiState?.content

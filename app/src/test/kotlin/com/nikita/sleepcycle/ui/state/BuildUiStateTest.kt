@@ -1,5 +1,6 @@
 package com.nikita.sleepcycle.ui.state
 
+import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SleepState
@@ -26,6 +27,7 @@ private fun state(
     debugOptions: DebugOptions = DebugOptions(),
     confirmingEndNight: Boolean = false,
     endingNight: Boolean = false,
+    pendingOutOfBedNudgeAt: String? = null,
 ): UiState = buildUiState(
     appSettings = appSettings,
     nightState = nightState,
@@ -42,6 +44,7 @@ private fun state(
     morningReportEndedAt = morningReportEndedAt?.let(::instant),
     debugOptions = debugOptions,
     endingNight = endingNight,
+    pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt?.let(::instant),
     errorMessage = null,
 )
 
@@ -266,5 +269,30 @@ class EndNightFlowWiringTest {
         val view = testEngineView(SleepState.ASLEEP)
         val result = state(nightState = night, engineView = view, screen = Screen.Night)
         assertFalse(result.night!!.endingNight)
+    }
+}
+
+/**
+ * Round 3 of the 09/21 review, should-fix 3: `buildNightUiState` already had its own direct-call tests for the
+ * out-of-bed nudge override (`BuildNightUiStateTest.kt`), but nothing pinned `buildUiState` - the one layer
+ * between `NightViewModel` and it - actually forwarding `pendingOutOfBedNudgeAt` through. Dropping that
+ * argument at either of its two call sites (`NightViewModel.kt` or `BuildUiState.kt`'s own call into
+ * `buildNightUiState`) used to compile clean, with all 536 other tests still green, and silently revert the
+ * header to "No alarm armed" forever - the exact defect class already fixed one layer down. This test goes
+ * through `buildUiState` itself, the same hop `EndNightFlowWiringTest` above pins for `endingNight`.
+ */
+class OutOfBedNudgeWiringTest {
+    @Test fun `pendingOutOfBedNudgeAt flows through buildUiState to the night screen state`() {
+        val plan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = null)
+        val night = testNightState(lastPlan = plan, morningAlarmAt = "2026-09-17T07:00")
+        val view = testEngineView(SleepState.AWAKE)
+        val result = state(
+            nightState = night, engineView = view, screen = Screen.Night, now = "2026-09-17T07:05",
+            pendingOutOfBedNudgeAt = "2026-09-17T07:15",
+        )
+        val content = result.night!!.content
+        check(content is NightScreenContent.WokeUp) { "expected state C (WokeUp/napOnly), got $content" }
+        assertEquals(AlarmLabel.OUT_OF_BED, content.modeLabel)
+        assertEquals("07:15", content.modeLabelTimeLabel)
     }
 }

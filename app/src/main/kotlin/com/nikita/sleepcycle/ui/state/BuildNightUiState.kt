@@ -21,7 +21,11 @@ import java.time.ZoneId
  * [engineView] is `buildNightEngineView(nightState, now)`. Returns null when there is nothing to show at all.
  * [pendingOutOfBedNudgeAt] is the out-of-bed nudge's own pending fire instant (`OutOfBedNudgeStore.kt`'s
  * `readOutOfBedNudgePendingAt`, resolved by the caller since it is disk I/O) - see [applyPendingOutOfBedNudge]
- * for what it corrects (round 2 of the 09/21 review, must-fix 1).
+ * for what it corrects (round 2 of the 09/21 review, must-fix 1). Round 3, should-fix 3: no default value -
+ * the whole feature was one deletable argument away from silently reverting to "no alarm armed" forever
+ * (dropping it at a call site used to compile clean and leave all tests green), so a dropped argument is now a
+ * compile error instead of something only a test can catch. See `BuildUiStateTest.kt`'s
+ * `OutOfBedNudgeWiringTest` for the one test that pins the argument actually reaching the screen.
  */
 fun buildNightUiState(
     nightState: NightState?,
@@ -32,7 +36,7 @@ fun buildNightUiState(
     morningReportEndedAt: Instant?,
     confirmingEndNight: Boolean,
     endingNight: Boolean = false,
-    pendingOutOfBedNudgeAt: Instant? = null,
+    pendingOutOfBedNudgeAt: Instant?,
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
