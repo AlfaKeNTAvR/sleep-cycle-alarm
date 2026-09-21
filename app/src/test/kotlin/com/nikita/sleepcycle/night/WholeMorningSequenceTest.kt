@@ -62,7 +62,7 @@ class WholeMorningSequenceTest {
             return plan
         }
 
-        /** Models PhoneAlarmReceiver.recordWakeOrNapFired for a plan whose own wakeAt has just fired. G8: a NAP firing always counts, mid-night or post-wake alike - no further guard. H2: also records lastNapAlarmFiredAt. J1.3: phoneAlarmFiredFor is set unconditionally, exactly like markPhoneAlarmFired - this harness never simulates the stale-load race that can skip the branch below, only its always-written counterpart. */
+        /** Models PhoneAlarmReceiver.recordWakeOrNapFired for a plan whose own wakeAt has just fired. G8: a NAP firing always counts, pre-wake or post-wake alike - no further guard. H2: also records lastNapAlarmFiredAt. J1.3: phoneAlarmFiredFor is set unconditionally, exactly like markPhoneAlarmFired - this harness never simulates the stale-load race that can skip the branch below, only its always-written counterpart. */
         fun recordFiring(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
             phoneAlarmFiredFor = firedFor

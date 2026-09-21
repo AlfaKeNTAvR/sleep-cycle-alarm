@@ -41,7 +41,7 @@ package com.nikita.sleepcycle.alarm
 // state file of its own to read one from - see EngineConfig.ringAutoStopAfter's doc for why it must differ
 // from a fast debug night's outOfBedDelay.
 //
-// F2/F6/G8/H2: attributing a firing to the main wake alarm vs. a nap alarm (mid-night rule 7 or post-wake D5
+// F2/F6/G8/H2: attributing a firing to the main wake alarm vs. a nap alarm (pre-wake rule 7 or post-wake D5
 // alike - G8 counts every nap alarm that fires, whichever rule armed it) is done HERE too, from the plan that
 // was in effect the moment this alarm fired (state.lastPlan, matched against the instant THIS intent was
 // scheduled for) - see recordWakeOrNapFired's own doc.
@@ -179,8 +179,8 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      *
      * A mode other than NAP means the wake alarm itself just fired: [saveWakeAlarmFiredAt] records the ONE
      * marker H1's AWAKE-branch guard still needs (see WakeAlarm.kt's `napAlarm`), and only this branch may
-     * ever set it (F6) - a rule 7 mid-night nap firing (mode NAP) must not. G8 SUPERSEDES F2: a NAP firing
-     * always increments napAlarmsUsed now, clamped at [MAX_NAP_ALARMS] - mid-night (rule 7) and post-wake (D5)
+     * ever set it (F6) - a rule 7 pre-wake nap firing (mode NAP) must not. G8 SUPERSEDES F2: a NAP firing
+     * always increments napAlarmsUsed now, clamped at [MAX_NAP_ALARMS] - pre-wake (rule 7) and post-wake (D5)
      * alike, whether or not the main wake alarm has fired this night - and only because it FIRED, never for an
      * armed-but-not-yet-fired nap. H2: the same firing also records [saveLastNapAlarmFiredAt], the fact
      * WakeAlarm.kt's ASLEEP branch needs to tell "a nap already rang for THIS stretch" from "this target is
@@ -232,7 +232,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
     }
 
     /**
-     * D4/H7.1: armed the moment ANY real alarm fires - the wake alarm, a D5/G8 nap alarm (mid-night or
+     * D4/H7.1: armed the moment ANY real alarm fires - the wake alarm, a D5/G8 nap alarm (pre-wake or
      * post-wake), and since L1 the out-of-bed nudge itself - at [now] + EngineConfig.outOfBedDelay (now
      * 15 min). Never for a test alarm ([recordRealAlarmFired] is only ever called for a real one).
      *

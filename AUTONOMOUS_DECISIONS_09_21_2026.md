@@ -1,5 +1,8 @@
 # Autonomous decisions, 2026-09-21
 
+> Note (2026-09-21): "mid-night nap" below was renamed to "pre-wake nap" repo-wide later the same date. This
+> file is a historical record and was left in its original wording; read "mid-night nap" here as "pre-wake nap".
+
 Working from the audit's J1 batch (branch `nikita/fix/overnight-hardening`, one commit f90012e ahead of
 main). This file records non-trivial calls made without stopping to ask, in the order the findings were
 worked.

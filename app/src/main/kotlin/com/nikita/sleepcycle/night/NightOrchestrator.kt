@@ -118,13 +118,13 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * F6: whether a just-fired real (non-test, non-nudge) alarm should be attributed to the actual wake alarm -
  * true for any mode other than NAP. Used by PhoneAlarmReceiver at FIRE time (never by armPhoneAlarmIfNeeded,
  * which no longer touches this bookkeeping at all - F2 superseded the whole arm-time counting path this used
- * to sit next to). Deliberately excludes NAP: a mid-night rule 7 nap must never itself count as "the wake
+ * to sit next to). Deliberately excludes NAP: a pre-wake rule 7 nap must never itself count as "the wake
  * alarm fired" - G8 kept this exclusion (wakeAlarmFiredAt still means "the MAIN wake alarm, never a nap's own
  * firing") even though the nap cap itself no longer reads wakeAlarmFiredAt at all; its remaining job is G3's
  * guard on rule 7's sliding AWAKE nap (see WakeAlarm.kt's `napAlarm`).
  *
  * G8 SUPERSEDES F2: a NAP firing that is NOT the wake alarm always counts toward [NightState.napAlarmsUsed]
- * now, mid-night (rule 7) or post-wake alike - PhoneAlarmReceiver.recordWakeOrNapFired increments it whenever
+ * now, pre-wake (rule 7) or post-wake alike - PhoneAlarmReceiver.recordWakeOrNapFired increments it whenever
  * this function returns false, with no further guard of its own (the old `firedAlarmIsPostWakeNap`, which
  * required the wake alarm to have already fired, is gone: it was the reason the cap could never engage on a
  * night that reaches naps without the main wake alarm ever ringing).
@@ -150,7 +150,7 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * runs; it cannot move what that extra says, so it can never shift [firedFor] by even a nanosecond, and J1.1
  * already removed the one thing (`pullForwardIfTooSoon`) that legitimately could. The window as shipped instead
  * OPENED a regression on an ordinary night with no J1.1-style bug in play at all: a NAP target computed from
- * `asleepNapTarget` (a genuine mid-night return to sleep, nothing to do with `awakeNapTarget`'s own deferral)
+ * `asleepNapTarget` (a genuine pre-wake return to sleep, nothing to do with `awakeNapTarget`'s own deferral)
  * can land inside this same window purely by coincidence of timing - one minute after `morningAlarmAt` - and
  * get misattributed as the wake alarm: `wakeAlarmFiredAt` set from a NAP firing (which H8's own doc, and every
  * other doc in this file, says can never happen), `napAlarmsUsed` never incremented, `lastNapAlarmFiredAt` left
@@ -734,7 +734,7 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * J4 must-fix (owner-reported, 2026-09-21) NARROWS what "already-fired" contributes to this return value: it no
  * longer counts as a replacement nap for the nudge guard - see [phoneAlarmFiredForNow]'s own J4 paragraph below
  * for the full reasoning and the behaviour this corrects (a real, observed loss of the out-of-bed nudge after a
- * mid-night nap rings).
+ * pre-wake nap rings).
  *
  * J1.3 (owner-reported, 2026-09-21) ADDED a second line of defence here, on top of WakeAlarm.kt's own
  * `morningAlarmAlreadyRang` (the primary fix for the same re-ring loop): a [wakeAt] landing strictly after
@@ -745,7 +745,7 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * S1 (reviewer note, adversarial review of J1.1-J1.6, addressed by DELETING that guard rather than keeping it):
  * it never actually caught the bug it was written for. J1.3's own re-ring (the morning path) always recomputes
  * the SAME spent instant, so it hits the exact-match check right above instead, never this one (`wakeAt ==
- * firedFor`, not `wakeAt.isAfter(firedFor)`). The mid-night nap re-ring this guard was meant to also backstop
+ * firedFor`, not `wakeAt.isAfter(firedFor)`). The pre-wake nap re-ring this guard was meant to also backstop
  * (`asleepNapTarget`'s own pre-J2-must-fix-3 bug) produced `now + minAlarmLead` - which, by the time a tick
  * gets around to recomputing an overdue nap, sits MORE than `minAlarmLead` past the original firing (the tick
  * cadence and sync delay alone push `now` well past `firedFor + minAlarmLead` before this ever runs) - so this
@@ -799,7 +799,7 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * against the tick-start snapshot [NightState.phoneAlarmFiredFor], which a firing DURING this tick's own sync
  * could not yet have updated - so the match (and its `return true`) was reachable only for a firing that
  * predated the whole tick. J3's own fresh, live read makes it ALSO reachable for a firing that happens WHILE
- * this tick is pending, which is precisely the ordinary case for a mid-night rule 7 nap: the nap fires, its own
+ * this tick is pending, which is precisely the ordinary case for a pre-wake rule 7 nap: the nap fires, its own
  * PhoneAlarmReceiver firing arms a FRESH out-of-bed nudge (D4) for itself, and THEN this same tick commits,
  * observes the live marker now matching its own plan's `wakeAt`, and used to return true here - which
  * [cancelNudgeIfSupersededByNap] reads as "a nap was successfully armed, supersede whatever nudge is pending".

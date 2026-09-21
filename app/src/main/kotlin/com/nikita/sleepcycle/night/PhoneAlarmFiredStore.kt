@@ -2,7 +2,7 @@ package com.nikita.sleepcycle.night
 
 // File purpose: four small facts PhoneAlarmReceiver records the instant a real alarm fires, each in its own
 // tiny file, separate from night_state.json:
-//   - D3 phoneAlarmFiredFor: the last alarm instant that fired at all (wake, nap, or a rule 7 mid-night nap) -
+//   - D3 phoneAlarmFiredFor: the last alarm instant that fired at all (wake, nap, or a rule 7 pre-wake nap) -
 //     armPhoneAlarmIfNeeded's own re-arm guard, so it never re-arms an instant Android would fire immediately.
 //   - F6 wakeAlarmFiredAt: the instant the MAIN wake alarm fired, never a nap's own firing (NightState.
 //     wakeAlarmFiredAt, the engine's wakeAlarmFiredAt input) - G8 SUPERSEDES D5: no longer has anything to do
@@ -11,9 +11,9 @@ package com.nikita.sleepcycle.night
 //     since J1.3 - the engine has TWO readers, awakeSlidingNapMustStop AND morningAlarmAlreadyRang (the latter
 //     via laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor) since J1.3). See WakeAlarm.kt and NightState.kt, where
 //     the same claim was corrected.
-//   - F2/G8 napAlarmsUsed: how many nap alarms have actually FIRED this night, mid-night (rule 7) or post-wake
+//   - F2/G8 napAlarmsUsed: how many nap alarms have actually FIRED this night, pre-wake (rule 7) or post-wake
 //     (D5) alike, clamped at MAX_NAP_ALARMS - this alone is what the nap cap counts against now.
-//   - H2 lastNapAlarmFiredAt: the most recent nap alarm's own fired instant, mid-night or post-wake alike -
+//   - H2 lastNapAlarmFiredAt: the most recent nap alarm's own fired instant, pre-wake or post-wake alike -
 //     the engine's lastNapAlarmFiredAt input to computeAlarmPlan, letting it tell "a nap alarm already rang
 //     for THIS stretch" apart from "this target is merely overdue" (see WakeAlarm.kt's own doc).
 // PhoneAlarmReceiver.markPhoneAlarmFired used to do an unlocked read-modify-write of the WHOLE night state - a
@@ -56,14 +56,14 @@ fun savePhoneAlarmFiredFor(context: Context, firedFor: Instant): Boolean =
 /** The persisted fired instant, or null if the file is absent, empty, or unparsable (never throws). */
 fun readPhoneAlarmFiredFor(context: Context): Instant? = readInstantFile(phoneAlarmFiredFile(context))
 
-/** F6: persists [firedFor] as the MAIN wake alarm's fired instant - called only when the firing alarm's own plan was not a nap (see NightOrchestrator.firedAlarmIsWakeAlarm). Never called for a rule 7 mid-night nap's own firing. */
+/** F6: persists [firedFor] as the MAIN wake alarm's fired instant - called only when the firing alarm's own plan was not a nap (see NightOrchestrator.firedAlarmIsWakeAlarm). Never called for a rule 7 pre-wake nap's own firing. */
 fun saveWakeAlarmFiredAt(context: Context, firedFor: Instant): Boolean =
     writeInstantFile(wakeAlarmFiredFile(context), firedFor)
 
 /** The persisted wake-alarm-fired instant, or null if the file is absent, empty, unparsable, or the wake alarm has not fired this night. */
 fun readWakeAlarmFiredAt(context: Context): Instant? = readInstantFile(wakeAlarmFiredFile(context))
 
-/** F2/G8 SUPERSEDE the original spec: persists [count] as how many nap alarms have FIRED this night, mid-night (rule 7) or post-wake (D5) alike, already clamped to [com.nikita.sleepcycle.engine.MAX_NAP_ALARMS] by the caller. */
+/** F2/G8 SUPERSEDE the original spec: persists [count] as how many nap alarms have FIRED this night, pre-wake (rule 7) or post-wake (D5) alike, already clamped to [com.nikita.sleepcycle.engine.MAX_NAP_ALARMS] by the caller. */
 fun saveNapAlarmsUsed(context: Context, count: Int): Boolean =
     try {
         napAlarmsUsedFile(context).writeText(count.toString())
@@ -85,7 +85,7 @@ fun readNapAlarmsUsed(context: Context): Int? {
     }
 }
 
-/** H2: persists [firedFor] as the most recent nap alarm's own fired instant, mid-night (rule 7) or post-wake (D5) alike - called whenever a firing nap increments [saveNapAlarmsUsed], never for the main wake alarm. */
+/** H2: persists [firedFor] as the most recent nap alarm's own fired instant, pre-wake (rule 7) or post-wake (D5) alike - called whenever a firing nap increments [saveNapAlarmsUsed], never for the main wake alarm. */
 fun saveLastNapAlarmFiredAt(context: Context, firedFor: Instant): Boolean =
     writeInstantFile(lastNapAlarmFiredAtFile(context), firedFor)
 

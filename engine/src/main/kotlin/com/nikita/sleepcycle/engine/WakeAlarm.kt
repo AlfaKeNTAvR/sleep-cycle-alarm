@@ -34,7 +34,7 @@ fun computeWakeAlarm(
     wakeAlarmFiredAt: Instant?,
     /** H1 SUPERSEDES G3's `previousWakeAt`: the night's own morning alarm time, LATCHED by the app layer (NightState.morningAlarmAt) and never overwritten by a NAP plan's own slid `wakeAt` - see computeAlarmPlan's own doc for why the earlier "previous tick's own wakeAt" reading was unreachable. Only [napAlarm]'s AWAKE branch reads this. */
     morningAlarmAt: Instant?,
-    /** H2: the most recent nap alarm's own fired instant, mid-night or post-wake alike - null until the first nap alarm ever fires this night. Only [napAlarm]'s ASLEEP branch reads this - see its own doc. */
+    /** H2: the most recent nap alarm's own fired instant, pre-wake or post-wake alike - null until the first nap alarm ever fires this night. Only [napAlarm]'s ASLEEP branch reads this - see its own doc. */
     lastNapAlarmFiredAt: Instant?,
     /** J1.3 (owner-reported, 2026-09-21): NightState.phoneAlarmFiredFor, the last phone alarm instant that fired AT ALL, written unconditionally by PhoneAlarmReceiver.markPhoneAlarmFired even when the same firing's attribution to wakeAlarmFiredAt was skipped (a stale state.lastPlan read racing the in-flight tick's own save). See [morningAlarmAlreadyRang]'s own doc for why this closes the hole [wakeAlarmFiredAt] alone left open. */
     phoneAlarmFiredFor: Instant?

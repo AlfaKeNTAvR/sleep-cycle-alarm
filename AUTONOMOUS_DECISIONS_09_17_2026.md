@@ -1,5 +1,8 @@
 # Autonomous decisions, 2026-09-17
 
+> Note (2026-09-21): "mid-night nap" below was renamed to "pre-wake nap" repo-wide on that date. This file is
+> a historical record and was left in its original wording; read "mid-night nap" here as "pre-wake nap".
+
 Run mode: Autonomous. Dispatcher: Fable. Workers: Sonnet, GPT-5.6 Terra. Reviewers: Opus, GPT-5.6 Sol. Plan critique: GPT-6 Astra.
 
 ## Decisions

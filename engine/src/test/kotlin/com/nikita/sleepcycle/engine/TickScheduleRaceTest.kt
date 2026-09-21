@@ -159,7 +159,7 @@ class TickScheduleRaceTest {
     // silent, and for the positive "an alarm is actually outstanding" evidence a correct version would need
     // before anything like it comes back with a test of its own.
 
-    @Test fun `J4 nudge replay - a mid-night nap firing during its own tick's sync keeps its own fresh nudge`() {
+    @Test fun `J4 nudge replay - a pre-wake nap firing during its own tick's sync keeps its own fresh nudge`() {
         // The behaviour-change half of the same owner report (NightOrchestrator.kt's own J4 nudge doc): J3's
         // live marker-match branch used to return true (armPhoneAlarmIfNeeded's own "or already fired" half of
         // its old contract), which napSupersedesPendingNudge read as "a fresh nap was armed this tick" -
@@ -351,7 +351,7 @@ class TickScheduleRaceTest {
         assertEquals(0, replay.napAlarmsUsed, replay.trace())
     }
 
-    @Test fun `J1_1 replay, the nap equivalent - a scheduled tick landing inside minAlarmLead before a mid-night nap target does not shift it`() {
+    @Test fun `J1_1 replay, the nap equivalent - a scheduled tick landing inside minAlarmLead before a pre-wake nap target does not shift it`() {
         // Deliberately its OWN clean night (not nightOwnerTraced's own offset start), with a deadline
         // (01:30) close enough that onset + one whole cycle overruns it - isNapEligible's own deadline branch,
         // so the return to sleep at 00:46:30 is NAP-eligible regardless of owedCycles. This also lands the
