@@ -50,34 +50,42 @@ class NapAlarmCountingTest {
         assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, napFiredAt, morningAlarmAt = null))
     }
 
-    // ---- J1.2: H8's exact-equality test widened to a window, since a NAP plan carrying the still-pending
-    // morning alarm as its wakeAt (rule 7's awakeNapTarget) does not always fire at EXACTLY morningAlarmAt -
-    // J1.1's own bug (now fixed) could rearm it a minute or two later, and ordinary AlarmManager delivery
-    // jitter can do the same regardless. The window is minAlarmLead (2 min) plus one more minute of slack. ----
+    // ---- J1.2 widened H8's exact-equality test to a window (minAlarmLead + 1 min after morningAlarmAt),
+    // reasoning that a NAP plan carrying the still-pending morning alarm as its wakeAt (rule 7's
+    // awakeNapTarget) might not always fire at EXACTLY morningAlarmAt. J2 must-fix 2 REVERTS this: verified
+    // directly (PhoneAlarmReceiver.recordRealAlarmFired) that firedFor is always read from
+    // EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI - the instant the alarm was ARMED for - never from when the intent
+    // was actually delivered, so ordinary delivery jitter can never move it, and J1.1 already removed the one
+    // thing (pullForwardIfTooSoon) that legitimately could. The window instead let a genuine, unrelated
+    // mid-night nap (asleepNapTarget, nothing to do with awakeNapTarget's deferral) get misattributed as the
+    // wake alarm purely by landing inside it by coincidence - see NightOrchestrator.kt's own doc for the full
+    // re-ring trace this caused. These four cases now pin exact equality instead, so nobody re-introduces the
+    // window later. -----------------------------------------------------------------------------------------
 
     @Test
-    fun `J1_2 a NAP firing one minute after the latched morning alarm is still the wake alarm`() {
-        // This is the exact shape of the J1.1 bug before it was fixed: rule 7's AWAKE branch hands back the
-        // pending morningAlarmAt, pullForwardIfTooSoon used to shift it one minute later, and the alarm fired
-        // NAP-mode at morningAlarmAt + 1 min - which the old firedFor == morningAlarmAt check missed entirely.
-        assertTrue(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
+    fun `J2 must-fix 2 - a NAP firing one minute after the latched morning alarm is a genuine nap, not the wake alarm`() {
+        // Before J1.1, rule 7's AWAKE branch handing back a still-pending morningAlarmAt could be pulled
+        // forward a minute or two by pullForwardIfTooSoon - J1.1 removed that trigger, so a NAP firing that
+        // does not land exactly on morningAlarmAt is never the deferred morning alarm any more, only ever a
+        // real, independent nap.
+        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
     }
 
     @Test
-    fun `J1_2 a NAP firing exactly at the tolerance boundary is still the wake alarm`() {
-        assertTrue(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(180), morningAlarmAt))
+    fun `J2 must-fix 2 - a NAP firing at what used to be the J1_2 tolerance boundary is a genuine nap`() {
+        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(180), morningAlarmAt))
     }
 
     @Test
-    fun `J1_2 a NAP firing just past the tolerance window is a genuine nap, not the wake alarm`() {
-        // A real rule 7 nap is never less than napLength (20 min) past whatever it is measured from, so a
-        // firing this close to morningAlarmAt but past the window is never mistaken for one.
-        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(181), morningAlarmAt))
+    fun `J2 must-fix 2 - a NAP firing one second after the latched morning alarm is already a genuine nap`() {
+        // The boundary is now exact equality itself, not a window - even one second past morningAlarmAt is a
+        // nap, never the wake alarm.
+        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(1), morningAlarmAt))
     }
 
     @Test
-    fun `J1_2 alarmLabelFor rings a NAP armed one minute after the morning alarm as MORNING`() {
-        assertEquals(AlarmLabel.MORNING, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
+    fun `J2 must-fix 2 - alarmLabelFor rings a NAP armed one minute after the morning alarm as NAP, not MORNING`() {
+        assertEquals(AlarmLabel.NAP, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
     }
 
     // ---- alarmLabelFor (W18/H8): the name an alarm rings under follows the same predicate ------------------

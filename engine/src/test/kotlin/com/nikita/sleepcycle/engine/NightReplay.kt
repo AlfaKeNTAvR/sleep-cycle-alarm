@@ -219,16 +219,15 @@ internal class NightReplay(
     }
 
     /**
-     * NightOrchestrator.firedAlarmIsWakeAlarm, J1.2 included: a NAP-mode firing at the latched morning alarm
-     * time, or within minAlarmLead plus a minute after it, is the wake alarm - not just an exact match. See
-     * NightOrchestrator.kt's own WAKE_ALARM_FIRE_TOLERANCE doc for why the window, not equality.
+     * NightOrchestrator.firedAlarmIsWakeAlarm - J2 must-fix 2 REVERTS this mirror back to H8's original exact
+     * equality, matching the production function's own revert: a NAP-mode firing is the wake alarm only when it
+     * fires at EXACTLY the latched morning alarm time. See NightOrchestrator.kt's own doc for why the J1.2
+     * window this used to mirror was itself a regression (a genuine mid-night nap landing inside the window by
+     * coincidence, misattributed as the wake alarm) rather than a real fix for anything - delivery jitter can
+     * never move [firedFor], which is read from the alarm's own armed-for extra, not from when it was delivered.
      */
-    private fun firedAlarmIsWakeAlarm(mode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean {
-        if (mode != AlarmMode.NAP) return true
-        if (morningAlarmAt == null) return false
-        val tolerance = config.minAlarmLead.plus(Duration.ofMinutes(1))
-        return !firedFor.isBefore(morningAlarmAt) && !firedFor.isAfter(morningAlarmAt.plus(tolerance))
-    }
+    private fun firedAlarmIsWakeAlarm(mode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean =
+        mode != AlarmMode.NAP || firedFor == morningAlarmAt
 
     /**
      * NightOrchestrator.armPhoneAlarmIfNeeded: a null wake time cancels, an instant that already fired or is

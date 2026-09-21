@@ -78,27 +78,34 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
  * the phone past it), so the mode alone would attribute the night's real wake-up to a nap - spending one of the
  * two nap alarms on it and leaving wakeAlarmFiredAt unrecorded.
  *
- * J1.2 (owner-reported, 2026-09-21) widens H8's own test from EXACT equality to a WINDOW:
- * [morningAlarmAt] .. [morningAlarmAt] + [WAKE_ALARM_FIRE_TOLERANCE]. H8's `firedFor == morningAlarmAt` assumed
- * a NAP plan carrying the morning alarm always fires at exactly that instant, but J1.1's own bug (now fixed)
- * proved that assumption false in exactly the case H8 exists for: waking in the last two minutes before the
- * morning alarm hands rule 7 the still-pending `morningAlarmAt` as `wakeAt` (`awakeNapTarget`), and the old
- * `pullForwardIfTooSoon` could then rearm the phone a minute or two LATER than `morningAlarmAt` - a NAP-mode
- * firing that never exactly matches it. Exact equality then missed it: `wakeAlarmFiredAt` stayed null, the ring
- * screen called it "Nap alarm" at the real wake-up, and one of the two nap alarms was spent recording it as a
- * nap. J1.1 removes the trigger, but this predicate is hardened independently rather than leaning on that fix
- * alone - a firing landing slightly after its own armed target is not unique to J1.1 (delivery jitter, Doze
- * deferral), and the window costs nothing: [WAKE_ALARM_FIRE_TOLERANCE] is [EngineConfig.minAlarmLead] (the
- * widest D8/J1.1 could ever legitimately push a target by) plus one more minute of slack for ordinary
- * AlarmManager delivery jitter, and nothing genuinely nap-shaped can land inside a 3-minute window right after
- * the latched morning alarm - a real rule 7 nap is always `napLength` (20 min) or more past whatever it is
- * measured from.
+ * J1.2 (owner-reported, 2026-09-21) widened H8's own test from EXACT equality to a WINDOW:
+ * [morningAlarmAt] .. morningAlarmAt + (minAlarmLead + 1 min). The stated reasoning was that a NAP plan
+ * carrying the morning alarm as its own `wakeAt` (`awakeNapTarget`) does not always fire at exactly that
+ * instant - J1.1's own (now-fixed) bug could rearm the phone a minute or two LATER than `morningAlarmAt`, and
+ * ordinary AlarmManager delivery jitter was assumed to be able to do the same regardless.
+ *
+ * J2 must-fix 2 (owner-reported, 2026-09-21) REVERTS J1.2 back to H8's original EXACT equality. The window's
+ * premise about delivery jitter does not hold: [firedFor] is never read from when PhoneAlarmReceiver's intent
+ * actually arrives, only from EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, the instant the alarm was ARMED for
+ * (verified directly in PhoneAlarmReceiver.recordRealAlarmFired - `Instant.ofEpochMilli(scheduledForMillis)`,
+ * carried on the intent since the moment schedulePhoneAlarm ran). Delivery jitter can delay WHEN the receiver
+ * runs; it cannot move what that extra says, so it can never shift [firedFor] by even a nanosecond, and J1.1
+ * already removed the one thing (`pullForwardIfTooSoon`) that legitimately could. The window as shipped instead
+ * OPENED a regression on an ordinary night with no J1.1-style bug in play at all: a NAP target computed from
+ * `asleepNapTarget` (a genuine mid-night return to sleep, nothing to do with `awakeNapTarget`'s own deferral)
+ * can land inside this same window purely by coincidence of timing - one minute after `morningAlarmAt` - and
+ * get misattributed as the wake alarm: `wakeAlarmFiredAt` set from a NAP firing (which H8's own doc, and every
+ * other doc in this file, says can never happen), `napAlarmsUsed` never incremented, `lastNapAlarmFiredAt` left
+ * null, and the NEXT tick recomputing the same now-"unspent" nap target, finding it overdue, and ringing it a
+ * SECOND time - the exact re-ring shape H8 exists to prevent, reopened by the fix meant to hardened it. Back to
+ * exact equality: [morningAlarmAt] is a fixed instant for the whole night (H1's own latch), `awakeNapTarget`
+ * hands it back completely unchanged when it applies (WakeAlarm.kt's own doc: "leaves the phone armed exactly
+ * at the instant it is already armed at, so nothing moves"), and J1.1 guarantees `pullForwardIfTooSoon` never
+ * touches an already-future `raw` - so a firing that is genuinely the deferred morning alarm always arrives at
+ * exactly `morningAlarmAt`, with nothing left to widen a window for.
  */
-private val WAKE_ALARM_FIRE_TOLERANCE: Duration = EngineConfig().minAlarmLead.plus(Duration.ofMinutes(1))
-
 fun firedAlarmIsWakeAlarm(firedPlanMode: AlarmMode, firedFor: Instant, morningAlarmAt: Instant?): Boolean =
-    firedPlanMode != AlarmMode.NAP ||
-        (morningAlarmAt != null && !firedFor.isBefore(morningAlarmAt) && !firedFor.isAfter(morningAlarmAt.plus(WAKE_ALARM_FIRE_TOLERANCE)))
+    firedPlanMode != AlarmMode.NAP || firedFor == morningAlarmAt
 
 /**
  * Runs one full night cycle: load state, sync and read band data (keeping the previous segments and
@@ -166,8 +173,10 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
 
     // J1.5: a dead band (sync failed, or returned only stale data) with a real alarm already armed keeps that
     // plan untouched rather than re-planning stale segments against this tick's own moving decisionNow - see
-    // shouldKeepPreviousPlan's own doc for the no-deadline-night-never-rings bug this closes.
-    val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor)) {
+    // shouldKeepPreviousPlan's own doc for the no-deadline-night-never-rings bug this closes. J2 must-fix 1:
+    // decisionNow is now also part of the guard itself (a plan is only kept while its own alarm is still
+    // ahead of decisionNow) - see shouldKeepPreviousPlan's own doc for the freeze-forever bug that closes.
+    val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor, decisionNow)) {
         // shouldKeepPreviousPlan only returns true when previousPlan?.wakeAt is non-null, so state.lastPlan
         // itself is guaranteed non-null here too.
         val keptPlan = checkNotNull(state.lastPlan)
@@ -423,10 +432,42 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * at fire time, not from a tick's own plan), so once the protected alarm has actually rung there is nothing
  * left here to protect - freezing further would only mean logging the same already-fired instant forever
  * instead of ever trying fresh data again, however unlikely fresh data is to arrive from a genuinely dead band.
+ *
+ * J2 must-fix 1 (owner-reported, 2026-09-21) CORRECTS J1.5: the version above shipped with no [now] at all, so
+ * it could not tell "armed and still pending" apart from "its time came and went and nothing ever rang it" -
+ * its only exit was [phoneAlarmFiredFor] catching up, which never happens once the alarm can no longer fire at
+ * all (AlarmManager alarms do not survive the phone's battery dying, and BootReceiver.handleBoot correctly
+ * refuses to re-arm a target already in the past - see its own F3 doc). The owner's traced sequence: night
+ * starts 23:00, no deadline, 5 cycles, plan FULL_CYCLES wakeAt 06:30, armed; the phone dies at 04:10 (killing
+ * every AlarmManager alarm with it); the owner plugs in and it boots at 07:41 with the band also dead
+ * (Gadgetbridge unreachable); the first tick's sync fails, sees `lastPlan.wakeAt` 06:30 with nothing having
+ * fired, and under the pre-J2 guard FROZE - forever, since the mode is not FINISHED so ticks keep running on
+ * the ordinary cadence, each one re-freezing the same spent 06:30 target. Before J1.5 this same first tick
+ * re-planned, found the target overdue, and pulled it forward to `now + minAlarmLead` via D8's own recovery
+ * (the fix [BootReceiver.handleBoot]'s own doc already names as correct) - J1.5 silently disabled that
+ * recovery for exactly the case it exists to catch. The same hole is reachable with no reboot at all: a
+ * revoked exact-alarm permission while the band is dead, or a firing whose own [savePhoneAlarmFiredFor] write
+ * fails, freezes the rest of the night identically.
+ *
+ * Requiring `wakeAt.isAfter(now)` fixes this without weakening the freeze's own job: [previousPlan] is kept
+ * ONLY while its alarm is still ahead of [now] - a genuinely pending arm, not a promise that has already come
+ * and gone unfulfilled. The moment `now` reaches or passes `wakeAt`, this returns false and the caller falls
+ * straight back to the ordinary re-planning path below, which - fed the same stale segments a dead band always
+ * returns - lands on D8's existing pull-forward recovery exactly as it did before J1.5 shipped. Nothing here
+ * stops the RETRY of arming itself while the freeze holds: [armPhoneAlarmIfNeeded] is still called every tick
+ * regardless of which branch produced [plan] (see its own doc, "retried on every tick instead of silently
+ * sticking"), so a plan kept frozen by this guard still gets its own arm attempt retried tick after tick.
+ *
+ * S5 (reviewer note, addressed here rather than left for later): the docstring above said "already armed" as
+ * shorthand, but this function never actually knows whether [previousPlan]'s alarm is armed - only that its
+ * `wakeAt` is non-null and, now, still ahead of [now]. A plan whose every arm attempt keeps failing (permission
+ * revoked) is "kept" by this guard exactly like a successfully armed one; what stops THAT case from also
+ * freezing forever is the same arm-attempt retry above, not this function - once `now` catches up to `wakeAt`
+ * this guard lets go regardless of whether arming ever actually succeeded.
  */
-internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?): Boolean {
+internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?, now: Instant): Boolean {
     val wakeAt = previousPlan?.wakeAt ?: return false
-    return !outcome.syncOk && wakeAt != phoneAlarmFiredFor
+    return !outcome.syncOk && wakeAt != phoneAlarmFiredFor && wakeAt.isAfter(now)
 }
 
 /**

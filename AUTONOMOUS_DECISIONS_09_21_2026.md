@@ -248,7 +248,89 @@ in the meantime - untouched here, no reason to touch them).
   covered.
 - Final verify: `BUILD SUCCESSFUL`, 536 tests, 0 failures, 0 skipped.
 
-## All six findings landed
+## J2: adversarial review of J1.1-J1.6, four must-fix findings (session started 2026-09-21, same day)
+
+Working the adversarial Opus review's four must-fix findings against the six J1 commits above. Two of the
+four (must-fix 1, must-fix 4) are genuine REGRESSIONS J1.5 and J1.4/J1.3's own interaction introduced - the
+branch was worse than before on those paths going into this session. Owned scope: `engine/`,
+`NightOrchestrator.kt`, `alarm/`, and their test files. Did not touch `ui/`, `res/`, `OutOfBedNudgeStore.kt`,
+`ui/` tests, `README.md`, `docs/` - another agent is concurrently editing those (confirmed live: a
+`:app:testDebugUnitTest` run mid-session hit a transient `NO_VALUE_FOR_PARAMETER` compile error in
+`ui/state/BuildUiStateTest.kt` while that agent's own `BuildUiState.kt` signature change was in flight; a
+later rerun with no changes on my side passed clean once their own fix landed - noted here rather than
+treated as my own regression, since `git status` throughout confirmed I never touched a `ui/` file).
+
+### Must-fix 1 (landed) - the frozen-plan-forever regression
+
+- Added `now: Instant` to `shouldKeepPreviousPlan` and required `wakeAt.isAfter(now)` alongside the existing
+  `!outcome.syncOk && wakeAt != phoneAlarmFiredFor` - exactly as specified. Single production call site
+  (`runNightTickLocked`) passes `decisionNow`, matching every other decision this tick makes.
+- Verified by hand that this does not reopen a DIFFERENT problem: since `armPhoneAlarmIfNeeded` is called
+  every tick regardless of which branch produced `plan` (kept-frozen or freshly re-planned), a frozen plan
+  whose arm attempt keeps failing (permission revoked) still gets retried every tick while frozen - the new
+  `now` guard only decides whether to re-PLAN from stale data, never whether to retry ARMING. This is also
+  the answer to the reviewer's S5 note (the docstring said "already armed" when the code only ever knew
+  "wakeAt non-null") - rewrote that paragraph to say plainly that this function does not know whether arming
+  ever succeeded, and that the retry loop in `armPhoneAlarmIfNeeded` is what actually covers that case, not
+  this guard.
+- Added 2 new regression cases to `DeadBandPlanTest.kt` (a plan whose alarm time has passed, and the exact
+  boundary - `now == wakeAt` releases the freeze, one nanosecond before it does not) as part of the same
+  pass that also folded the two duplicate pre-existing cases the reviewer's S2 flagged (`:22`/`:58` in the
+  original file both asserted the identical call under different names - "a failed sync with a real armed
+  alarm keeps it" and "stale data is treated the same as a failed sync" - folded into one test, noted in its
+  own comment why).
+- Verified the regression tests fail without the fix: temporarily stripped `&& wakeAt.isAfter(now)` back out
+  of the guard in the real file (not a separate scratch copy - simpler to revert-run-restore in place for a
+  one-line guard, restored immediately after), ran `DeadBandPlanTest` alone, saw both new tests fail with
+  `AssertionFailedError` (`DeadBandPlanTest.kt:76` and `:89`), the other 7 still passed. Restored the fix,
+  reran, all 9 green.
+- Did NOT add the S3 sync-failure mode to `NightReplay`/a sequence-level case that would have caught this
+  bug end to end - flagged as a SHOULD FIX, left for a later pass if time allows once the four must-fixes and
+  remaining SHOULD FIXes are through; `DeadBandPlanTest`'s own new cases plus the existing `DeadBandDriftTest`
+  (engine, proving the underlying drift mechanism) are the coverage this pass adds instead.
+
+### Must-fix 2 (landed) - reverting J1.2's spurious extra ring
+
+- Verified the reviewer's central factual claim myself before touching anything, per the brief's own
+  instruction: read `PhoneAlarmReceiver.recordRealAlarmFired` directly - `firedFor` is
+  `Instant.ofEpochMilli(intent.getLongExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, -1L))`, the instant the
+  alarm was ARMED for (written by `schedulePhoneAlarm` at arm time), never anything derived from when the
+  receiver's `onReceive` actually ran. Confirmed: ordinary AlarmManager delivery jitter genuinely cannot move
+  `firedFor` by any amount, so J1.2's whole premise (widening the window to tolerate jitter) was solving a
+  problem that could not occur through the mechanism it named. The ONE thing that legitimately could move a
+  firing off its armed target - `pullForwardIfTooSoon`, pre-J1.1 - was already fixed by J1.1 itself.
+- Reverted `firedAlarmIsWakeAlarm` to H8's original exact equality (`firedFor == morningAlarmAt`), removed the
+  now-unused `WAKE_ALARM_FIRE_TOLERANCE` constant, and rewrote the doc comment to explain the revert in place
+  (J1.2's own reasoning kept, immediately followed by "J2 must-fix 2 REVERTS this" and why) rather than
+  deleting the history - so a future reader hitting the same "let's widen this for jitter" instinct sees why
+  it was already tried and backed out.
+- Found and fixed the SAME window logic duplicated in `NightReplay.kt` (the engine test harness's own mirror
+  of `firedAlarmIsWakeAlarm`, kept in sync by convention since the harness cannot import app-layer code) -
+  reverted it identically. Not part of the reviewer's literal finding, but leaving it un-reverted would mean
+  the harness and production disagree on this exact predicate the very next time someone uses it.
+- Rewrote the four J1.2 tests in `NapAlarmCountingTest.kt` to pin exact equality instead of the window (one
+  minute after morningAlarmAt is now a genuine nap, not the wake alarm; the old tolerance boundary is a nap;
+  one second after is already a nap; `alarmLabelFor` now labels it NAP not MORNING) rather than deleting them
+  outright - same fixture instants, opposite expected outcome, so a future revert-the-revert attempt trips
+  these immediately.
+- Verified all four rewritten tests fail without the fix: temporarily restored the J1.2 window body in place
+  (3-minute tolerance, matching the original), ran `NapAlarmCountingTest` alone, all 4 new cases failed with
+  `AssertionFailedError` (`:71`, `:76`, `:83`, `:88`), the other 7 (H8/F6's own pre-existing cases) unaffected.
+  Restored the fix, reran clean.
+- Did not find any other test in the repo relying on the J1.2 window's behaviour (`WholeMorningSequenceTest`,
+  `WarpedNightSequenceTest` both call the real `firedAlarmIsWakeAlarm` directly and only ever fire exactly at
+  `morningAlarmAt` in their own fixtures, per J1.1's own guarantee that a genuine deferred morning alarm never
+  lands anywhere else) - full suite confirms this, nothing else broke.
+- Verify after must-fix 1 + 2 together: `BUILD SUCCESSFUL`, 539 tests (536 baseline + 2 must-fix-1 cases + 0
+  net change on must-fix-2's 4-for-4 swap; the +1 beyond that traces to the concurrent UI agent's own test
+  additions landing mid-session, confirmed via `git status` - nothing under `night/`/`engine/`/`alarm/`), 0
+  failures, 0 errors.
+- Committing must-fix 1 and must-fix 2 TOGETHER in one commit rather than two: both touch overlapping regions
+  of `NightOrchestrator.kt` and I worked must-fix 2 immediately after verifying must-fix 1 green without
+  committing in between (should have committed first - noting the process slip rather than silently moving
+  on). From must-fix 3 onward, committing before starting the next fix, as instructed.
+
+## All six J1 findings landed
 
 J1.1 through J1.6 are all committed on `nikita/fix/overnight-hardening`: d594204, 7e73145, 12c9e51, ee9db3e,
 8d1e74e, and the J1.6 commit right after this file's own update. Nothing was left undone or deferred. Two scope
