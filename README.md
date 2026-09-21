@@ -116,7 +116,11 @@ which means a simulated night dies if the app process is killed, unlike a real o
    time being 15 virtual minutes after the ring; the hero number shows the morning alarm's own time (the one
    that just rang, not a dash); the subtitle reads **"Already rang"**; and there is no reason line underneath.
    Then wait about 15 real seconds more for that nudge to ring on its own, tap **Stop** again, and return: the
-   header falls back to **"No alarm armed"**. One caption is not reachable this way: the deadline caption this
+   header reads **"Out-of-bed nudge at HH:mm"** once more, another 15 virtual minutes on. That is L1 (decided
+   2026-09-21): the nudge repeats until the night ends, because tapping **Stop** only silences the ring and
+   only **I'm awake** means you actually got up. It will keep ringing every 15 virtual minutes from here, with
+   no cap, so end the night with **I'm awake** or **Stop night** when you are done looking at this step - the
+   header falls back to **"No alarm armed"** only once the night is over. One caption is not reachable this way: the deadline caption this
    same already-rang state can also show (see must-fix 2 of the second review round) needs the deadline switch
    on, but turning it on changes the post-firing plan to DEADLINE_ONLY - armed at the deadline itself, which
    never reaches "already rang" at all. Reaching both the already-rang header and the deadline caption
@@ -147,14 +151,21 @@ which means a simulated night dies if the app process is killed, unlike a real o
     keeps running) and **I'm awake** (silences it and ends the night right there, landing on the morning
     report). Tap **Stop**, then 15 virtual minutes later (about 15 real seconds at 60x) a second alarm rings on
     its own: the out-of-bed nudge, worded "Time to get up" - the same two buttons, same either-way behaviour.
-    Tap **Stop** there too. Now reopen Debug and turn **Asleep** on again: this is the second nap this night,
+    Tap **Stop** there too - and note that since L1 that nudge has already armed the NEXT one, 15 virtual
+    minutes out, so do the next part promptly or expect it to ring again while you are in Debug. Now reopen
+    Debug and turn **Asleep** on again: this is the second nap this night,
     and it spends the two-nap cap. If instead you turn Asleep back on before a pending nudge fires, watch it
     for the nudge to disappear rather than ring - a nap armed after an alarm cancels that alarm's own still-
-    pending nudge (the new nap still arms a fresh nudge of its own, 15 minutes after it rings in turn).
+    pending nudge (the new nap still arms a fresh nudge of its own, 15 minutes after it rings in turn), and
+    that is also how a repeating chain is meant to stop mid-night when you genuinely fall back asleep.
 12. Let the second nap alarm ring, tap **Stop**, let its own nudge ring and tap **Stop** again. Now reopen
     Debug and turn **Asleep** on a third time: with the cap already spent and no deadline left to fall back
     on, the night finishes immediately on its own - no third nap, no fixed wait - and the screen shows
     **Night finished** with an **End night** button, without you having to press "I'm awake" to get there.
+    L1 detail worth seeing here: the nudge chain does NOT repeat past this point. Reaching **Night finished**
+    clears the night's own state, and the receiver needs that state to arm the next nudge - so whichever nudge
+    was already armed rings one last time and the chain stops. See the L1 record in `docs/decisions.md`, where
+    that boundary is carried as an open question rather than a decided rule.
 13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
     night also resets every Debug switch and any active clock warp - the same happens on its own if the app
     sits unopened for 2 h after they were last changed, so a desk test like this one can never leak into a

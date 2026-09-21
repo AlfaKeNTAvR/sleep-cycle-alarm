@@ -238,6 +238,12 @@ class TickScheduleRaceTest {
 
         // The assertion that fails without the fix: something is still coming. No alarm is armed at this point
         // by design (rule 7 is finished with this night), so the nudge is the whole safety net.
+        //
+        // L1 NOTE (owner decision, 2026-09-21), checked by hand rather than left implied: until L1 this
+        // assertion was only true because the harness never DISPATCHED a nudge. The nudge J5 re-arms here is
+        // due at 07:03:30, inside the advance above, so in pre-L1 production it rang and left nothing behind -
+        // this test claimed a safety net the real app did not have three and a half minutes later. L1 makes
+        // the claim true: the re-armed nudge rings and arms the next one, so something really is still coming.
         assertNotNull(replay.pendingNudgeAt, replay.trace())
     }
 
@@ -249,7 +255,13 @@ class TickScheduleRaceTest {
         val replay = nightOwnerTraced()
 
         // The 06:30 wake alarm is delivered two minutes late, as Doze or an alarm-manager backlog can do.
-        replay.advanceTo("2026-09-21T07:00:00", alarmDelivery = Duration.ofMinutes(2))
+        //
+        // L1 (owner decision, 2026-09-21) MOVED this stop from 07:00 to 06:46. The nudge this test is about
+        // now actually rings in the harness and arms the next one, so a 07:00 stop would have the 06:47 nudge
+        // fire (delivered 06:49) and the assertion below read its 07:04 successor instead of the instant this
+        // test exists to pin. Stopping just before the nudge is due leaves exactly what this test measured
+        // before - the wake alarm delivered and its nudge armed, nothing else having happened yet.
+        replay.advanceTo("2026-09-21T06:46:00", alarmDelivery = Duration.ofMinutes(2))
 
         // Attribution is unaffected by lateness, on both sides: PhoneAlarmReceiver reads the armed-for instant
         // off the intent's own extra, never the delivery time (J2 must-fix 2).
@@ -258,6 +270,45 @@ class TickScheduleRaceTest {
 
         // The assertion that fails without the fix: 06:47, not 06:45. Delivered 06:32 plus outOfBedDelay.
         assertEquals(instant("2026-09-21T06:47:00"), replay.pendingNudgeAt, replay.trace())
+    }
+
+    @Test fun `L1 replay - the out-of-bed nudge repeats every outOfBedDelay while the owner never confirms being awake`() {
+        // L1 (owner decision, 2026-09-21): pressing "I'm awake" is the only thing that means the owner is
+        // genuinely up. It was never pressed here, so the nudge must keep ringing - see
+        // PhoneAlarmReceiver.armOutOfBedNudge's own L1 doc for the contract, and docs/decisions.md's L1 record
+        // for the owner's own reasoning and his explicit rejection of a cap.
+        //
+        // The night this replays is the plainest possible version of "did not get up": the 06:30 wake alarm
+        // rings, the band reads awake from 06:30:30 onward, and the owner simply lies there. Rule 7's AWAKE
+        // branch has nothing left to arm once the wake alarm has fired (F5/H1), so after 06:30 the nudge is
+        // the ONLY thing in this night capable of ringing at all - which is exactly why it repeating matters.
+        val replay = nightOwnerTraced()
+        replay.markAwake("2026-09-21T06:30:30")
+        replay.advanceTo("2026-09-21T07:59:00")
+
+        // The assertion that fails without the change: pre-L1, PhoneAlarmReceiver.recordRealAlarmFired
+        // returned at `if (isOutOfBed) return` before it could arm anything, so this list was exactly
+        // [06:45] and the night went silent from there. A whole 15-minute lattice, with no cap and no
+        // deadline stop, is the point.
+        assertEquals(
+            listOf("06:45", "07:00", "07:15", "07:30", "07:45").map { instant("2026-09-21T$it:00") },
+            replay.nudgeFirings,
+            replay.trace()
+        )
+        // Still one link pending when the test stops - the chain does not end on its own.
+        assertEquals(instant("2026-09-21T08:00:00"), replay.pendingNudgeAt, replay.trace())
+
+        // The nudge's own firings never touch the phone alarm slot's own bookkeeping
+        // (PhoneAlarmReceiver.firedAlarmRecordsPlanBookkeeping): exactly one plan alarm rang this night, the
+        // 06:30 wake alarm, and no nudge was ever counted as a nap.
+        assertEquals(listOf(instant("2026-09-21T06:30:00")), replay.firings.map { it.firedFor }, replay.trace())
+        assertEquals(0, replay.napAlarmsUsed, replay.trace())
+
+        // And the repeat never fights J5's own re-arm (awakeNapCancellationNeedsNudge): every instant above
+        // sits on the 15-minute lattice measured from the 06:30 firing, so no tick ever added a nudge of its
+        // own measured from its own `now`. It cannot: a nudge is always pending while the chain is alive, and
+        // that predicate requires none to be.
+        assertTrue(replay.nudgeFirings.zipWithNext().all { (first, second) -> Duration.between(first, second) == Duration.ofMinutes(15) }, replay.trace())
     }
 
     @Test fun `J1_1 replay - waking 4 minutes before the alarm and opening the app 90 s before it still rings correctly, once, attributed to the wake alarm`() {

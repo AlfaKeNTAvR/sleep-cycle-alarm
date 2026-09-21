@@ -1,10 +1,16 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: H7.2 and H7.3's own pure decision seams - both need a real Context (AlarmManager, disk I/O,
-// a band sync) to run for real, so each exposes the one decision that actually matters as a plain function,
-// JVM-testable directly. See NightOrchestrator.napSupersedesPendingNudge and
-// OutOfBedPreNudgeCheck.shouldCancelNudgeForPreCheck.
+// File purpose: H7.2, H7.3 and (since L1) PhoneAlarmReceiver's own pure decision seams - each needs a real
+// Context (AlarmManager, disk I/O, a band sync) to run for real, so each exposes the one decision that
+// actually matters as a plain function, JVM-testable directly. See NightOrchestrator.napSupersedesPendingNudge,
+// OutOfBedPreNudgeCheck.shouldCancelNudgeForPreCheck and PhoneAlarmReceiver.firedAlarmRecordsPlanBookkeeping.
+//
+// L1's own repeating behaviour itself is a SEQUENCE property, not a predicate, and is pinned where sequences
+// live: `L1 replay` in the engine module's TickScheduleRaceTest.kt. The L1 section below pins only the
+// predicates around it - the one boundary the nudge is still excluded from, and the two interactions the
+// repeat has with H7.2's supersession and J5's re-arm.
 
+import com.nikita.sleepcycle.alarm.firedAlarmRecordsPlanBookkeeping
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.SleepState
@@ -178,6 +184,45 @@ class OutOfBedNudgeSupersessionTest {
     @Test
     fun `J5 a nap that still has a target to arm needs no replacement nudge`() {
         assertFalse(awakeNapCancellationNeedsNudge(armedNap, armedNap, SleepState.AWAKE, pendingNudgeAt = null))
+    }
+
+    // ---- L1 (owner decision, 2026-09-21): the nudge repeats until the night ends --------------------------
+
+    @Test
+    fun `L1 a wake or nap firing still does the phone alarm slot's own bookkeeping`() {
+        assertTrue(firedAlarmRecordsPlanBookkeeping(isOutOfBed = false))
+    }
+
+    @Test
+    fun `L1 the nudge's own firing still does none of it - that boundary is all the nudge is excluded from now`() {
+        // The four facts behind this: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and
+        // lastNapAlarmFiredAt. Before L1 the same flag ALSO suppressed the nudge arming that follows, through
+        // one early return covering both, which is why the nudge rang once per night. Only this half survives.
+        assertFalse(firedAlarmRecordsPlanBookkeeping(isOutOfBed = true))
+    }
+
+    @Test
+    fun `L1 a repeating chain never triggers J5's own re-arm, so the two can never double-arm`() {
+        // The interaction the owner asked to be checked. A nudge firing clears its record and re-arms in the
+        // same receiver call, so from any tick's point of view a nudge is always pending while the chain is
+        // alive - and awakeNapCancellationNeedsNudge requires none to be. Pinned with the shape a repeating
+        // chain actually presents to the transition tick: the AWAKE branch has just cancelled the nap, which
+        // is every one of this predicate's other conditions satisfied at once.
+        assertFalse(awakeNapCancellationNeedsNudge(cancellingNap, armedNap, SleepState.AWAKE, nudgeAt))
+    }
+
+    @Test
+    fun `L1 a nap still supersedes the currently pending link of a repeating chain`() {
+        // Unchanged by L1 and deliberately so: the owner is confirmed asleep again, so the nap owns the
+        // wake-up, and the nap's own firing arms a fresh nudge that restarts the chain from there. What this
+        // predicate sees is no longer "the one nudge this night has" but "the pending link of a live chain",
+        // and cancelling that link is still right.
+        val secondLink = Instant.parse("2026-09-21T07:15:00Z")
+        assertTrue(
+            napSupersedesPendingNudge(
+                plan(AlarmMode.NAP, Instant.parse("2026-09-21T07:20:00Z")), secondLink, SleepState.ASLEEP, napAlarmArmed = true
+            )
+        )
     }
 
     // ---- H7.3: shouldCancelNudgeForPreCheck --------------------------------------------------------------
