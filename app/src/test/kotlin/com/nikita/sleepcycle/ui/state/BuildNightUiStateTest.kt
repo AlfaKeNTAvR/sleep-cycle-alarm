@@ -192,4 +192,55 @@ class BuildNightUiStateTest {
         check(content is NightScreenContent.NapAsleep) { "expected NapAsleep, got $content" }
         assertEquals(AlarmLabel.NAP, content.modeLabel)
     }
+
+    @Test fun `the pending nudge overrides an armed plan alarm when the nudge rings first (should-fix 1)`() {
+        // Round 3 of the 09/21 review, should-fix 1: the traced sequence - morning alarm rings at 03:30, owner
+        // stays in bed, plan becomes DEADLINE_ONLY at 07:30 while the nudge armed by that same ring is due at
+        // 03:45. Before this fix, a non-null modeLabel (MORNING) was never reconsidered, so the header kept
+        // showing "Morning alarm / 07:30" for those 15 minutes even though the nudge rings first - wrong per
+        // AlarmModeHeader's own contract ("which alarm is coming next").
+        val plan = testAlarmPlan(mode = AlarmMode.DEADLINE_ONLY, wakeAt = "2026-09-17T07:30", referenceOnset = "2026-09-17T23:00")
+        val state = testNightState(lastPlan = plan)
+        val view = testEngineView(SleepState.ASLEEP)
+
+        val uiState = buildNightUiState(
+            nightState = state,
+            engineView = view,
+            now = instant("2026-09-17T03:35"),
+            zone = testZone,
+            showingMorningReport = false,
+            morningReportEndedAt = null,
+            confirmingEndNight = false,
+            pendingOutOfBedNudgeAt = instant("2026-09-17T03:45"),
+        )
+
+        val content = uiState?.content
+        check(content is NightScreenContent.GoingToBedOrAsleep) { "expected state A, got $content" }
+        assertEquals(AlarmLabel.OUT_OF_BED, content.modeLabel)
+        assertEquals("03:45", content.modeLabelTimeLabel)
+    }
+
+    @Test fun `an armed plan alarm wins over the pending nudge when the plan alarm rings first (should-fix 1)`() {
+        // The other direction of the same fix: a nudge that rings AFTER the plan's own alarm must not steal the
+        // header - "which alarm is coming next" still means the plan alarm here.
+        val plan = testAlarmPlan(mode = AlarmMode.DEADLINE_ONLY, wakeAt = "2026-09-17T03:30", referenceOnset = "2026-09-16T23:00")
+        val state = testNightState(lastPlan = plan)
+        val view = testEngineView(SleepState.ASLEEP)
+
+        val uiState = buildNightUiState(
+            nightState = state,
+            engineView = view,
+            now = instant("2026-09-17T03:00"),
+            zone = testZone,
+            showingMorningReport = false,
+            morningReportEndedAt = null,
+            confirmingEndNight = false,
+            pendingOutOfBedNudgeAt = instant("2026-09-17T07:45"),
+        )
+
+        val content = uiState?.content
+        check(content is NightScreenContent.GoingToBedOrAsleep) { "expected state A, got $content" }
+        assertEquals(AlarmLabel.MORNING, content.modeLabel)
+        assertNull(content.modeLabelTimeLabel)
+    }
 }

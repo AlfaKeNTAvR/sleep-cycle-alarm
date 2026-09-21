@@ -316,3 +316,28 @@ it via a test, not the compiler) - neither is a one-line fix, so it did not meet
 actually reached: fix 5's own investigation below confirms it needs the band to under-count a cycle, which the
 synthetic debug simulator never does - genuinely rare on a real night too, not "the one moment". Reworded to
 say what is actually true: this is the moment the caption is most useful, on the (rare) nights that reach it.
+
+### Fix 1: the header now also outraces an armed plan alarm, not just a null modeLabel
+
+`applyPendingOutOfBedNudge` only ever fired when `modeLabel == null`, so a pending nudge stayed invisible
+whenever ANY plan alarm was armed - even one that rings after the nudge. Traced sequence from the task: deadline
+07:30, 4.5 h picked, onset 23:00, morning alarm fires at 03:30; owner taps Stop and stays in bed; band keeps
+reading ASLEEP; plan becomes DEADLINE_ONLY (`wakeAt` = 07:30, label MORNING); the same firing armed a nudge for
+03:45. Neither the nap-supersede path (no nap armed) nor the pre-nudge check (fails open on a stale/failed
+sync) intervened, so the header showed "Morning alarm / 07:30" for the whole 15 minutes even though the nudge,
+not the 07:30 alarm, actually rang next - wrong per `AlarmModeHeader`'s own contract ("which alarm is coming
+next", `AlarmModeHeader.kt:27`).
+
+Fix: `applyPendingOutOfBedNudge` gained a `planWakeAt: Instant?` parameter (`plan.wakeAt`, passed from
+`buildNightUiState`) and now overrides whenever `planWakeAt == null` (the old condition, unchanged) OR
+`planWakeAt.isAfter(pendingOutOfBedNudgeAt)` - i.e. whenever the nudge genuinely rings first. Pinned both
+directions in `BuildNightUiStateTest.kt`: `the pending nudge overrides an armed plan alarm when the nudge
+rings first` (the task's own traced sequence, DEADLINE_ONLY wakeAt 07:30 vs nudge 03:45) and `an armed plan
+alarm wins over the pending nudge when the plan alarm rings first` (wakeAt 03:30 vs a later nudge at 07:45,
+modeLabel/modeLabelTimeLabel must stay untouched).
+
+Verify: BUILD SUCCESSFUL, 543 tests (539 + 2 new should-fix-1 tests + 2 more from the other agent's concurrent
+work), 0 failures, 0 Kotlin compiler warnings. Two more transient races against the same concurrent,
+uncommitted `engine/`/`night/` work this session: one `:app:lintAnalyzeDebug` internal PSI crash and one
+`:engine:compileKotlin` type-mismatch in `WakeAlarm.kt` (a file mid-edit by the other agent, not touched by
+this agent) - both cleared on a bare retry with no changes on this agent's side.

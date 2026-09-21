@@ -87,8 +87,10 @@ fun buildNightUiState(
             SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(plan, zone, state.debugOptions, state.morningAlarmAt, state.settings.deadline) to EndNightAction.STOP
         }
     }
-    // Round 2 of the 09/21 review, must-fix 1: see applyPendingOutOfBedNudge's own doc.
-    val content = applyPendingOutOfBedNudge(rawContent, pendingOutOfBedNudgeAt, now, zone)
+    // Round 2 of the 09/21 review, must-fix 1, extended by round 3's should-fix 1: see
+    // applyPendingOutOfBedNudge's own doc for why the plan's own wakeAt (plan.wakeAt, not the FINISHED case's
+    // null) is passed alongside the nudge - it can also override a NON-null modeLabel now, not just a null one.
+    val content = applyPendingOutOfBedNudge(rawContent, pendingOutOfBedNudgeAt, plan.wakeAt, now, zone)
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
         activeDebugSwitches = debugSwitches,
