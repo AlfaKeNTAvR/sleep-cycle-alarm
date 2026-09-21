@@ -12,129 +12,49 @@ data class StretchLine(
     val cyclesLabel: String,
 )
 
-/** Which caption state A is in: still working out the projected onset, or asleep with a real one. */
-enum class OnsetPhase { PROJECTED, ACTUAL }
-
-/**
- * Which subtitle line state A shows under the hero time. Precedence is decided once, in
- * [buildGoingToBedContent], not re-derived in the composable: [ALREADY_RANG] and [DEADLINE_ONLY] can both be
- * true for the same plan (a DEADLINE_ONLY plan can also be H8's already-rang case), so a three-way `when` over
- * two raw booleans in the composable both hides that overlap and puts it somewhere nothing can test it.
- * [ALREADY_RANG] wins because it is about what already happened; [DEADLINE_ONLY] is about what is still ahead.
- * [UNKNOWN] (round 2 of the 09/21 review, should-fix 9) is the defensive fallback that remains once
- * [ALREADY_RANG] is ruled out: `wakeAt == null` with no [GoingToBedOrAsleep.alarmAlreadyRang] either, meaning
- * [NightState.morningAlarmAt] has nothing latched to fall back on - a partially restored state file, not a
- * state a normal night reaches. The composable shows no subtitle line at all for it, the same choice
- * [MISSING_TIME_LABEL] already makes for the hero time in this same branch: [SLEEP_LENGTH]'s "X h of sleep"
- * promise would otherwise sit next to a bare dash and a "no alarm armed" header, asserting a sleep length the
- * screen has no armed alarm or known onset to back up.
- */
-enum class NightSubtitle { ALREADY_RANG, DEADLINE_ONLY, SLEEP_LENGTH, UNKNOWN }
-
 /** Which button/confirmation wording the end-night action uses, per screen. */
 enum class EndNightAction { STOP, IM_UP, END }
 
 /**
- * The night screen's content, one variant per engine mode (spec states A-D plus the FINISHED amendment; D2/D8
- * removed the band alarm status line and the OVERDUE amendment along with it; a later owner request removed
- * the "possible wake-ups" bar timeline states A and B used to carry - see the removed `WakeTimelineEntry` and
- * `WakeTimeline.kt` in git history - the owner found a list of candidate wake times not worth reading at 3am).
+ * The night screen's content: one variant for every live night ([NextAlarm], N1), plus the two dead ends a
+ * night reaches ([NightFinished], [MorningReport]) and [Loading]. It used to be one variant per engine mode
+ * (spec states A-D plus the FINISHED amendment; D2/D8 removed the band alarm status line and the OVERDUE
+ * amendment along with it; a later owner request removed the "possible wake-ups" bar timeline states A and B
+ * used to carry - see the removed `WakeTimelineEntry` and `WakeTimeline.kt` in git history - the owner found a
+ * list of candidate wake times not worth reading at 3am). N1 finished that direction: see [NextAlarm].
  * Every field is either already-formatted data (a time, a duration) or a plain enum; screen-only wording
- * (captions, labels) lives in `strings.xml`, keyed by the enums here. The one deliberate exception is
- * [GoingToBedOrAsleep.reasonText], [NapAsleep.reasonText] and [WokeUp.reasonText]: `AlarmPlan.reason` is a
- * full sentence generated in the engine (see `Plan.kt`'s `describePlan`) as hardcoded English, not looked up
- * from `strings.xml` - flagged by the 09/21 review as a real exception to this file's own rule, left as-is
- * here since fixing it means changing the engine's own file, not this one.
+ * (captions, labels) lives in `strings.xml`, keyed by the enums here. N1 removed the one standing exception
+ * to that rule along with the lines that carried it: the three active states used to surface
+ * `AlarmPlan.reason`, a full sentence generated in the engine (see `Plan.kt`'s `describePlan`) as hardcoded
+ * English rather than looked up from `strings.xml`, which the 09/21 review flagged and left as-is because
+ * fixing it meant changing the engine's own file. [NightFinished] still carries it, but that state is a dead
+ * end the owner reads once, not a line on every glance of a live night.
  */
 sealed interface NightScreenContent {
     /**
-     * State A: going to bed, or still/again asleep with no awakening yet counted against this stretch.
-     * [subtitle] picks the line under the hero time - see [NightSubtitle]'s own doc for the precedence between
-     * an already-rung alarm and a deadline-only night. [modeLabel] and [reasonText] (owner request,
-     * W18-adjacent) are the engine's own mode and one-sentence explanation, surfaced so a 3am glance says which
-     * alarm is coming and why - see BuildNightScreenContent.kt's `alarmModeLabel`. [modeLabel] is null when
-     * nothing is armed (must-fix 1 of the 09/21 review: [AlarmPlan.wakeAt] null with no genuine label to guess
-     * at), in which case [AlarmModeHeader][com.nikita.sleepcycle.ui.components.AlarmModeHeader] shows the
-     * "no alarm armed" wording instead of naming an alarm that does not exist. [alarmAlreadyRang] is H8's one
-     * legitimate case for [MISSING_TIME_LABEL]: true when the morning alarm has already rung while the band
-     * still reads ASLEEP, in which case [alarmTimeLabel] carries the real rung time (from
-     * NightState.morningAlarmAt) instead of a blank dash - honest AND readable, rather than the plain "--:--"
-     * this used to show with no explanation; it is also why [reasonText] is suppressed in that state (the
-     * "Already rang" subtitle already says what happened, and the engine's [reasonText] sentence trails off
-     * with "... alarm none" once [AlarmPlan.wakeAt] is null). [deadlineTimeLabel] is a plain caption for the
-     * deadline, shown in both [NightSubtitle.SLEEP_LENGTH] and [NightSubtitle.ALREADY_RANG] - suppressed only
-     * for [NightSubtitle.DEADLINE_ONLY], whose own subtitle already names the deadline and whose hero number
-     * already is it. The owner uses this caption to decide whether to go back to sleep, which is exactly the
-     * question live in the ALREADY_RANG state (round 2 of the 09/21 review, must-fix 2: an earlier version of
-     * this also hid it for ALREADY_RANG, reasoning the deadline "no longer matters" there - wrong, since
-     * ALREADY_RANG is only reachable while the deadline is still ahead; see AUTONOMOUS_DECISIONS_09_21_2026_UI.md).
-     * [modeLabelTimeLabel] is round 2's must-fix 1 fix: null whenever [modeLabel] is not
-     * [AlarmLabel.OUT_OF_BED], and the out-of-bed nudge's own pending fire time when it is - see
-     * [applyPendingOutOfBedNudge] for when [modeLabel] gets overridden to [AlarmLabel.OUT_OF_BED] in the first
-     * place. Without a visible time, "Out-of-bed nudge" on its own reads as generic wording rather than a
-     * concrete alarm that is about to ring.
+     * N1 (owner decision, 2026-09-21): every state of a live night - going to bed, asleep, awake again, napping
+     * - now answers exactly one question, in one shape: which alarm rings next, when, and how long until then.
+     * The three separate variants this replaced (`GoingToBedOrAsleep`, `NapAsleep`, `WokeUp`, all in git
+     * history) differed only in the extra lines stacked around that answer - onset captions, a sleep-length
+     * subtitle, the deadline, a nap explainer card, a "tonight so far" row, the engine's own reason sentence -
+     * and the owner found the result unreadable at 3am ("way too much information"). They are not moved
+     * anywhere: the completed-sleep figure already belongs to the morning report at the end of the night, and
+     * the rest was context the owner does not act on while half awake. With those gone the three variants had
+     * identical fields and identical rendering, so they are one type.
+     *
+     * [modeLabel] is null when nothing is armed (must-fix 1 of the 09/21 review: [AlarmPlan.wakeAt] null with
+     * no genuine label to guess at), rendered as the "no alarm armed" wording rather than naming an alarm that
+     * does not exist. [alarmTimeLabel] is [MISSING_TIME_LABEL] in exactly that case, since there is no next
+     * alarm to name a time for. [countdownLabel] is how long until [alarmTimeLabel], null whenever nothing is
+     * armed. [rangAtTimeLabel] is H8's case - the morning alarm already rang while the band still reads ASLEEP
+     * - and is the only thing that fills the line under the hero when no alarm is armed to count down to; it is
+     * null whenever [countdownLabel] is set, so the line has one source, never two competing ones.
      */
-    data class GoingToBedOrAsleep(
-        val onsetPhase: OnsetPhase,
-        val onsetTimeLabel: String,
+    data class NextAlarm(
+        val modeLabel: AlarmLabel?,
         val alarmTimeLabel: String,
-        val sleepLengthHoursLabel: String,
-        val subtitle: NightSubtitle,
-        val deadlineTimeLabel: String?,
-        val modeLabel: AlarmLabel?,
-        val modeLabelTimeLabel: String? = null,
-        val reasonText: String?,
-        val alarmAlreadyRang: Boolean,
-    ) : NightScreenContent
-
-    /**
-     * NAP mode while asleep again for the nap: asleep-style wording (onset caption, the nap alarm as the hero
-     * number), not the "you slept" wording of [WokeUp]. [reasonText]: see [GoingToBedOrAsleep]'s own doc.
-     * [modeLabel] should in practice always be [AlarmLabel.NAP] here, since this state is only reached with a
-     * genuine fresh nap onset (buildNightUiState's own NAP/ASLEEP branch) with an armed `wakeAt`, never the H8
-     * sliding-nap case that can mislabel a still-pending morning alarm as a nap (that case surfaces AWAKE, in
-     * [WokeUp] instead); it is nullable only because it shares `alarmModeLabel`'s uniform null-when-unarmed
-     * derivation with the other two states (must-fix 1 of the 09/21 review), not because a null value is
-     * expected to reach here.
-     */
-    data class NapAsleep(
-        val onsetTimeLabel: String,
-        val alarmTimeLabel: String,
-        val modeLabel: AlarmLabel?,
-        val reasonText: String,
-    ) : NightScreenContent
-
-    /**
-     * States B and C: awake after a stretch. [napOnly] selects C's nap card over B's single "fall back asleep
-     * by" header. [reasonText]: see [GoingToBedOrAsleep]'s own doc. [modeLabel]: unlike [NapAsleep], the NAP
-     * case here (state C) genuinely can be rule 7's sliding AWAKE nap carrying the still-pending morning alarm
-     * (see AlarmLabel.kt's own H8 note on `alarmLabelFor`), so it is derived the same careful way, not assumed
-     * constant - and it is null (not [AlarmLabel.NAP]) for F5's real case, a nap alarm that already fired with
-     * nothing left to arm: the reproduction traced by the 09/21 review (no deadline, 5 cycles, the morning
-     * alarm rings at 07:00, the band reports AWAKE at 07:05, rule 7's sliding nap has nothing left to slide to
-     * because the wake alarm already fired) is exactly this case, and it must read "no alarm armed", not a
-     * bold, wrong "Nap alarm" moments after the owner was woken by the real one. That same F5 case is exactly
-     * where the review found the "no alarm armed" wording itself to be a lie: the out-of-bed nudge armed by the
-     * morning alarm's own firing is still pending for the next 15 minutes. [modeLabelTimeLabel]: see
-     * [GoingToBedOrAsleep]'s own doc.
-     */
-    data class WokeUp(
-        val napOnly: Boolean,
-        val sleptDurationLabel: String,
-        /**
-         * The time in this card's header sentence, already formatted: C's "No full cycle fits before X" (the
-         * deadline) or B's "Fall back asleep by X" (the deadline minus one cycle). Null on a night with no
-         * deadline, where neither sentence has a time to name. Named for what it is - the header's time -
-         * since the "wake boundary" it used to be named after no longer exists anywhere in the engine.
-         */
-        val headerTimeLabel: String?,
-        val napLengthLabel: String?,
-        val tonightSoFarLabel: String?,
-        val alarmTimeLabel: String?,
-        val alarmIsEstimate: Boolean,
-        val modeLabel: AlarmLabel?,
-        val modeLabelTimeLabel: String? = null,
-        val reasonText: String,
+        val countdownLabel: String?,
+        val rangAtTimeLabel: String?,
     ) : NightScreenContent
 
     /**

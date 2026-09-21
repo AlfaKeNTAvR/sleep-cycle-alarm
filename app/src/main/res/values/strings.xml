@@ -86,41 +86,16 @@
     <string name="night_confirm_im_up_title">End night?</string>
     <string name="night_confirm_im_up_message">This stops the alarm and shows tonight\'s report.</string>
 
-    <!-- Night screen: alarm mode header, shown above the hero number on states A/B/C (owner request, 09/21
-         review's must-fix 1) - what the owner sees when the engine has nothing armed at all, instead of a
-         wrong alarm name. -->
+    <!-- Night screen: the label above the hero time (owner request, 09/21 review's must-fix 1) - what the
+         owner sees when the engine has nothing armed at all, instead of a wrong alarm name. -->
     <string name="night_no_alarm_armed">No alarm armed</string>
-    <!-- Round 2 of the 09/21 review, must-fix 1: the out-of-bed nudge's own name plus its pending time, e.g.
-         "Out-of-bed nudge at 07:15" - shown instead of night_no_alarm_armed once the review found that state
-         to be a guaranteed lie for the nudge's own first 15 minutes. %1$s is the alarm's name (see
-         alarm_label_out_of_bed below), %2$s is its time. -->
-    <string name="night_alarm_mode_header_with_time">%1$s at %2$s</string>
 
-    <!-- Night screen: state A -->
-    <string name="night_a_caption_if_asleep_by">If you fall asleep by %1$s</string>
-    <string name="night_a_caption_asleep_since">Asleep since %1$s</string>
-    <string name="night_a_sleep_length">%1$s of sleep</string>
-    <!-- 09/21 review's must-fix 3 decision: a plain caption for the deadline, shown only in the ordinary
-         sleep-length subtitle case - see NightScreenContent.GoingToBedOrAsleep's own doc for why. -->
-    <string name="night_a_deadline_caption">Deadline %1$s</string>
-    <!-- H8, owner request: shown instead of the sleep-length subtitle once the morning alarm has already rung
-         while the band still reads asleep - the hero number above this now carries the real time it rang. -->
-    <string name="night_a_alarm_already_rang">Already rang, waiting for you to wake up</string>
-
-    <!-- Night screen: states B and C -->
-    <string name="night_woke_caption">You slept</string>
-    <string name="night_b_timeline_header">Fall back asleep by %1$s</string>
-    <string name="night_c_timeline_header">No full cycle fits before %1$s</string>
-    <string name="night_c_nap_title">Nap: %1$s</string>
-    <!-- Round 2 of the 09/21 review, should-fix 8: worded "If you fall back asleep" rather than a flat
-         present-tense promise - the old wording ("Alarm rings 20 min after you fall asleep") read as
-         asserting a running timer right under the mode header, which on F5's real "no alarm armed" case (this
-         card shows regardless of whether a nap alarm is actually armed right now) looked like a direct
-         contradiction at a glance. This says what happens IF you fall back asleep, not what is happening now. -->
-    <string name="night_c_nap_description">If you fall back asleep, a nap alarm rings 20 min later, before deep sleep.</string>
-    <string name="night_alarm">Alarm</string>
-    <string name="night_alarm_estimate">~%1$s</string>
-    <string name="night_tonight_so_far">Tonight so far</string>
+    <!-- Night screen: the one line under the hero time (N1). The countdown carries an already-formatted
+         duration ("20 min", "5 h 38") from formatTimeUntil. -->
+    <string name="night_countdown">in %1$s</string>
+    <!-- H8: the morning alarm has already rung while the band still reads asleep, so there is no next alarm
+         to count down to - this says what happened instead, next to the dash the hero time shows. -->
+    <string name="night_morning_alarm_rang_at">Morning alarm rang at %1$s</string>
 
     <!-- Night screen: finished -->
     <string name="night_finished_title">Night finished</string>
@@ -159,8 +134,11 @@
     <string name="alarm_label_out_of_bed">Out-of-bed nudge</string>
     <string name="alarm_label_test">Test ring</string>
     <string name="alarm_instruction_wake">Wake up</string>
+    <!-- N1 (owner decision, 2026-09-21): Stop is the ONLY action a ring offers. It used to also offer "I'm
+         awake", which ended the night outright; a mis-tap on a lock screen at 03:00 therefore silenced every
+         alarm left in the night, which is the one failure this app exists to prevent. Ending a night now
+         needs the night screen's own button, which is deliberately harder to reach half asleep. -->
     <string name="alarm_action_stop">Stop</string>
-    <string name="alarm_action_im_awake">I\'m awake</string>
     <string name="alarm_instruction_out_of_bed">Time to get up</string>
     <string name="alarm_notification_title">Wake up</string>
     <string name="alarm_notification_text">Sleep cycle alarm</string>
@@ -169,12 +147,6 @@
     <string name="alarm_notification_out_of_bed_title">Time to get up</string>
     <string name="alarm_notification_out_of_bed_text">Sleep cycle alarm</string>
 
-
-    <!-- Night screen: state A, DEADLINE_ONLY -->
-    <string name="night_a_deadline_only_note">Alarm rings at the deadline</string>
-
-    <!-- Night screen: NAP while asleep -->
-    <string name="night_nap_asleep_caption">Napping, asleep since %1$s</string>
 
     <!-- Error banner -->
     <string name="error_banner_dismiss_hint">(tap to dismiss)</string>

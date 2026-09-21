@@ -1,7 +1,8 @@
 package com.nikita.sleepcycle.ui.screens.night
 
 // File purpose: the night screen's chrome - status line, the confirm-end dialog, and dispatch to the content
-// variant for the current engine mode (states A-D plus the FINISHED amendment).
+// variant for the current engine mode (N1: one variant for every live night, plus FINISHED and the morning
+// report).
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -63,9 +64,7 @@ fun NightScreen(
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             when (val content = state.content) {
                 is NightScreenContent.Loading -> Text(stringResource(R.string.night_loading), style = MaterialTheme.typography.bodyLarge)
-                is NightScreenContent.GoingToBedOrAsleep -> GoingToBedContent(content)
-                is NightScreenContent.NapAsleep -> NapAsleepContent(content)
-                is NightScreenContent.WokeUp -> WokeUpContent(content)
+                is NightScreenContent.NextAlarm -> NextAlarmContent(content)
                 is NightScreenContent.NightFinished -> FinishedContent(content)
                 is NightScreenContent.MorningReport -> MorningReportContent(content)
             }

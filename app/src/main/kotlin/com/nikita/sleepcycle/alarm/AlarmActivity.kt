@@ -1,8 +1,12 @@
 package com.nikita.sleepcycle.alarm
 
-// File purpose: full-screen alarm activity - shows over the lock screen. D6: two actions, "Stop" (silences
-// the sound and vibration only) and "I'm awake" (also ends the night through the existing endNight path,
-// recording awakeConfirmedAt). H6: "Stop" does NOT promise the night keeps running - most of the time it
+// File purpose: full-screen alarm activity - shows over the lock screen. N1 (owner decision, 2026-09-21):
+// ONE action, "Stop", which silences the sound and vibration only. D6's second action, "I'm awake", also
+// ended the night outright through the endNight path (recording awakeConfirmedAt) - removed because a
+// mis-tap on a lock screen at 03:00 then cancelled every alarm left in the night, including the repeating
+// out-of-bed nudge whose whole purpose (L1) is that it cannot be got rid of by accident. Ending a night now
+// takes the night screen's own button, behind its own confirmation, which is the point: the owner has to be
+// awake enough to open the app. H6: "Stop" does NOT promise the night keeps running - most of the time it
 // does, and D5/rule 7's nap mode still applies, but not when this is the alarm that just spent the D5/G8 nap
 // cap (H2). L2 (owner decision, 2026-09-21) CORRECTS what this used to say about that case: this ring has
 // already armed its own out-of-bed nudge by the time this screen shows it, so the tick that reaches FINISHED
@@ -43,12 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.night.endNight
-import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.ui.components.ScreenContainer
-import kotlinx.coroutines.launch
 
 class AlarmActivity : ComponentActivity() {
     /**
@@ -70,7 +70,7 @@ class AlarmActivity : ComponentActivity() {
         )
         label = intent.readAlarmLabel()
         setContent {
-            AlarmStopScreen(label = label, onStop = ::stopOnly, onImAwake = ::confirmAwakeAndFinish)
+            AlarmStopScreen(label = label, onStop = ::stopOnly)
         }
     }
 
@@ -100,32 +100,17 @@ class AlarmActivity : ComponentActivity() {
         finish()
     }
 
-    /**
-     * D6 "I'm awake": silences the ringing and ends the night via the existing endNight path, recording
-     * awakeConfirmedAt. endNight's own work runs on NightController's module-level controllerScope, not this
-     * Activity's lifecycleScope, so it completes in full even though finish() is called right after launching
-     * it here - the same reason NightViewModel.confirmEndNight does not need to wait for it either.
-     */
-    private fun confirmAwakeAndFinish() {
-        stopAlarmRinging(this)
-        // T4: virtual - awakeConfirmedAt is recorded into night state, which is entirely in virtual time.
-        val now = nowInstant()
-        lifecycleScope.launch { endNight(applicationContext, now, awakeConfirmedAt = now) }
-        finish()
-    }
 }
 
 /**
  * The alarm's ring screen, kept full-bleed like every other screen but clearing the status bar, navigation
  * bar and display cutout the same way, via the shared [ScreenContainer]. [label] (W18) names the ring and
- * chooses the headline; both actions behave the same for every real alarm (D6).
- *
- * W18: the one exception is the debug test ring, which never touches night state by design (PhoneAlarmReceiver
- * loads none for a test) - so "I'm awake", which ends the night, is not offered there. Tapping it during a
- * daylight ring test would have ended a night that was genuinely running in the background.
+ * chooses the headline; the single action behaves the same for every ring, the debug test one included (N1 -
+ * the test ring used to be the one case that differed, precisely because the removed second action would have
+ * ended a real night running in the background during a daylight ring test).
  */
 @Composable
-private fun AlarmStopScreen(label: AlarmLabel, onStop: () -> Unit, onImAwake: () -> Unit) {
+private fun AlarmStopScreen(label: AlarmLabel, onStop: () -> Unit) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         ScreenContainer(scrollable = false) {
             Column(
@@ -137,11 +122,6 @@ private fun AlarmStopScreen(label: AlarmLabel, onStop: () -> Unit, onImAwake: ()
                 Text(text = stringResource(alarmLabelInstructionRes(label)), style = MaterialTheme.typography.headlineLarge)
                 Button(onClick = onStop) {
                     Text(text = stringResource(R.string.alarm_action_stop))
-                }
-                if (label != AlarmLabel.TEST) {
-                    Button(onClick = onImAwake) {
-                        Text(text = stringResource(R.string.alarm_action_im_awake))
-                    }
                 }
             }
         }

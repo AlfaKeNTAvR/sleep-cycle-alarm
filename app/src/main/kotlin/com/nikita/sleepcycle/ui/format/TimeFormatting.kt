@@ -29,6 +29,15 @@ fun formatDuration(duration: Duration): String {
     }
 }
 
+/**
+ * N1: how long from [now] until [target], as a duration label ("20 min", "5 h 38") for the one line the night
+ * screen shows under its hero time. Reuses [formatDuration]'s own wording rather than inventing a second
+ * duration format, so a countdown and the morning report's totals read the same. A [target] at or before [now]
+ * formats as "0 min" ([formatDuration] clamps negatives): an alarm whose instant has passed but which has not
+ * fired yet is a real state for the seconds between the two, and "0 min" is the honest reading of it.
+ */
+fun formatTimeUntil(target: Instant, now: Instant): String = formatDuration(Duration.between(now, target))
+
 /** Formats a cycle count to one decimal, e.g. "1.3", for the morning report's parenthetical. */
 fun formatCycles(cycles: Double): String = String.format(Locale.US, "%.1f", cycles)
 
