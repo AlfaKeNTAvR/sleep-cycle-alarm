@@ -48,7 +48,16 @@ fun refreshNightStateFromDisk(context: Context) {
     }
 }
 
-/** Publishes a freshly committed state to [observedNightState] (D1) - the one seam NightService uses so a tick that ran from the service, not from an immediate UI-requested tick, still reaches the ViewModel. */
+/**
+ * Publishes a freshly committed state to [observedNightState] (D1).
+ *
+ * FIX1 (owner-reported, 2026-09-21): now called from exactly one place - runNightTick, from INSIDE its own
+ * transaction lock (see NightOrchestrator.kt's own doc) - rather than by NightService and [runImmediateTick]
+ * each publishing their own snapshot AFTER the lock had already released, which could publish a committed
+ * tick's result out of commit order. [startNight] and [finishNightIfNeeded] still assign [nightStateFlow]
+ * directly rather than through this function: both already run their own work under the same lock and are not
+ * `runNightTick` itself, so folding them into this one seam would not remove a second publisher, only rename it.
+ */
 fun publishNightState(state: NightState) {
     nightStateFlow.value = state
 }
@@ -271,11 +280,13 @@ fun requestImmediateTick(context: Context) {
  * Runs its own work on [Dispatchers.Default], the same dispatcher [requestImmediateTick]'s own scope uses, so
  * a caller awaiting this from the main thread (the Debug controller does) never blocks it on a tick's disk
  * reads and writes.
+ *
+ * FIX1: no longer publishes [newState] itself - runNightTick already did that from inside its own transaction
+ * lock (see [publishNightState]'s own doc) before returning it here.
  */
 suspend fun runImmediateTick(context: Context) = withContext(Dispatchers.Default) {
     val newState = runNightTick(context, nowInstant())
     if (newState != null) {
-        nightStateFlow.value = newState
         finishNightIfNeeded(context, newState)
     }
 }

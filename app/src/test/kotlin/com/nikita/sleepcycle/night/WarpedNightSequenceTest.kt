@@ -33,6 +33,8 @@ import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.MAX_NAP_ALARMS
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.computeAlarmPlan
+import com.nikita.sleepcycle.engine.detectSleepState
+import com.nikita.sleepcycle.engine.normalizeSegments
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -79,12 +81,20 @@ class WarpedNightSequenceTest {
 
         fun tick(virtualNow: Instant): TickTrace {
             val now = nowAt(virtualNow)
+            val segments = buildSimulatedSegments(events, now)
             val plan = computeAlarmPlan(
-                buildSimulatedSegments(events, now), settings, now, morningAlarmAt, zone, config,
+                segments, settings, now, morningAlarmAt, zone, config,
                 wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt
             )
             val phoneAlarmShouldArm = shouldArmPhoneAlarm(plan.wakeAt, now, phoneAlarmFiredFor = null)
-            val supersedes = napSupersedesPendingNudge(plan, pendingNudgeAt)
+            // FIX4: mirrors NightOrchestrator.cancelNudgeIfSupersededByNap's own two extra guards - a confirmed
+            // ASLEEP reading (recomputed here exactly like the app's own detectSleepState(normalizeSegments(...))
+            // pair does from the SAME segments the plan above was just built from) and a successfully armed
+            // replacement nap. This test has no Android `schedulePhoneAlarm` to call, so [phoneAlarmShouldArm] -
+            // already this scenario's own stand-in for "armPhoneAlarmIfNeeded would succeed" - doubles as the
+            // armed signal too.
+            val sleepState = detectSleepState(normalizeSegments(segments, now, config))
+            val supersedes = napSupersedesPendingNudge(plan, pendingNudgeAt, sleepState, napAlarmArmed = phoneAlarmShouldArm)
             if (supersedes) pendingNudgeAt = null
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
             val entry = TickTrace(plan, wakeAlarmFiredAt, napAlarmsUsed, morningAlarmAt, phoneAlarmShouldArm, supersedes)
