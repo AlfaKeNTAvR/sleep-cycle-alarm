@@ -42,17 +42,19 @@ fun NightScreen(
     onOpenDebug: () -> Unit = {},
 ) {
     ScreenContainer(scrollable = false, bottomPadding = ScreenBottomPadding) {
-        // BuildConfig.DEBUG-gated, same as the Debug row Settings carries (SettingsScreen.kt): the simulator's
-        // buttons need to be reachable while a simulated night is actually running, not just before it starts.
-        if (BuildConfig.DEBUG) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        // W15 (owner request): the sync line shares one row with the toolbar icon beside it, the same header
+        // shape Before bed uses for "Band connected" - not a lone icon with the status stacked underneath.
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            StatusLine(text = statusLineText(state), ok = state.lastSyncOk != false)
+            // BuildConfig.DEBUG-gated, same as the Debug row Settings carries (SettingsScreen.kt): the
+            // simulator's buttons must be reachable while a simulated night runs, not just before it starts.
+            if (BuildConfig.DEBUG) {
                 SlidersButton(
                     contentDescription = stringResource(R.string.content_description_open_debug),
                     onClick = onOpenDebug,
                 )
             }
         }
-        StatusLine(text = statusLineText(state), ok = state.lastSyncOk != false)
         // W11 (owner request): the simulated-clock banner sits UNDER the sync line and the debug button, not
         // above them - the sync line is the one thing worth reading first, and the banner only ever renders on
         // a simulated night anyway.
