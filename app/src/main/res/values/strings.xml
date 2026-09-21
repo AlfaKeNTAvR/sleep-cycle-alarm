@@ -86,10 +86,18 @@
     <string name="night_confirm_im_up_title">End night?</string>
     <string name="night_confirm_im_up_message">This stops the alarm and shows tonight\'s report.</string>
 
+    <!-- Night screen: alarm mode header, shown above the hero number on states A/B/C (owner request, 09/21
+         review's must-fix 1) - what the owner sees when the engine has nothing armed at all, instead of a
+         wrong alarm name. -->
+    <string name="night_no_alarm_armed">No alarm armed</string>
+
     <!-- Night screen: state A -->
     <string name="night_a_caption_if_asleep_by">If you fall asleep by %1$s</string>
     <string name="night_a_caption_asleep_since">Asleep since %1$s</string>
     <string name="night_a_sleep_length">%1$s of sleep</string>
+    <!-- 09/21 review's must-fix 3 decision: a plain caption for the deadline, shown only in the ordinary
+         sleep-length subtitle case - see NightScreenContent.GoingToBedOrAsleep's own doc for why. -->
+    <string name="night_a_deadline_caption">Deadline %1$s</string>
     <!-- H8, owner request: shown instead of the sleep-length subtitle once the morning alarm has already rung
          while the band still reads asleep - the hero number above this now carries the real time it rang. -->
     <string name="night_a_alarm_already_rang">Already rang, waiting for you to wake up</string>

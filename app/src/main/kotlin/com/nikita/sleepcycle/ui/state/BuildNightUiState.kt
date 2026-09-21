@@ -76,7 +76,7 @@ fun buildNightUiState(
         }
         AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> when (engineView.sleepState) {
             SleepState.AWAKE -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = false, state.debugOptions, state.morningAlarmAt) to EndNightAction.STOP
-            SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(state.settings, plan, engineView, zone, state.debugOptions, state.morningAlarmAt) to EndNightAction.STOP
+            SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(plan, zone, state.debugOptions, state.morningAlarmAt, state.settings.deadline) to EndNightAction.STOP
         }
     }
     return NightUiState(

@@ -9,6 +9,7 @@ import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.AlarmModeHeader
 import com.nikita.sleepcycle.ui.components.HeroNumeral
 import com.nikita.sleepcycle.ui.state.NightScreenContent
+import com.nikita.sleepcycle.ui.state.NightSubtitle
 import com.nikita.sleepcycle.ui.state.OnsetPhase
 import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 
@@ -18,18 +19,26 @@ fun GoingToBedContent(content: NightScreenContent.GoingToBedOrAsleep) {
         OnsetPhase.PROJECTED -> stringResource(R.string.night_a_caption_if_asleep_by, content.onsetTimeLabel)
         OnsetPhase.ACTUAL -> stringResource(R.string.night_a_caption_asleep_since, content.onsetTimeLabel)
     }
-    // Owner request: which alarm is coming and why, glanceable above the hero number - see AlarmModeHeader.kt.
-    val subtitle = when {
-        content.alarmAlreadyRang -> stringResource(R.string.night_a_alarm_already_rang)
-        content.isDeadlineOnly -> stringResource(R.string.night_a_deadline_only_note)
-        else -> stringResource(R.string.night_a_sleep_length, content.sleepLengthHoursLabel)
+    // The precedence between these three is decided once in buildGoingToBedContent, not re-derived here - see
+    // NightSubtitle's own doc (09/21 review's should-fix 7: the old three-way `when` over two raw booleans
+    // lived only here, untestable, and hid that the booleans could both be true at once).
+    val subtitle = when (content.subtitle) {
+        NightSubtitle.ALREADY_RANG -> stringResource(R.string.night_a_alarm_already_rang)
+        NightSubtitle.DEADLINE_ONLY -> stringResource(R.string.night_a_deadline_only_note)
+        NightSubtitle.SLEEP_LENGTH -> stringResource(R.string.night_a_sleep_length, content.sleepLengthHoursLabel)
     }
     androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
+        // Owner request: which alarm is coming and why, glanceable above the hero number - see AlarmModeHeader.kt.
+        // reasonText is already null in the already-rang case (see buildGoingToBedContent), so this needs no
+        // extra check here.
         AlarmModeHeader(modeLabel = content.modeLabel, reasonText = content.reasonText)
         HeroNumeral(
             value = content.alarmTimeLabel,
             caption = caption,
             subtitle = subtitle,
+            // 09/21 review's must-fix 3 decision: the deadline, restored as a plain caption line under the
+            // hero time - see NightScreenContent.GoingToBedOrAsleep's own doc for why and when this is shown.
+            detail = content.deadlineTimeLabel?.let { stringResource(R.string.night_a_deadline_caption, it) },
         )
     }
 }

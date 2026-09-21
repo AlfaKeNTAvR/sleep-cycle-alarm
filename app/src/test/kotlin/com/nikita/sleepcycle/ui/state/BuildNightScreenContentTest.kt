@@ -8,49 +8,83 @@ package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.engine.AlarmMode
-import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.DebugOptions
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class BuildGoingToBedContentTest {
-    private val settings = NightSettings(null, 5)
-    private val view = testEngineView(SleepState.ASLEEP)
-
     @Test fun `full cycles mode labels the morning alarm`() {
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:00", referenceOnset = "2026-09-17T00:00", cycles = 5)
-        val content = buildGoingToBedContent(settings, plan, view, testZone, DebugOptions(), morningAlarmAt = null)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = null)
         assertEquals(AlarmLabel.MORNING, content.modeLabel)
     }
 
     @Test fun `deadline-only mode also labels the morning alarm`() {
         val plan = testAlarmPlan(mode = AlarmMode.DEADLINE_ONLY, wakeAt = "2026-09-17T07:00", referenceOnset = "2026-09-17T00:00")
-        val content = buildGoingToBedContent(settings, plan, view, testZone, DebugOptions(), morningAlarmAt = null)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = null)
         assertEquals(AlarmLabel.MORNING, content.modeLabel)
     }
 
     @Test fun `reason text is the engine's own sentence, unmodified`() {
         val reason = "Asleep since 00:00, 5 of 5 picked cycles fit, alarm 07:00."
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:00", referenceOnset = "2026-09-17T00:00", reason = reason)
-        val content = buildGoingToBedContent(settings, plan, view, testZone, DebugOptions(), morningAlarmAt = null)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = null)
         assertEquals(reason, content.reasonText)
     }
 
     @Test fun `H8 already-rang case shows the real rung time instead of the dash`() {
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, referenceOnset = "2026-09-17T00:00", cycles = 5)
-        val content = buildGoingToBedContent(settings, plan, view, testZone, DebugOptions(), morningAlarmAt = instant("2026-09-17T07:00"))
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = instant("2026-09-17T07:00"), deadline = null)
         assertTrue(content.alarmAlreadyRang)
         assertEquals("07:00", content.alarmTimeLabel)
     }
 
     @Test fun `a genuinely missing alarm with no latched morning time still falls back to the dash`() {
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, referenceOnset = "2026-09-17T00:00", cycles = 5)
-        val content = buildGoingToBedContent(settings, plan, view, testZone, DebugOptions(), morningAlarmAt = null)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = null)
         assertFalse(content.alarmAlreadyRang)
         assertEquals(MISSING_TIME_LABEL, content.alarmTimeLabel)
+    }
+
+    @Test fun `already-rang subtitle suppresses the reason text underneath the mode header`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, referenceOnset = "2026-09-17T00:00", cycles = 5, reason = "some engine reason")
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = instant("2026-09-17T07:00"), deadline = null)
+        assertEquals(NightSubtitle.ALREADY_RANG, content.subtitle)
+        assertNull(content.reasonText)
+    }
+
+    @Test fun `already-rang takes precedence over deadline-only for the subtitle`() {
+        // H8's already-rang case can be reached by a DEADLINE_ONLY plan too, so both conditions can be true at
+        // once (should-fix 7 of the 09/21 review) - already-rang must win, since it is about what already
+        // happened, not what is still ahead.
+        val plan = testAlarmPlan(mode = AlarmMode.DEADLINE_ONLY, wakeAt = null, referenceOnset = "2026-09-17T00:00")
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = instant("2026-09-17T07:00"), deadline = instant("2026-09-17T07:00"))
+        assertEquals(NightSubtitle.ALREADY_RANG, content.subtitle)
+    }
+
+    @Test fun `deadline-only mode picks the deadline-only subtitle and shows no separate deadline caption`() {
+        val plan = testAlarmPlan(mode = AlarmMode.DEADLINE_ONLY, wakeAt = "2026-09-17T07:00", referenceOnset = "2026-09-17T00:00")
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = instant("2026-09-17T07:00"))
+        assertEquals(NightSubtitle.DEADLINE_ONLY, content.subtitle)
+        assertNull(content.deadlineTimeLabel)
+    }
+
+    @Test fun `ordinary sleep-length subtitle carries the deadline as a plain caption`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T06:00", referenceOnset = "2026-09-17T00:00", cycles = 4)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = instant("2026-09-17T07:00"))
+        assertEquals(NightSubtitle.SLEEP_LENGTH, content.subtitle)
+        assertEquals("07:00", content.deadlineTimeLabel)
+    }
+
+    @Test fun `no deadline set means no deadline caption`() {
+        val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T06:00", referenceOnset = "2026-09-17T00:00", cycles = 4)
+        val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = null)
+        assertEquals(NightSubtitle.SLEEP_LENGTH, content.subtitle)
+        assertNull(content.deadlineTimeLabel)
     }
 }
 
@@ -92,10 +126,14 @@ class BuildWokeUpContentTest {
         assertEquals(AlarmLabel.MORNING, content.modeLabel)
     }
 
-    @Test fun `a nap alarm already fired with nothing left to arm still labels nap`() {
+    @Test fun `a nap alarm already fired with nothing left to arm shows no alarm armed`() {
+        // F5 (09/21 review's must-fix 1): rule 7's sliding nap has nothing left to slide to once the wake
+        // alarm has fired, so wakeAt is null here. The old code guessed NAP from the plan's mode alone, which
+        // read as a wrong "Nap alarm" on an ordinary morning right after the owner was woken by the real one.
+        // Nothing is armed, so this must be null, not a guessed label - see alarmModeLabel's own doc.
         val plan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = null)
         val content = buildWokeUpContent(plan, deadline = null, view, testZone, napOnly = true, DebugOptions(), morningAlarmAt = instant("2026-09-17T07:00"))
-        assertEquals(AlarmLabel.NAP, content.modeLabel)
+        assertNull(content.modeLabel)
     }
 
     @Test fun `reason text passes through unmodified`() {
