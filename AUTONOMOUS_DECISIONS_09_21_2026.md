@@ -759,3 +759,198 @@ existing entry's own wording (H8's section and earlier are untouched).
 new `shouldRefuseStaleRearm` unit tests in `PhoneAlarmArmingTest.kt`, plus `J4 replay` and `J4 nudge replay` in
 `TickScheduleRaceTest.kt`). No `R.jar` lock encountered this round. Zero Kotlin compiler warnings on every
 invocation, including a standalone `:app:compileDebugKotlin` run before the first full verify.
+
+---
+
+## Round J5 (2026-09-21): the J4 revert, two more nudge silences, and the doc sweep
+
+Six commits on top of `9cc0bd8`, each verified green before the next started. The first is an owner-approved
+revert and was not re-litigated. Three outside reviewers fed this round; where they disagreed, the disagreement
+is recorded rather than averaged.
+
+### J5.1 - `shouldRefuseStaleRearm` reverted (commit `6ce5e2e`)
+
+Removed the function, its call site, its four unit tests in `PhoneAlarmArmingTest.kt`, the `J4 replay` test in
+`TickScheduleRaceTest.kt` and the mirror in `NightReplay.kt`. A `//` block where the function stood records why,
+so nobody re-adds it; `decisions.md`'s J-section carries the same in owner-facing form.
+
+The guard's premise - "an unchanged target can never be a D8 pull-forward recovery" - is false in two ways, both
+traced: minute rounding (07:41:50 and 07:41:57 both round to 07:44) and deadline clipping (06:27:57 and 06:28:57
+both produce 06:30). Root cause: a tick saves `lastPlan` whether arming SUCCEEDED or FAILED, so equality with the
+saved plan is not evidence an alarm exists on the phone.
+
+**Decision, refusal window.** Recorded the narrow shape rather than the blunt "permanently silent": the window is
+`decisionNow < wakeAt <= realNow`, at most about 2 min, and only the DEADLINE path is fatal. Full-cycles and nap
+targets self-heal into a ring up to about 8 min late, because the absent marker that makes the refusal wrong also
+keeps the spent-target check false. Written down because a future reader deciding whether to revisit the idea
+needs the real severity, not the worst case.
+
+**Disagreement recorded, not averaged.** Two reviewers rated this severe, a third judged it one-shot and bounded.
+The revert was owner-approved regardless, so the rating did not change the action, only how the comment is worded.
+
+**Claim checked and dropped.** The brief listed "a restored or quarantined state file" among the ways to reach the
+bug. A reviewer disputed it and is right: rolling back to an older plan never touches AlarmManager, so whatever
+was armed is still live. The comment now says so explicitly rather than repeating the stronger claim, and names
+`schedulePhoneAlarm`'s `SecurityException` (or a null `AlarmManager`) as the one path that actually makes an arm
+fail.
+
+**Kept from the same J4 commit**, both on their own merits: `PhoneAlarmFiredStore`'s temp-file-and-rename write,
+and the fired-marker-match returning false so a nap does not cancel its own nudge. `clearAlarmFiredStores` now
+also deletes the `.tmp` siblings that write can leave behind on process death, with the temp name built in one
+place (`tempSiblingOf`) so the writer and the sweeper cannot disagree.
+
+### J5.2 - a nap could still cancel its own nudge, by the other ordering (commit `7f60d25`)
+
+J4 covered a firing PRECEDING the arm step's marker read. A firing landing AFTER a genuinely successful arm was
+untouched: the tick cancelled the nudge that same firing had just armed, on the strength of `napAlarmArmed`
+computed earlier in the tick.
+
+**Decision:** stop treating an arm flag as evidence about the nudge, and compare the nudge against the TARGET it
+is being traded for. A nudge due at or after the nap's own `wakeAt` is never superseded - the nap rings first and
+arms its own nudge anyway, so such a nudge is that firing's own or something later. `napAlarmArmed` is KEPT
+alongside it: it still carries FIX4's separate fact that a FAILED arm is no replacement for anything.
+
+**Decision, the tie.** `pendingNudgeAt == wakeAt` is NOT cancelled. At worst the nudge rings alongside the nap it
+duplicates; the alternative risks silence, and this project errs toward ringing.
+
+**Scope note added to `J4 nudge replay`.** That test no longer pins J4 alone - J5's target comparison independently
+prevents the same cancellation, so reverting J4's return change now leaves it passing. Said so in the test rather
+than leaving a docstring claiming more than it verifies, which is the exact failure mode this project has been
+bitten by six times.
+
+### J5.3 - an overdue out-of-bed nudge at boot (commit `9ede9f4`)
+
+`restorePendingOutOfBedNudge` restored only an instant still in the future, so the traced sequence (alarm 06:30,
+nudge 06:45, phone off 06:40, boot 06:46, band awake throughout) lost the follow-up with nothing else able to
+ring. Predates the J series.
+
+**Decision: RING, bounded.** Restored at `now + minAlarmLead` when at most one `outOfBedDelay` overdue; dropped,
+with its record cleared, beyond that.
+
+- *Ring* because the nudge is a promise made by an alarm that already rang, and nothing else can ring once the
+  wake alarm has fired (rule 7's AWAKE branch produces no target either). This app's standing direction on that
+  trade is that a missed ring beats an extra one.
+- *Bounded by `outOfBedDelay`* because a phone off for hours must not boot into an unexplained alarm, and that
+  constant is the nudge's own unit of "long enough to still be in bed". No new constant, no new judgement call.
+- *At `minAlarmLead`, not immediately*, because Android fires a past exact alarm at once, which here means ringing
+  inside the boot storm before the audio and foreground-service paths are reliably up.
+- *The re-armed instant is persisted over the old one*, so the file never describes an alarm that does not exist -
+  the inverse of the stale-future-instant problem `OutOfBedNudgeStore.kt` already documents.
+- *The H7.3 pre-check stays unrestored*, unchanged and for the reason already on the books: no reboot recovery,
+  fail-open.
+
+Also in this commit: `handleBoot` LOGS a failed `schedulePhoneAlarm` instead of discarding the result. That was a
+reviewer catch and is the same class of mistake as J5.1 - treating an intention as evidence.
+
+### J5.4 - a nap cancelled while awake left nothing armed (commit `1bebb12`)
+
+Reviewer-found, and the single thing that reviewer said it would change first. Verified against the code before
+implementing, then reproduced end to end in the harness. The 06:30 alarm arms a 06:45 nudge; the owner dozes off
+at 06:33; a tick arms a 06:53 nap and supersedes the nudge (correct, H7.2); the owner stirs at 06:47; the next
+tick's AWAKE branch has nothing to arm and cancels the nap. No alarm, no nudge, no pre-check.
+
+What hid it: `napAlarm` ends the sliding nap saying "D4's own nudge covers the follow-up", and
+`napSupersedesPendingNudge` cancels that nudge saying the nap replaces it. Each locally true; composed, the second
+removes the first's safety net. Two comments in two files arguing for a net the composition deletes.
+
+**Decision:** a tick that cancels a rule 7 nap because the AWAKE branch returned null, with no nudge pending, arms
+one at `now + outOfBedDelay` with its pre-check. One-shot by construction (it requires the PREVIOUS plan to have
+carried a target, so only the transition tick qualifies). FINISHED plans are excluded - that night is over, not
+waiting on the owner.
+
+**Decision, not shared with `PhoneAlarmReceiver.armOutOfBedNudge`.** The two measure from different instants (a
+firing vs this tick's `decisionNow`) and log against different things. Two call sites is under this project's
+"abstract at three" line; noted in the doc that a third belongs in one function.
+
+### J5.5 - the replay harness (commit `1014bbd`)
+
+**Fixed:** the harness armed the nudge from the instant the alarm was ARMED for; production arms it from the
+receiver's own `now`. Split `fireAlarm` into `firedFor` (what attribution keys on, since production reads the
+armed-for extra, never the delivery time) and `deliveredAt` (what the nudge is measured from). Since the two were
+equal by construction before, delivery lateness had to become expressible at all for the fix to mean anything -
+added as `alarmDelivery` on `advanceTo`, defaulting to zero so every pre-existing test is untouched, and exercised
+by one new test rather than left as an unused knob.
+
+**Not fixed, written down instead**, as a "what this harness does not model" section in its class header: arming
+always succeeds (so no failed arm, revoked permission or failed marker read - exactly the state needed to
+challenge J5.1, which is why its counterexamples had to be traced by hand); firing/marker write/attribution/nudge
+creation are atomic here and four interleavable steps in production; the nudge is never dispatched and its
+pre-check never runs; battery loss does not run boot restoration; sync failure is a boolean rather than the real
+freshness classification; instants keep full precision where production round-trips through epoch millis.
+
+### J5.6 - documentation that contradicted the code (commit `caf0bde`)
+
+Every claim below was checked against the code first, and marked SUPERSEDED IN PLACE rather than deleted.
+
+- `wakeAlarmFiredAt` "has one remaining job, read only by the nap AWAKE branch" - false since H8, doubly so since
+  J1.3. Two readers: `awakeSlidingNapMustStop` and `morningAlarmAlreadyRang`. Corrected in all four places
+  (`WakeAlarm.kt`, `NightState.kt`, `PhoneAlarmFiredStore.kt`, `docs/engine-spec.md`).
+- `shouldArmPhoneAlarm` "the ONE guard, so none of the three can drift" - they have drifted, deliberately: the
+  boot path must not carry the tick's extra guards. Restated as the weaker true claim (a shared floor no path may
+  arm below), in the Kotlin doc and in `app-spec.md`.
+- `morningAlarmAt` "a fixed instant for the whole night" - `latchMorningAlarmAt` replaces it on every non-null
+  full-cycles or deadline-only plan. It is protected from nap overwrites and from erasure, not immutable.
+- The G3 paragraph in `WakeAlarm.kt` said a target ~15 min ahead of `now` means `isAfter(now)` "could never be
+  true" - exactly backwards; it is always true. The conclusion (G3's guard was useless here) survives, the reason
+  is restated: the guard was always satisfied, so it never stopped anything.
+- `asleepNapTarget`'s safety paragraph had the arithmetic backwards in both directions and an invalid conclusion.
+  A later anchor makes the nap LONGER from the true onset, not shorter; its own worked example returns 06:50, not
+  the 06:49:30 the prose implied; and "a missed ring would require an EARLIER target" is not a safety argument,
+  since a later target IS a later ring. Rewritten to the real property: never early, never null, late by exactly
+  `latestFired - referenceOnset`. Also noted that the nudge it leaned on can itself be cancelled by supersession,
+  so it is a real backstop but not a guaranteed one.
+- `NightOrchestrator.kt`'s header named `NightUiSupport.kt` as the other `computeAlarmPlan` call site; it is
+  `NightController.startNight`, and `NightUiSupport` has none.
+- The J3 paragraph claiming "every clock read removed from this function" was TRUE when written, FALSE from J4
+  (which read the clock again for the reverted guard), and true again after J5.1. Recorded as a claim this doc
+  has already been wrong about once, so a reader checks the code rather than the comment.
+- `docs/engine-spec.md`: added `phoneAlarmFiredFor` to the input list (an engine input since J1.3, never listed),
+  and corrected the H8 amendment, which said the spent check keys on the wake-alarm marker rather than
+  `laterOf(wakeAlarmFiredAt, phoneAlarmFiredFor)`.
+- `docs/app-spec.md`: the fired marker is not "the re-arm guard only, never an engine input"; and the tick
+  description had no stale-sync freeze, no commit-time marker re-read, and said the alarm is re-armed "if it
+  changed" when it is re-armed unconditionally and only the LOG LINE is conditional.
+
+### Open questions for the owner
+
+1. **The `.tmp` sweep is one-sided.** `clearAlarmFiredStores` now removes them, but `OutOfBedNudgeStore`'s own
+   temp file has no equivalent sweep and is not part of that bundle by design. Left alone rather than widened
+   without asking.
+2. **The overdue-nudge bound is a judgement call.** `outOfBedDelay` (15 min) is defensible but arbitrary; if the
+   owner would rather a nudge 40 min stale still rang, it is a one-constant change.
+3. **A pre-existing en dash** in `MorningReportContent.kt`'s sleep-stretch label (`start - end` rendered with an
+   en dash) violates the standing no-en-dash rule. Not touched, because it is user-visible output and outside
+   this round; flagged for a decision.
+4. **The correct form of the reverted guard** needs a record of arming SUCCESS - written when `schedulePhoneAlarm`
+   returns true, cleared when that alarm fires or is cancelled. Not built this round; the revert comment says what
+   it would take.
+
+### Regression tests, each confirmed failing before its fix
+
+Every behaviour change this round carries a test verified to FAIL without it, by editing the fix out in place,
+running, capturing the output, and restoring immediately. No scratch copies, nothing written outside the repo.
+
+- J5.2, `OutOfBedNudgeSupersessionTest.kt`, two tests: `expected: <false> but was: <true>`.
+- J5.3, `BootReceiverTest.kt`, two tests: `expected: <2026-09-21T06:48:00Z> but was: <null>` and
+  `expected: <2026-09-21T07:02:00Z> but was: <null>`.
+- J5.4, `TickScheduleRaceTest.J5 replay`: `expected: not <null>`, with the harness trace showing the exact traced
+  shape - `plan NAP wakeAt=03:53:00Z` followed by `plan NAP wakeAt=null` repeating, and no pending nudge.
+- J5.5, `TickScheduleRaceTest.J5 delivery replay`:
+  `expected: <2026-09-21T03:47:00Z> but was: <2026-09-21T03:45:00Z>` - exactly the two-minute delivery lateness.
+
+### Final verify
+
+`JAVA_HOME=.../jdk-21.0.12.1+1 ANDROID_HOME=.../sdk ./gradlew :engine:test :app:testDebugUnitTest :app:lintDebug
+:app:assembleDebug` - `BUILD SUCCESSFUL`, **570 tests, 0 failures, 0 errors, 0 skipped** (baseline 560, net +10:
+minus 5 removed with the reverted guard - four `shouldRefuseStaleRearm` unit tests and `J4 replay` - plus 3 for
+the nudge-target comparison, 4 for the overdue-boot nudge, 7 for the nap-cancellation nudge, and 1 for the
+harness delivery timing). Zero Kotlin compiler warnings, confirmed on a forced
+`:app:compileDebugKotlin :app:compileDebugUnitTestKotlin :engine:compileTestKotlin --rerun-tasks` with all 24
+tasks executing rather than reported up to date.
+
+**`R.jar` lock note.** Hit repeatedly, and NOT transient this time: a Gradle daemon stuck `BUSY` since 03:28 held
+`app/build/.../generateDebugRFile/R.jar` open across a dozen retries and several minutes of waiting. Cleared with
+`./gradlew --stop`, chosen because stopping daemons touches no source, no commits and no build inputs - the worst
+case was a parallel reviewer's in-flight build needing a re-run. Note for next time: the lock was first provoked
+by an optional `clean` that is not part of the prescribed verify command; the prescribed command alone never
+triggered it.
