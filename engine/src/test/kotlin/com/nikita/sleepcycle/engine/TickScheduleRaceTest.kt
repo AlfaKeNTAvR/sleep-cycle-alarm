@@ -1,7 +1,6 @@
 package com.nikita.sleepcycle.engine
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
@@ -22,12 +21,15 @@ import java.time.Duration
  * arm step must hold at once: a target that fired during its own tick's sync is never re-armed a second time,
  * and a target that has never fired is never refused, however expensive that tick's own sync turns out to be.
  *
- * J4 (owner-reported, 2026-09-21) ADDS two more cases, `J4 replay` and `J4 nudge replay`: a residual gap J3
+ * J4 (owner-reported, 2026-09-21) ADDED two more cases, `J4 replay` and `J4 nudge replay`: a residual gap J3
  * left in the same arm step (a stale re-arm racing the fired marker's own write, closed by
  * NightOrchestrator.shouldRefuseStaleRearm) and a behaviour change J3 shipped unnoted in what a marker match
- * returns to the nudge guard (see NightOrchestrator.kt's own J4 docs on `armPhoneAlarmIfNeeded` and
+ * returns to the nudge guard (see NightOrchestrator.kt's own J4 doc on `armPhoneAlarmIfNeeded` and
  * `napSupersedesPendingNudge` for both). Both were verified failing without their own fix, by hand, before
  * being restored - see AUTONOMOUS_DECISIONS_09_21_2026.md for the exact output.
+ *
+ * J5 (owner-approved revert, 2026-09-21) REMOVES `J4 replay` along with the guard it pinned - see the note
+ * where it stood, below. `J4 nudge replay` stays: that half of J4 was a real fix and is untouched.
  */
 class TickScheduleRaceTest {
     /**
@@ -148,38 +150,12 @@ class TickScheduleRaceTest {
         assertEquals(instant("2026-09-21T07:44:00"), replay.wakeAlarmFiredAt, replay.trace())
     }
 
-    @Test fun `J4 replay - a commit racing its own already-armed target's own firing does not stale-rearm it`() {
-        // The residual double-ring window J3 left open (owner-reported, 2026-09-21, NightOrchestrator.kt's own
-        // J4 doc): J3's fix re-reads the fired marker LIVE at commit time, but that marker is written by the
-        // real receiver on a different thread, unsynchronised, with a plain truncating write - there is a real
-        // window where a commit's own read lands just before that write and sees null even though the alarm has
-        // already rung. Modelled here via NightReplay's own documented commit-first tie-break: a tick's own
-        // commit landing at the EXACT same instant its own already-armed, unchanged target fires resolves
-        // commit-first, exactly mirroring "the read happens before the write becomes visible".
-        val replay = nightOwnerTraced()
-
-        // The 06:23:30 tick commits normally first, correctly arming 06:30 - matches "J2 must-fix 4 replay"'s
-        // own setup.
-        replay.advanceTo("2026-09-21T06:23:31")
-
-        // The 06:28:30 tick's own sync takes exactly 90 s, landing its own commit at 06:30:00 exactly - a TIE
-        // with the already-armed 06:30 target's own firing. Pre-J4: phoneAlarmFiredFor is still null at that
-        // instant (the tie resolves commit-first, so the fire has not been processed yet), wakeAt (06:30,
-        // unchanged from the previously committed plan, per J1.1) is still "after" this tick's own decisionNow
-        // (06:28:30), so the old arm step re-armed it anyway - at a real commit instant that has already reached
-        // the target. Android fires a past/at-now exact alarm immediately: a second ring, seconds after the
-        // first. J4 refuses this specific re-arm: same target as what is already armed, already reached by the
-        // real clock at the point of arming.
-        replay.advanceTo("2026-09-21T06:33:00", syncDuration = Duration.ofSeconds(90))
-
-        // The assertion that fails without the fix: no armings entry from the 06:28:30 tick's own commit.
-        assertFalse(replay.armings.any { it.first == instant("2026-09-21T06:28:30") }, replay.trace())
-
-        // The bound this is really about: still exactly one ring, not two.
-        assertEquals(listOf(instant("2026-09-21T06:30:00")), replay.firings.map { it.firedFor }, replay.trace())
-        assertEquals(1, replay.firings.size, replay.trace())
-        assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
-    }
+    // J5 (owner-approved revert, 2026-09-21): a `J4 replay` test stood here, pinning J4's own second arming
+    // guard (`shouldRefuseStaleRearm`) by tying a tick's own commit to the exact instant its already-armed,
+    // unchanged target fires. It was REMOVED with the guard - it existed only for it. See the J5 record above
+    // `shouldArmPhoneAlarm` in NightOrchestrator.kt for why that guard could leave a deadline night permanently
+    // silent, and for the positive "an alarm is actually outstanding" evidence a correct version would need
+    // before anything like it comes back with a test of its own.
 
     @Test fun `J4 nudge replay - a mid-night nap firing during its own tick's sync keeps its own fresh nudge`() {
         // The behaviour-change half of the same owner report (NightOrchestrator.kt's own J4 nudge doc): J3's

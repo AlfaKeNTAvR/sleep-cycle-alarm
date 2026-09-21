@@ -26,9 +26,12 @@ package com.nikita.sleepcycle.night
 // commit-time read of [phoneAlarmFiredFor] ([readPhoneAlarmFiredFor]) could land mid-write and see a truncated,
 // unparsable file - treated identically to "absent" (never throws), so that tick could see null for an alarm
 // that, by real wall-clock time, had already fired. Combined with a stale-but-still-"future" re-arm check, that
-// window is the write-side half of the residual double ring closed by NightOrchestrator.shouldRefuseStaleRearm
-// (its own J4 doc covers the read-side half, and why a torn read alone is not enough to reintroduce it once
-// both halves are fixed). The rename makes the window disappear at its source instead of merely tolerating it.
+// window was the write-side half of a residual double ring whose read-side half J4 tried to close with an
+// arming guard in NightOrchestrator (`shouldRefuseStaleRearm`). J5 (owner-approved revert, 2026-09-21) REVERTED
+// that guard - it could leave a deadline night permanently silent, see the J5 record above
+// `shouldArmPhoneAlarm` in NightOrchestrator.kt - but this write-side half is KEPT, on its own merits: the
+// rename makes the torn-read window disappear at its source instead of merely tolerating it, and process death
+// between the write and the rename leaves the PREVIOUS value on disk rather than a truncated one.
 
 import android.content.Context
 import android.util.Log
@@ -86,17 +89,23 @@ fun saveLastNapAlarmFiredAt(context: Context, firedFor: Instant): Boolean =
 fun readLastNapAlarmFiredAt(context: Context): Instant? = readInstantFile(lastNapAlarmFiredAtFile(context))
 
 /**
- * Deletes all three of this file's stores. Called both by [clearNightState] (this file belongs only to the
+ * Deletes all four of this file's stores. Called both by [clearNightState] (this file belongs only to the
  * night that wrote it; left behind, it would wrongly merge into the very first load of the NEXT night - D3)
  * and by `startNight` (F8: a night that never reached `endNight`, e.g. both the state file and its backup
  * failing to decode, would otherwise leave a stale fired marker live from tick 1 of a night whose own alarm
  * has not fired).
+ *
+ * J5 (reviewer note, 2026-09-21): each store's own `.tmp` sibling goes too. [writeInstantFile]'s temp-file-and-
+ * rename leaves one behind whenever the process dies between the write and the rename, and nothing else ever
+ * removes it - harmless today (nothing reads a `.tmp`), but a file belonging to a finished night should not
+ * outlive it in the app's own files directory.
  */
 fun clearAlarmFiredStores(context: Context) {
-    phoneAlarmFiredFile(context).delete()
-    wakeAlarmFiredFile(context).delete()
-    napAlarmsUsedFile(context).delete()
-    lastNapAlarmFiredAtFile(context).delete()
+    listOf(phoneAlarmFiredFile(context), wakeAlarmFiredFile(context), napAlarmsUsedFile(context), lastNapAlarmFiredAtFile(context))
+        .forEach { file ->
+            file.delete()
+            tempSiblingOf(file).delete()
+        }
 }
 
 /**
@@ -115,10 +124,13 @@ internal fun mergeAlarmFiredStores(
         lastNapAlarmFiredAt = lastNapAlarmFiredAt ?: state.lastNapAlarmFiredAt
     )
 
+/** The sibling [writeInstantFile] writes through before renaming over the real file, and the one [clearAlarmFiredStores] sweeps up - named in one place so the two can never disagree. */
+private fun tempSiblingOf(file: File): File = File(file.parentFile, "${file.name}.tmp")
+
 /** J4: temp-file-then-rename, not a plain truncate-then-write - see this file's own J4 doc for the torn-read window this closes. */
 private fun writeInstantFile(file: File, value: Instant): Boolean =
     try {
-        val temp = File(file.parentFile, "${file.name}.tmp")
+        val temp = tempSiblingOf(file)
         temp.writeText(value.toString())
         if (!temp.renameTo(file)) throw java.io.IOException("renameTo failed for $temp -> $file")
         true

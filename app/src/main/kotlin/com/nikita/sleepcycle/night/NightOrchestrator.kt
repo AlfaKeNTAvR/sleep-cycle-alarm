@@ -56,34 +56,50 @@ private fun currentZone(): ZoneId = ZoneId.systemDefault()
 fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Instant?): Boolean =
     wakeAt != null && wakeAt.isAfter(now) && wakeAt != phoneAlarmFiredFor
 
-/**
- * J4 (owner-reported, 2026-09-21): the second, independent guard [armPhoneAlarmIfNeeded] checks right before
- * actually arming, on top of [shouldArmPhoneAlarm] above. Closes the residual double-ring window J3 left open:
- * [phoneAlarmFiredForNow] (the fired-marker file [armPhoneAlarmIfNeeded] re-reads at commit time) is written by
- * the receiver on the main thread, unsynchronised, with a plain truncating write (see PhoneAlarmFiredStore.kt's
- * own J4 doc for the write-side half of this fix). There is a real window, tens of milliseconds wide, where a
- * commit's own fresh read lands BEFORE that write (or lands ON a torn, half-written file, which
- * [readPhoneAlarmFiredFor] treats identically to absent - never throws) and sees null even though the alarm has
- * already rung. [shouldArmPhoneAlarm] alone cannot catch this: it compares [wakeAt] against [now]
- * (`decisionNow`, sampled once at tick start, per FIX1), not against the real clock at the point arming
- * actually happens - so a target reached by real wall-clock time only DURING this tick's own sync still reads
- * as "still ahead of now" and gets re-armed, an instant already in the past for AlarmManager's own purposes.
- * Android fires a past exact alarm immediately: a second, full-volume ring seconds after the first - on a
- * mid-night nap that is a second 3am ring, not a one-off morning annoyance.
- *
- * [wakeAt] == [previousWakeAt] (this tick's own plan target is UNCHANGED from the plan the last tick actually
- * committed, [NightState.lastPlan]) is the load-bearing half of the guard: it is what tells "a stale re-arm of
- * something already armed" apart from D8's own pull-forward recovery, which always produces a NEW, different
- * target (`now + minAlarmLead`, never the spent instant it replaces - see [shouldKeepPreviousPlan]'s own J2
- * must-fix 1 doc and the J3 doc on [armPhoneAlarmIfNeeded] below for why that recovery must never be refused).
- * A pull-forward target can never equal [previousWakeAt], so this guard can never catch it; an ordinary
- * still-pending re-arm of an unchanged target is refused ONLY once [realNow] has actually reached it - every
- * tick before that keeps re-arming the same unchanged target exactly as before, harmlessly (Android's own
- * re-arm of an identical future instant is a no-op). `internal`, not `private`: JVM-testable directly, and
- * pinned by `TickScheduleRaceTest.kt`'s own `J4 replay` test, which fails without this guard.
- */
-internal fun shouldRefuseStaleRearm(wakeAt: Instant, previousWakeAt: Instant?, realNow: Instant): Boolean =
-    wakeAt == previousWakeAt && !realNow.isBefore(wakeAt)
+// J5 (owner-approved revert, 2026-09-21): `shouldRefuseStaleRearm` WAS TRIED HERE AND REVERTED. Do not re-add
+// it in this shape. J4 put a second arming guard right before schedulePhoneAlarm, refusing to arm whenever this
+// tick's own target equalled the previous plan's target (NightState.lastPlan's own wakeAt) and a freshly re-read
+// real clock had already reached it. Its safety argument was that an unchanged target can never be a D8
+// pull-forward recovery, so the guard could only ever refuse a re-arm of something already armed. That argument
+// is FALSE, and the guard can leave a whole night PERMANENTLY SILENT. Two counterexamples, both traced:
+//
+//  - Minute rounding. Uninterrupted light sleep from 23:00, five cycles, no deadline, raw target 06:30. D8's
+//    own recovery computes `now + minAlarmLead` rounded up to the whole minute, so a recovery decision at
+//    07:41:50 and another at 07:41:57 BOTH produce 07:44. If the first tick's own arm attempt failed, the
+//    second tick's commit landing at 07:44:01 is refused by this guard with nothing armed on the phone.
+//  - Deadline clipping. Light sleep from 00:00, four cycles, raw target 06:00, deadline 06:30. Recovery
+//    decisions at 06:27:57 and at 06:28:57 both produce 06:30, the second one through deadline clipping. A
+//    failed first arm plus a commit at 06:30:01 is refused, and the NEXT tick sees the deadline passed and
+//    finishes the night - nothing having rung at all.
+//
+// The root error: a tick saves NightState.lastPlan whether arming SUCCEEDED or FAILED (see runNightTickLocked's
+// own `newState` copy below - it takes `plan` unconditionally and discards armPhoneAlarmIfNeeded's own result),
+// so equality with the saved plan is NOT evidence that an alarm exists on the phone. The one code path that
+// actually makes an arm fail is schedulePhoneAlarm's own SecurityException (exact-alarm permission revoked) or
+// a null AlarmManager - so a permission revoked and later re-granted mid-night reaches this directly. (A
+// restored or quarantined state file does NOT reach it: rolling back to an older plan never touches
+// AlarmManager, so whatever was armed is still live. Claimed in the original report, checked, and left out
+// here rather than repeated.)
+//
+// The refusal window is narrow and precisely shaped: `decisionNow < wakeAt <= realNow`, i.e. the target falls
+// INSIDE this tick's own sync, at most about 2 minutes wide. Only the DEADLINE path is fatal. For a full-cycles
+// or nap target the same wrong refusal self-heals: the absent fired marker that made the refusal wrong is the
+// same absent marker that keeps the spent-target check false, so the next tick computes a NEW target and arms
+// it - a ring up to about 8 minutes late rather than silence. On a deadline-capped target the pull-forward caps
+// AT the deadline, which is already past, and rule 1 has by then already ended the night, so there is no later
+// tick left to recover. shouldKeepPreviousPlan's own stale-sync freeze refuses nothing by itself, but it
+// GUARANTEES the unchanged-target half of this guard for exactly the window the guard fires in: the two
+// together mean a night whose syncs are failing can never arm in the last 2 minutes before its own target.
+//
+// It also did not achieve what it was added for: a double delivery remains possible in the gap between the
+// fired-marker check and schedulePhoneAlarm itself, because nothing synchronises a tick with PhoneAlarmReceiver.
+// So it cost a permanent-silence path and bought little.
+//
+// The correct version of this idea needs POSITIVE EVIDENCE that an alarm is actually outstanding - a record
+// written when arming SUCCEEDS and cleared when that alarm fires or is cancelled - never equality with a plan
+// that is saved even when arming failed. The OTHER half of the J4 commit is KEPT, both of them genuine:
+// PhoneAlarmFiredStore.kt's own temp-file-and-rename write, and the J4 change that returns false on a
+// fired-marker match so a nap no longer cancels its own nudge (see armPhoneAlarmIfNeeded's own J4 doc below).
 
 /**
  * F6: whether a just-fired real (non-test, non-nudge) alarm should be attributed to the actual wake alarm -
@@ -557,9 +573,10 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  *
  * FIX4: returns whether, after this call, [plan]'s own `wakeAt` was freshly armed by THIS tick - originally
  * (through J3) also true on an already-fired exact match; false when there is nothing to arm (`wakeAt == null`),
- * arming did not happen (already overdue, or refused by [shouldRefuseStaleRearm] below), or failed (exact-alarm
- * permission revoked). [cancelNudgeIfSupersededByNap]'s own guard reads this, so a plan whose own alarm attempt
- * failed never counts as a replacement for the nudge it would otherwise cancel.
+ * arming did not happen (already overdue), or failed (exact-alarm permission revoked).
+ * [cancelNudgeIfSupersededByNap]'s own guard reads this, so a plan whose own alarm attempt failed never counts
+ * as a replacement for the nudge it would otherwise cancel. (J4 briefly added a third refusal here,
+ * `shouldRefuseStaleRearm`; J5 reverted it - see the J5 record above [shouldArmPhoneAlarm].)
  *
  * J4 must-fix (owner-reported, 2026-09-21) NARROWS what "already-fired" contributes to this return value: it no
  * longer counts as a replacement nap for the nudge guard - see [phoneAlarmFiredForNow]'s own J4 paragraph below
@@ -598,7 +615,8 @@ internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPla
  * say, written from scratch for J3's own doc, not the original text carried forward.
  *
  * That original call-site block re-read the real CLOCK right before the past-check, in place of reusing
- * [now]/`decisionNow`. That closed the duplicate-ring bug it describes, but J3 (owner-reported, 2026-09-21) found it opens the opposite one: D8's own pull-forward
+ * [now]/`decisionNow`. That closed the duplicate-ring bug it describes, but J3 (owner-reported, 2026-09-21)
+ * found it opens the opposite one: D8's own pull-forward
  * target sits only [EngineConfig.minAlarmLead] (2 min, rounded up to the next whole minute) past `decisionNow`,
  * and a real dead-band sync can itself cost close to that much (`syncOrFail`'s own two 60 s timeouts) - so
  * whenever a sync outlives the very lead it just produced, the freshly re-read clock has already caught up to
@@ -685,23 +703,9 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         )
         return false
     }
-    // J4 (owner-reported, 2026-09-21): a second, independent guard on top of shouldArmPhoneAlarm above - see
-    // shouldRefuseStaleRearm's own doc for the residual double-ring race this closes (a torn or not-yet-visible
-    // fired-marker read racing the receiver's own write) and why it cannot reintroduce the J3 silence bug (D8's
-    // pull-forward always produces a NEW target, never previousPlan's own wakeAt). nowInstant() here is
-    // deliberately the REAL clock, re-read fresh at this exact point - not `now`/decisionNow, which is stale by
-    // however long this tick's own sync took.
-    if (shouldRefuseStaleRearm(wakeAt, previousPlan?.wakeAt, nowInstant())) {
-        appendNightLog(
-            context, state.startedAt,
-            NightLogEvent(
-                now, "error",
-                mapOf("step" to "phone_alarm", "cause" to "refusing to re-arm unchanged target $wakeAt, already reached by the real clock - avoids a residual double ring (J4)")
-            ),
-            debugNight
-        )
-        return false
-    }
+    // J5: J4's own second guard (shouldRefuseStaleRearm, a fresh real-clock read plus equality with
+    // previousPlan's own wakeAt) stood HERE and was REVERTED - see the J5 record above shouldArmPhoneAlarm for
+    // the two permanent-silence counterexamples it opened and what a correct version of the idea would need.
     val armed = schedulePhoneAlarm(context, wakeAt, alarmLabelFor(plan.mode, wakeAt, state.morningAlarmAt))
     val changed = wakeAt != previousPlan?.wakeAt
     val event = when {
