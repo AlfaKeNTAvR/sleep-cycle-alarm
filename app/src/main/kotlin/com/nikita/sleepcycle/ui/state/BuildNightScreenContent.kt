@@ -74,7 +74,11 @@ fun buildGoingToBedContent(plan: AlarmPlan, zone: ZoneId, debugOptions: DebugOpt
     // the night has moved past it into the already-rang state" - wrong, because ALREADY_RANG is only reachable
     // while the deadline is still ahead (a passed deadline sends the night to FINISHED first, per the engine's
     // own tick order), and that already-rang state is exactly when the owner is deciding whether to go back to
-    // sleep - the one moment this caption matters most. See AUTONOMOUS_DECISIONS_09_21_2026_UI.md.
+    // sleep - the moment this caption is most useful, on the nights that reach it. Round 3 of the 09/21
+    // review's own nit: reaching ALREADY_RANG with a live deadline still needs the band to under-count a cycle
+    // (see the README's simulated-night walkthrough, should-fix 5, for why the debug simulator can never
+    // exercise it) - genuinely rare, not "the one moment" this caption matters. See
+    // AUTONOMOUS_DECISIONS_09_21_2026_UI.md.
     val deadlineTimeLabel = if (subtitle == NightSubtitle.DEADLINE_ONLY) null else deadline?.let { formatClockTime(it, zone) }
     return NightScreenContent.GoingToBedOrAsleep(
         onsetPhase = if (plan.onsetIsProjected) OnsetPhase.PROJECTED else OnsetPhase.ACTUAL,

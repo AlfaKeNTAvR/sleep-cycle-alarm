@@ -263,3 +263,56 @@ race, not a real finding), and a `:app:testDebugUnitTest` run separately caught 
 failures in the same concurrently-edited file's dependency graph (`app/src/test/kotlin/.../night/`, not owned
 by this agent) - both cleared on retry with no changes on this agent's side, confirming they were transient
 races against the other agent's live, uncommitted edit, not caused by this fix.
+
+### Fix 4: the silent swallow in clearOutOfBedNudgePendingAt
+
+`clearOutOfBedNudgePendingAt` ignored `File.delete()`'s return value, unlike its sibling
+`saveOutOfBedNudgePendingAt`'s own check-and-log. Now load-bearing per the review: every OTHER stale-nudge path
+self-heals through `applyPendingOutOfBedNudge`'s `isAfter(now)` guard, but a failed delete on the nap-supersede
+(`NightOrchestrator.kt`) or pre-check-cancel (`OutOfBedPreNudgeCheck.kt`) paths leaves a future instant on disk
+with no alarm behind it, so `isAfter(now)` stays true and the header keeps asserting a nudge time until the
+night ends.
+
+All three call sites (`NightController.kt`, `PhoneAlarmReceiver.kt`, `NightOrchestrator.kt`,
+`OutOfBedPreNudgeCheck.kt` - four, not three) are outside this agent's ownership for this round, so per the
+task's own fallback instruction the check-and-log moved into `OutOfBedNudgeStore.kt` itself:
+`clearOutOfBedNudgePendingAt` now returns `Boolean` (true if the file is gone, whether it was deleted just now
+or was already absent) and logs an error naming the consequence ("a stale future instant may linger on screen
+until the night ends") when `delete()` returns false. Every call site still ignores the return value - Kotlin
+allows discarding a non-Unit expression statement with no warning, so this compiles unchanged and needed no
+edits outside this agent's ownership.
+
+**Flagging for the file owners**: the store can log the failure, but only a call site can actually react to
+it (retry, or surface something to the owner) - that decision still belongs to whoever owns
+`NightController.kt`/`PhoneAlarmReceiver.kt`/`NightOrchestrator.kt`/`OutOfBedPreNudgeCheck.kt`.
+
+No test added: `OutOfBedNudgeStore.kt` takes `Context` directly (`context.filesDir`) and this codebase has no
+Robolectric (or other Android test harness) dependency - confirmed via `WarpedNightSequenceTest.kt`'s and
+`ClockWarpTransitionsTest.kt`'s own file-header notes, both already documenting this exact gap for other
+Context-based stores. Verified by code inspection instead, matching the established pattern.
+
+### Nit: atomic write for the same file the UI now reads on a ticker
+
+`saveOutOfBedNudgePendingAt` used plain truncate-then-write (`File.writeText`); the review noted the UI now
+reads this file every ticker cadence (fix 2 above), so a read landing mid-write sees a truncated, unparsable
+file and logs a spurious "failed to read... treating as absent" error - harmless (self-heals next tick) but
+noisy in logcat. Judged this trivial and fixed it: write to a sibling `.tmp` file, then `File.renameTo` over
+the real one, both within the same app-private directory so the rename is a single atomic filesystem operation
+on Android's Linux kernel (unlike Windows, `rename()` on Linux replaces the target atomically - this path only
+ever runs on-device, never in a JVM unit test, so no Windows caveat applies). Removes the race window entirely
+rather than continuing to just tolerate it.
+
+### Nit: AlarmModeHeader.kt's unenforced time-label invariant - skipped, not trivial
+
+The review noted `AlarmModeHeader.kt:41-46` formats any label with a time when one is present, but nothing in
+the type system stops a future caller from passing a time alongside a non-nudge label the KDoc says never
+carries one. Skipped: enforcing this needs either a sealed type that pairs each `AlarmLabel` with its own
+optional time (a real signature change touching every content builder) or a runtime `require()` (only catches
+it via a test, not the compiler) - neither is a one-line fix, so it did not meet the task's own "trivial" bar.
+
+### Nit: BuildNightScreenContent.kt:76's overstated comment - fixed
+
+"the one moment this caption matters most" overstated how often the already-rang-plus-live-deadline overlap is
+actually reached: fix 5's own investigation below confirms it needs the band to under-count a cycle, which the
+synthetic debug simulator never does - genuinely rare on a real night too, not "the one moment". Reworded to
+say what is actually true: this is the moment the caption is most useful, on the (rare) nights that reach it.
