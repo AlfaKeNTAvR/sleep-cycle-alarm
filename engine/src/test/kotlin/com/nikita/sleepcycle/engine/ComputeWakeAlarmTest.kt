@@ -180,6 +180,20 @@ class ComputeWakeAlarmTest {
         assertEquals(instant("2026-09-17T08:31"), result)
     }
 
+    @Test fun `J1_1 a target that has not rung yet is left alone even inside the lead window`() {
+        // Traced from the owner's own report: onset 23:00, 5 cycles, raw target 06:30 next day. A tick
+        // landing at 06:28:30 (1 min 30 s ahead of the correctly-armed 06:30, inside the 2-minute lead) used
+        // to compute raw < now + minAlarmLead as true and pull the already-correct 06:30 target forward to
+        // 06:31, replacing the correct alarm with a late one - see WakeAlarm.kt's own J1.1 doc. raw being
+        // strictly AFTER now, not merely close to it, is what must decide this, and only raw at or before now
+        // (D8/H8's actual overdue case) may still be pulled forward.
+        val result = computeWakeAlarm(
+            PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T23:00"), null, 5,
+            instant("2026-09-18T06:28:30"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null
+        )
+        assertEquals(instant("2026-09-18T06:30:00"), result)
+    }
+
     // ---- H2: the ASLEEP branch's own target - lastNapAlarmFiredAt + napLength once a nap alarm has already
     // fired for THIS onset, rather than pullForwardIfTooSoon's ordinary 2-minute reprise. Anchored on
     // lastNapAlarmFiredAt itself, NOT on `now`, so the target holds STEADY across every tick until the owner

@@ -173,10 +173,21 @@ private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instan
  * minAlarmLead by the time the write actually landed; the phone alarm has no such rounding need, but the
  * lead itself is still worth a clean whole-minute target). Still capped by the deadline when there is one, even
  * if that means landing closer than minAlarmLead - the deadline is the harder constraint of the two.
+ *
+ * J1.1 (owner-reported, 2026-09-21): [raw] still ahead of [now] is returned untouched, however close - the
+ * lead only ever pulls forward a target that is AT OR BEFORE [now], i.e. already due or overdue. Before this,
+ * `raw.isBefore(now.plus(minAlarmLead))` was true for any tick landing in `(raw - minAlarmLead, raw)`, not
+ * just for an overdue raw: a correctly-armed target that simply had not rung yet got rearmed a minute or two
+ * LATER, replacing the correct alarm in the phone's one AlarmManager slot (request code 2001,
+ * FLAG_UPDATE_CURRENT) with a late one, and the owner saw the alarm visibly jump forward and ring late. C1's
+ * own reasoning for the lead was band-specific - the band write needed processing time before the target
+ * arrived - and does not apply to `AlarmManager.setAlarmClock`, which can be armed arbitrarily close to its
+ * own firing instant. D8 and H8's pull-forward of an overdue or never-rung target (raw at or before now) is
+ * untouched: that is still the whole case the lead exists for.
  */
 private fun pullForwardIfTooSoon(raw: Instant, deadline: Instant?, now: Instant, config: EngineConfig): Instant {
+    if (raw.isAfter(now)) return raw
     val lead = now.plus(config.minAlarmLead)
-    if (!raw.isBefore(lead)) return raw
     val pulled = ceilToWholeMinute(lead)
     return if (deadline != null) minOf(pulled, deadline) else pulled
 }
