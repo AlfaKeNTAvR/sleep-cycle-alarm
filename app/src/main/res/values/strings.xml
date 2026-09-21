@@ -90,6 +90,11 @@
          review's must-fix 1) - what the owner sees when the engine has nothing armed at all, instead of a
          wrong alarm name. -->
     <string name="night_no_alarm_armed">No alarm armed</string>
+    <!-- Round 2 of the 09/21 review, must-fix 1: the out-of-bed nudge's own name plus its pending time, e.g.
+         "Out-of-bed nudge at 07:15" - shown instead of night_no_alarm_armed once the review found that state
+         to be a guaranteed lie for the nudge's own first 15 minutes. %1$s is the alarm's name (see
+         alarm_label_out_of_bed below), %2$s is its time. -->
+    <string name="night_alarm_mode_header_with_time">%1$s at %2$s</string>
 
     <!-- Night screen: state A -->
     <string name="night_a_caption_if_asleep_by">If you fall asleep by %1$s</string>
@@ -107,7 +112,12 @@
     <string name="night_b_timeline_header">Fall back asleep by %1$s</string>
     <string name="night_c_timeline_header">No full cycle fits before %1$s</string>
     <string name="night_c_nap_title">Nap: %1$s</string>
-    <string name="night_c_nap_description">Alarm rings 20 min after you fall asleep, before deep sleep.</string>
+    <!-- Round 2 of the 09/21 review, should-fix 8: worded "If you fall back asleep" rather than a flat
+         present-tense promise - the old wording ("Alarm rings 20 min after you fall asleep") read as
+         asserting a running timer right under the mode header, which on F5's real "no alarm armed" case (this
+         card shows regardless of whether a nap alarm is actually armed right now) looked like a direct
+         contradiction at a glance. This says what happens IF you fall back asleep, not what is happening now. -->
+    <string name="night_c_nap_description">If you fall back asleep, a nap alarm rings 20 min later, before deep sleep.</string>
     <string name="night_alarm">Alarm</string>
     <string name="night_alarm_estimate">~%1$s</string>
     <string name="night_tonight_so_far">Tonight so far</string>

@@ -31,6 +31,7 @@ import com.nikita.sleepcycle.night.uiTickerIntervalMillis
 import com.nikita.sleepcycle.night.observedNightState
 import com.nikita.sleepcycle.night.publishNightState
 import com.nikita.sleepcycle.night.readAppSettings
+import com.nikita.sleepcycle.night.readOutOfBedNudgePendingAt
 import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
@@ -146,6 +147,15 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val morningReportEndedAt = MutableStateFlow<Instant?>(null)
     private val cachedMorningReport = MutableStateFlow<CachedMorningReport?>(null)
     private val errorMessage = MutableStateFlow<String?>(null)
+    /**
+     * Round 2 of the 09/21 review, must-fix 1: the out-of-bed nudge's own pending fire instant
+     * (`OutOfBedNudgeStore.kt`), re-read alongside [now] on the same ticker cadence (see
+     * [watchScreenVisibilityTicker]) and once more in [refreshStatuses] on resume - it is armed by
+     * `PhoneAlarmReceiver` in the background, outside any Flow this ViewModel already observes, so this is the
+     * only way the Night screen finds out. A plain synchronous file read, the same pattern
+     * [currentPermissionStatus] and [isGadgetbridgeInstalled] already use for other Android-only reads.
+     */
+    private val pendingOutOfBedNudgeAt = MutableStateFlow<Instant?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
 
     private val appSettings: StateFlow<AppSettings?> =
@@ -162,8 +172,12 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         combine(permissionStatus, connectionTest, nightLogFiles, confirmingEndNight, endingNight, ::ExtraInputs),
         combine(showingMorningReport, morningReportEndedAt, cachedMorningReport, ::ReportInputs),
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
-        errorMessage,
-    ) { core, extra, report, debugInputs, error -> toUiState(core, extra, report, debugInputs, error) }
+        // Bundled with errorMessage rather than added as a 6th top-level flow: kotlinx.coroutines' combine has
+        // fixed-arity overloads only up to 5 flows.
+        combine(errorMessage, pendingOutOfBedNudgeAt, ::Pair),
+    ) { core, extra, report, debugInputs, errorAndNudge ->
+        toUiState(core, extra, report, debugInputs, errorAndNudge.first, errorAndNudge.second)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(TICKER_INTERVAL_MS), UiState.initial())
 
     init {
@@ -173,7 +187,14 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         watchNightStateClearedWhileViewing()
     }
 
-    private fun toUiState(core: CoreInputs, extra: ExtraInputs, report: ReportInputs, debugInputs: DebugInputs, error: String?): UiState {
+    private fun toUiState(
+        core: CoreInputs,
+        extra: ExtraInputs,
+        report: ReportInputs,
+        debugInputs: DebugInputs,
+        error: String?,
+        pendingOutOfBedNudgeAt: Instant?,
+    ): UiState {
         val settings = core.appSettings ?: return UiState.initial()
         val engineView = when {
             report.showingMorningReport -> report.cachedMorningReport?.engineView
@@ -198,6 +219,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             debugOptions = debug.effectiveOptions(),
             simulatedSleepEvents = debugInputs.simulatedSleepEvents,
             confirmingDebugNightStart = debugInputs.confirmingDebugNightStart,
+            pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt,
             errorMessage = error,
         )
     }
@@ -283,6 +305,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                     val interval = uiTickerIntervalMillis(warp?.speed ?: 1)
                     while (true) {
                         now.value = nowInstant()
+                        // Round 2 of the 09/21 review, must-fix 1: re-read alongside now so the nudge shows up
+                        // (and disappears once cancelled/fired) on the same cadence as everything else on screen.
+                        pendingOutOfBedNudgeAt.value = readOutOfBedNudgePendingAt(context)
                         delay(interval)
                     }
                 }
@@ -303,6 +328,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private fun refreshStatuses() {
         permissionStatus.value = currentPermissionStatus(context)
         gadgetbridgeInstalled.value = isGadgetbridgeInstalled(context)
+        pendingOutOfBedNudgeAt.value = readOutOfBedNudgePendingAt(context)
     }
 
     /** Called from the Activity on every resume: re-checks permissions/Gadgetbridge, re-syncs if the night screen is showing, and resets idle debug switches (A1) - this is the app's own definition of "opened". */

@@ -19,6 +19,9 @@ import java.time.ZoneId
  * Builds the night screen's state. While [showingMorningReport] is true, [engineView] must be the view captured
  * just before `endNight` was called (the night state is cleared by then, so it cannot be recomputed); otherwise
  * [engineView] is `buildNightEngineView(nightState, now)`. Returns null when there is nothing to show at all.
+ * [pendingOutOfBedNudgeAt] is the out-of-bed nudge's own pending fire instant (`OutOfBedNudgeStore.kt`'s
+ * `readOutOfBedNudgePendingAt`, resolved by the caller since it is disk I/O) - see [applyPendingOutOfBedNudge]
+ * for what it corrects (round 2 of the 09/21 review, must-fix 1).
  */
 fun buildNightUiState(
     nightState: NightState?,
@@ -29,6 +32,7 @@ fun buildNightUiState(
     morningReportEndedAt: Instant?,
     confirmingEndNight: Boolean,
     endingNight: Boolean = false,
+    pendingOutOfBedNudgeAt: Instant? = null,
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
@@ -66,7 +70,7 @@ fun buildNightUiState(
         )
     }
 
-    val (content, endAction) = when (plan.mode) {
+    val (rawContent, endAction) = when (plan.mode) {
         AlarmMode.FINISHED -> buildFinishedContent(plan) to EndNightAction.END
         // Asleep again for the nap: asleep-style wording, not "you slept" - there is no completed
         // stretch to report yet, just the short nap alarm ahead.
@@ -79,6 +83,8 @@ fun buildNightUiState(
             SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(plan, zone, state.debugOptions, state.morningAlarmAt, state.settings.deadline) to EndNightAction.STOP
         }
     }
+    // Round 2 of the 09/21 review, must-fix 1: see applyPendingOutOfBedNudge's own doc.
+    val content = applyPendingOutOfBedNudge(rawContent, pendingOutOfBedNudgeAt, now, zone)
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
         activeDebugSwitches = debugSwitches,

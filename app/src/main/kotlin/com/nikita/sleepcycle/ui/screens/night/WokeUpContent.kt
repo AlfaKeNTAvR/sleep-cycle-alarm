@@ -21,7 +21,7 @@ import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 fun WokeUpContent(content: NightScreenContent.WokeUp) {
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         // Owner request: which alarm is coming and why, glanceable above the hero number - see AlarmModeHeader.kt.
-        AlarmModeHeader(modeLabel = content.modeLabel, reasonText = content.reasonText)
+        AlarmModeHeader(modeLabel = content.modeLabel, modeLabelTimeLabel = content.modeLabelTimeLabel, reasonText = content.reasonText)
         HeroNumeral(
             caption = stringResource(R.string.night_woke_caption),
             value = content.sleptDurationLabel,

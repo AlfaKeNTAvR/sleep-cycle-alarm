@@ -43,11 +43,16 @@ class BuildGoingToBedContentTest {
         assertEquals("07:00", content.alarmTimeLabel)
     }
 
-    @Test fun `a genuinely missing alarm with no latched morning time still falls back to the dash`() {
+    @Test fun `a genuinely missing alarm with no latched morning time falls back to the dash and no subtitle`() {
+        // Should-fix 9 of the 09/21 review round 2: this defensive-only branch (a partially restored state
+        // file - wakeAt and morningAlarmAt both null) used to fall through to NightSubtitle.SLEEP_LENGTH,
+        // which would have shown "X h of sleep" next to the dash and "no alarm armed" - a promise nothing here
+        // backs up. NightSubtitle.UNKNOWN suppresses that subtitle line instead.
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, referenceOnset = "2026-09-17T00:00", cycles = 5)
         val content = buildGoingToBedContent(plan, testZone, DebugOptions(), morningAlarmAt = null, deadline = null)
         assertFalse(content.alarmAlreadyRang)
         assertEquals(MISSING_TIME_LABEL, content.alarmTimeLabel)
+        assertEquals(NightSubtitle.UNKNOWN, content.subtitle)
     }
 
     @Test fun `already-rang subtitle suppresses the reason text underneath the mode header`() {

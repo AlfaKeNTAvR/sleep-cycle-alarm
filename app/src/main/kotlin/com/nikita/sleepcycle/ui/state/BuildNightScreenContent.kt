@@ -57,9 +57,13 @@ fun buildGoingToBedContent(plan: AlarmPlan, zone: ZoneId, debugOptions: DebugOpt
         else -> MISSING_TIME_LABEL
     }
     // NightSubtitle's own precedence: already-rang beats deadline-only, since a DEADLINE_ONLY plan can also be
-    // H8's already-rang case (both booleans can be true at once - see NightSubtitle's own doc).
+    // H8's already-rang case (both booleans can be true at once - see NightSubtitle's own doc). Round 2 of the
+    // 09/21 review, should-fix 9: wakeAt == null with alarmAlreadyRang false means morningAlarmAt is null too
+    // (the only other way to reach a null wakeAt here) - the defensive fallback with nothing latched to
+    // explain it, which must not fall through to SLEEP_LENGTH's "X h of sleep" promise.
     val subtitle = when {
         alarmAlreadyRang -> NightSubtitle.ALREADY_RANG
+        wakeAt == null -> NightSubtitle.UNKNOWN
         isDeadlineOnly -> NightSubtitle.DEADLINE_ONLY
         else -> NightSubtitle.SLEEP_LENGTH
     }
@@ -169,3 +173,30 @@ fun buildMorningReportContent(
  */
 internal fun alarmModeLabel(plan: AlarmPlan, morningAlarmAt: Instant?): AlarmLabel? =
     plan.wakeAt?.let { alarmLabelFor(plan.mode, it, morningAlarmAt) }
+
+/**
+ * Round 2 of the 09/21 review, must-fix 1: every "no alarm armed" reading (`modeLabel == null`) on states A and
+ * C co-occurs with a real armed alarm the screen was not naming - the out-of-bed nudge. `PhoneAlarmReceiver`
+ * arms it unconditionally on every real (morning or nap) alarm firing, 15 minutes out, and nothing on this
+ * screen's own data path knew about it: the nap-supersede path needs a non-null `wakeAt`, the ring screen's
+ * Stop does not cancel it, and the pre-nudge check only cancels on a confirmed ASLEEP reading. So "No alarm
+ * armed" was a guaranteed lie for the nudge's own first 15 minutes, every single time.
+ *
+ * Applied once, after content is built, rather than threading `pendingOutOfBedNudgeAt` into every
+ * content-builder: only [NightScreenContent.GoingToBedOrAsleep] and [NightScreenContent.WokeUp] can ever reach
+ * a null [modeLabel][NightScreenContent.GoingToBedOrAsleep.modeLabel] in the first place (see
+ * [alarmModeLabel]'s own doc) - [NightScreenContent.NapAsleep] cannot (should-fix 5 of round 2 pins this), so
+ * it is left untouched here on purpose. [pendingOutOfBedNudgeAt] must still be ahead of [now]: a stale/past
+ * instant (the nudge already fired, or the read raced a cancel) must not resurrect a dead alarm on screen.
+ */
+internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingOutOfBedNudgeAt: Instant?, now: Instant, zone: ZoneId): NightScreenContent {
+    if (pendingOutOfBedNudgeAt == null || !pendingOutOfBedNudgeAt.isAfter(now)) return content
+    val timeLabel = formatClockTime(pendingOutOfBedNudgeAt, zone)
+    return when {
+        content is NightScreenContent.GoingToBedOrAsleep && content.modeLabel == null ->
+            content.copy(modeLabel = AlarmLabel.OUT_OF_BED, modeLabelTimeLabel = timeLabel)
+        content is NightScreenContent.WokeUp && content.modeLabel == null ->
+            content.copy(modeLabel = AlarmLabel.OUT_OF_BED, modeLabelTimeLabel = timeLabel)
+        else -> content
+    }
+}

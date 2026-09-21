@@ -17,7 +17,9 @@ import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 fun NapAsleepContent(content: NightScreenContent.NapAsleep) {
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         // Owner request: which alarm is coming and why, glanceable above the hero number - see AlarmModeHeader.kt.
-        AlarmModeHeader(modeLabel = content.modeLabel, reasonText = content.reasonText)
+        // NapAsleep has no modeLabelTimeLabel field of its own - see its own KDoc (its modeLabel should never
+        // be null in practice, unlike GoingToBedOrAsleep/WokeUp), so this is always null.
+        AlarmModeHeader(modeLabel = content.modeLabel, modeLabelTimeLabel = null, reasonText = content.reasonText)
         HeroNumeral(
             value = content.alarmTimeLabel,
             caption = stringResource(R.string.night_nap_asleep_caption, content.onsetTimeLabel),

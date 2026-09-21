@@ -21,8 +21,15 @@ enum class OnsetPhase { PROJECTED, ACTUAL }
  * true for the same plan (a DEADLINE_ONLY plan can also be H8's already-rang case), so a three-way `when` over
  * two raw booleans in the composable both hides that overlap and puts it somewhere nothing can test it.
  * [ALREADY_RANG] wins because it is about what already happened; [DEADLINE_ONLY] is about what is still ahead.
+ * [UNKNOWN] (round 2 of the 09/21 review, should-fix 9) is the defensive fallback that remains once
+ * [ALREADY_RANG] is ruled out: `wakeAt == null` with no [GoingToBedOrAsleep.alarmAlreadyRang] either, meaning
+ * [NightState.morningAlarmAt] has nothing latched to fall back on - a partially restored state file, not a
+ * state a normal night reaches. The composable shows no subtitle line at all for it, the same choice
+ * [MISSING_TIME_LABEL] already makes for the hero time in this same branch: [SLEEP_LENGTH]'s "X h of sleep"
+ * promise would otherwise sit next to a bare dash and a "no alarm armed" header, asserting a sleep length the
+ * screen has no armed alarm or known onset to back up.
  */
-enum class NightSubtitle { ALREADY_RANG, DEADLINE_ONLY, SLEEP_LENGTH }
+enum class NightSubtitle { ALREADY_RANG, DEADLINE_ONLY, SLEEP_LENGTH, UNKNOWN }
 
 /** Which button/confirmation wording the end-night action uses, per screen. */
 enum class EndNightAction { STOP, IM_UP, END }
@@ -61,6 +68,11 @@ sealed interface NightScreenContent {
      * question live in the ALREADY_RANG state (round 2 of the 09/21 review, must-fix 2: an earlier version of
      * this also hid it for ALREADY_RANG, reasoning the deadline "no longer matters" there - wrong, since
      * ALREADY_RANG is only reachable while the deadline is still ahead; see AUTONOMOUS_DECISIONS_09_21_2026_UI.md).
+     * [modeLabelTimeLabel] is round 2's must-fix 1 fix: null whenever [modeLabel] is not
+     * [AlarmLabel.OUT_OF_BED], and the out-of-bed nudge's own pending fire time when it is - see
+     * [applyPendingOutOfBedNudge] for when [modeLabel] gets overridden to [AlarmLabel.OUT_OF_BED] in the first
+     * place. Without a visible time, "Out-of-bed nudge" on its own reads as generic wording rather than a
+     * concrete alarm that is about to ring.
      */
     data class GoingToBedOrAsleep(
         val onsetPhase: OnsetPhase,
@@ -70,6 +82,7 @@ sealed interface NightScreenContent {
         val subtitle: NightSubtitle,
         val deadlineTimeLabel: String?,
         val modeLabel: AlarmLabel?,
+        val modeLabelTimeLabel: String? = null,
         val reasonText: String?,
         val alarmAlreadyRang: Boolean,
     ) : NightScreenContent
@@ -100,7 +113,10 @@ sealed interface NightScreenContent {
      * nothing left to arm: the reproduction traced by the 09/21 review (no deadline, 5 cycles, the morning
      * alarm rings at 07:00, the band reports AWAKE at 07:05, rule 7's sliding nap has nothing left to slide to
      * because the wake alarm already fired) is exactly this case, and it must read "no alarm armed", not a
-     * bold, wrong "Nap alarm" moments after the owner was woken by the real one.
+     * bold, wrong "Nap alarm" moments after the owner was woken by the real one. That same F5 case is exactly
+     * where the review found the "no alarm armed" wording itself to be a lie: the out-of-bed nudge armed by the
+     * morning alarm's own firing is still pending for the next 15 minutes. [modeLabelTimeLabel]: see
+     * [GoingToBedOrAsleep]'s own doc.
      */
     data class WokeUp(
         val napOnly: Boolean,
@@ -117,6 +133,7 @@ sealed interface NightScreenContent {
         val alarmTimeLabel: String?,
         val alarmIsEstimate: Boolean,
         val modeLabel: AlarmLabel?,
+        val modeLabelTimeLabel: String? = null,
         val reasonText: String,
     ) : NightScreenContent
 

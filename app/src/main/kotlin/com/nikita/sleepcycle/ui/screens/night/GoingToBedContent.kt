@@ -22,16 +22,19 @@ fun GoingToBedContent(content: NightScreenContent.GoingToBedOrAsleep) {
     // The precedence between these three is decided once in buildGoingToBedContent, not re-derived here - see
     // NightSubtitle's own doc (09/21 review's should-fix 7: the old three-way `when` over two raw booleans
     // lived only here, untestable, and hid that the booleans could both be true at once).
+    // UNKNOWN (round 2 of the 09/21 review, should-fix 9): no subtitle line at all - see NightSubtitle's own
+    // doc. Nothing latched to back up SLEEP_LENGTH's "X h of sleep" promise in this defensive-only branch.
     val subtitle = when (content.subtitle) {
         NightSubtitle.ALREADY_RANG -> stringResource(R.string.night_a_alarm_already_rang)
         NightSubtitle.DEADLINE_ONLY -> stringResource(R.string.night_a_deadline_only_note)
         NightSubtitle.SLEEP_LENGTH -> stringResource(R.string.night_a_sleep_length, content.sleepLengthHoursLabel)
+        NightSubtitle.UNKNOWN -> null
     }
     androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         // Owner request: which alarm is coming and why, glanceable above the hero number - see AlarmModeHeader.kt.
         // reasonText is already null in the already-rang case (see buildGoingToBedContent), so this needs no
         // extra check here.
-        AlarmModeHeader(modeLabel = content.modeLabel, reasonText = content.reasonText)
+        AlarmModeHeader(modeLabel = content.modeLabel, modeLabelTimeLabel = content.modeLabelTimeLabel, reasonText = content.reasonText)
         HeroNumeral(
             value = content.alarmTimeLabel,
             caption = caption,

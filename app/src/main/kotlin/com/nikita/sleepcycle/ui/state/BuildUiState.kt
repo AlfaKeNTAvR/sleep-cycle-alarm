@@ -16,7 +16,8 @@ import java.time.ZoneId
 /**
  * Derives the whole app's [UiState] from settings, night state, the engine's view of it, and every UI-only
  * input. [debugOptions] must already have passed through [com.nikita.sleepcycle.night.resolveDebugOptions] -
- * this function does not itself know whether the build is debug or release.
+ * this function does not itself know whether the build is debug or release. [pendingOutOfBedNudgeAt]: see
+ * [buildNightUiState]'s own doc (round 2 of the 09/21 review, must-fix 1).
  */
 fun buildUiState(
     appSettings: AppSettings,
@@ -36,6 +37,7 @@ fun buildUiState(
     simulatedSleepEvents: List<SimulatedSleepEvent> = emptyList(),
     confirmingDebugNightStart: Boolean = false,
     endingNight: Boolean = false,
+    pendingOutOfBedNudgeAt: Instant? = null,
     errorMessage: String?,
 ): UiState {
     val nightActive = nightState != null
@@ -45,7 +47,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingOutOfBedNudgeAt),
         logs = buildLogsUiState(nightLogFiles, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
         errorMessage = errorMessage,
