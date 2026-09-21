@@ -341,3 +341,65 @@ work), 0 failures, 0 Kotlin compiler warnings. Two more transient races against 
 uncommitted `engine/`/`night/` work this session: one `:app:lintAnalyzeDebug` internal PSI crash and one
 `:engine:compileKotlin` type-mismatch in `WakeAlarm.kt` (a file mid-edit by the other agent, not touched by
 this agent) - both cleared on a bare retry with no changes on this agent's side.
+
+### Fix 5: the README walkthrough branch to actually reach the already-rang header
+
+Round 2 (should-fix 7, above) already traced why steps 9-12 as written can never reach state A's already-rang
+header: `computeWakeAlarm` in `WakeAlarm.kt` explicitly exempts `PlanRule.NAP` from the `morningAlarmAlreadyRang`
+check (`if (rule != PlanRule.NAP && ...)`, `WakeAlarm.kt:45`), `asleepNapTarget` has a non-nullable `Instant`
+return type (never null, `WakeAlarm.kt:192`), and `buildNightUiState`'s own `when` routes `AlarmMode.NAP` to
+`buildNapAsleepContent`/`buildWokeUpContent(napOnly = true)`, never `buildGoingToBedContent` - so the nap-ring
+path steps 9-12 deliberately walk into can never produce `GoingToBedOrAsleep.alarmAlreadyRang`. Verified all
+three claims myself against the current code (cited above) rather than taking the review's own trace on trust,
+per the task's own instruction.
+
+Added the branch round 2 left as an open gap: a callout inserted after step 8 (not a new numbered step, so
+steps 9-15's own numbering is untouched) that leaves **Asleep on** continuously instead of toggling it, waiting
+the real ~4.5 real minutes at 60x for the picked 4.5 h budget to let the morning alarm ring for real while the
+band still reads ASLEEP. Traced the expected result against `buildGoingToBedContent`/`applyPendingOutOfBedNudge`
+directly rather than guessing: `wakeAt` goes null (the just-fired instant is now spent per
+`morningAlarmAlreadyRang`), `morningAlarmAt` stays latched, so `alarmAlreadyRang` is true, the hero number shows
+the latched real ring time (not `MISSING_TIME_LABEL`), the subtitle is `ALREADY_RANG`, `reasonText` is
+suppressed (should-fix 5 of round 2), and - since `modeLabel` is now null - `applyPendingOutOfBedNudge` fires
+unconditionally, showing "Out-of-bed nudge at HH:mm" for the 15-minute-out nudge `PhoneAlarmReceiver` arms on
+every real ring. After the nudge itself rings and is cleared, the header falls back to "No alarm armed".
+
+Verified the deadline-caption caveat too, rather than copying it: `PlanSteps.kt`'s `chooseMode` only returns
+`DEADLINE_ONLY` when `cycles == 0` (no full cycle owed) - true right after the picked budget is fully spent -
+and once that happens, `computeWakeAlarm`'s `DEADLINE_ONLY` branch computes `raw = deadline`, a LATER instant
+than the just-fired `wakeAlarmFiredAt`, so `morningAlarmAlreadyRang(raw, wakeAlarmFiredAt, phoneAlarmFiredFor)`
+is false (`!raw.isAfter(latestFired)` is false when `raw` is after it) and `wakeAt` comes back non-null at the
+deadline - meaning `alarmAlreadyRang` is false and state A never enters the already-rang branch at all with the
+deadline on. This confirms the review's own reasoning: reaching the already-rang header AND the deadline
+caption together needs the band to under-count a cycle (so `wakeAt` stays null even with a deadline present),
+which the synthetic simulator never does. Wrote the branch with the deadline switch off and did not list the
+caption as reachable, per the task's own instruction not to promise it.
+
+No code touched for this fix - README.md only. Verify (docs change, run for safety per the task's own "verify
+after each" instruction): BUILD SUCCESSFUL, 543 tests, 0 failures, 0 Kotlin compiler warnings. Several more
+transient failures surfaced and cleared during this fix's own verify runs, all inside `engine/` (explicitly out
+of this agent's ownership) and all traced to the same concurrent, still-uncommitted, actively-iterating work
+(`engine/src/test/.../NightReplay.kt` and `TickScheduleRaceTest.kt` changed between consecutive verify runs,
+different `TickScheduleRaceTest` sub-test names failing each time) - not this agent's files, not caused by this
+fix, matching the exact precedent already logged for round 1's own verify section above.
+
+### Process note: the shared git index briefly mixed this session's files into the other agent's commit
+
+This repo path is shared directly with a concurrent agent's session (not an isolated worktree per agent), so
+the git index is shared too. After staging fix 5's two files (`README.md`, this decisions file), `git status`
+unexpectedly also showed the other agent's own in-progress files as staged (`NightOrchestrator.kt`,
+`engine/.../NightReplay.kt`, `TickScheduleRaceTest.kt`, `AUTONOMOUS_DECISIONS_09_21_2026.md`) - its own `git
+add` had landed in the same staging area as this agent's. Unstaged those four (`git restore --staged`,
+non-destructive) before fix 4's and fix 1's commits above, keeping both clean.
+
+For fix 5, by the time this was caught, the other agent had already committed with fix 5's two files still
+staged from this agent's own `git add` (commit `87ed47f`, "Stop re-arming a target that already fired during
+its own tick's sync (J2 must-fix 4)" - its message describing only its own change, its diff also carrying fix
+5's). The other agent then amended that same commit (now `90e8c2d`, same message, same parent) - and its new
+tree no longer carries fix 5's two files, meaning it independently noticed and unstaged them before amending.
+Net result once both sessions settled: this agent's four earlier commits (`fd7f36e`, `89e1b5c`, `1b5a087`,
+`2b002b1`) were untouched throughout (same hashes before and after), and fix 5's two files ended up back on
+disk as a clean, uncommitted diff with nothing else mixed in - committed on its own immediately below. Nothing
+was lost, and no history rewrite was needed on this agent's side. Flagging for the owner as a process anomaly
+worth knowing about: this repo path was not safe for two agents to work in at once without separate worktrees,
+even though it self-resolved this time.

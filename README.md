@@ -105,6 +105,24 @@ which means a simulated night dies if the app process is killed, unlike a real o
    entry right there. Tap back - the Night screen now shows a real onset, an amber **"Morning alarm"** label
    with the engine's own reason underneath it, and the alarm itself 4.5 h away in virtual time, which at 60x
    is a few real minutes out.
+
+   **Branch: reaching the already-rang header.** Steps 9-12 below toggle Asleep off and back on repeatedly,
+   which burns the night's budget into nap territory before the morning alarm ever reaches its own 4.5 h
+   target - a nap ring is exempt from the "already rang" check that a real morning-alarm ring is not, so that
+   path can never show what this branch shows. To see it, run this instead of step 9, on its own pass: leave
+   **Asleep on** and do not touch it again, and wait about 4.5 real minutes at 60x (the picked length, with no
+   toggling to interrupt it) for the morning alarm to ring on its own. When it rings, tap **Stop**, not **I'm
+   awake**, and return to the Night screen. Expected: the header reads **"Out-of-bed nudge at HH:mm"**, the
+   time being 15 virtual minutes after the ring; the hero number shows the morning alarm's own time (the one
+   that just rang, not a dash); the subtitle reads **"Already rang"**; and there is no reason line underneath.
+   Then wait about 15 real seconds more for that nudge to ring on its own, tap **Stop** again, and return: the
+   header falls back to **"No alarm armed"**. One caption is not reachable this way: the deadline caption this
+   same already-rang state can also show (see must-fix 2 of the second review round) needs the deadline switch
+   on, but turning it on changes the post-firing plan to DEADLINE_ONLY - armed at the deadline itself, which
+   never reaches "already rang" at all. Reaching both the already-rang header and the deadline caption
+   together needs the band to under-count a cycle, which this synthetic simulator never does, so keep the
+   deadline switch off for this branch and do not expect that caption. Once done, start a fresh walkthrough
+   from step 6 to continue with step 9 below.
 9. Wait about a minute of real time (roughly an hour of virtual sleep at 60x - `resolveEngineConfig` ignores
    the debug options, so the cycle length stays the real 90 minutes and the owed-cycle count rounds to
    nearest; a round needs a full virtual hour before the subtitle visibly moves, so "wait a few seconds"
