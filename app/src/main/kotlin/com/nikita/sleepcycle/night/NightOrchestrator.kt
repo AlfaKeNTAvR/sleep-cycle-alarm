@@ -173,9 +173,17 @@ internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? 
  * a nap, that premise is false, and letting the nudge ring anyway would wake them mid-nap at full alarm
  * volume ([com.nikita.sleepcycle.alarm.AlarmRingService.startRinging] is deliberately non-idempotent, F1).
  * `internal`, not `private`: the one pure decision seam, JVM-testable directly without a Context.
+ *
+ * H8 ADDS `!plan.onsetIsProjected`, the missing half of "a tick has detected them asleep again": a NAP plan
+ * is rule 7, which covers the owner lying AWAKE too, and such a plan carries a real alarm of its own now (the
+ * still-pending morning alarm - see WakeAlarm.kt's `awakeNapTarget`; before H8 it was a slid nap, equally
+ * non-null). Either way the nudge was being cancelled while the owner was awake and not getting up, which is
+ * the exact situation the nudge exists for. A NAP plan measured from a REAL onset (`onsetIsProjected` false)
+ * is the only one that means the owner is actually asleep again - a projected onset is `now + fallAsleepEstimate`,
+ * a guess made precisely because they are not.
  */
 internal fun napSupersedesPendingNudge(plan: AlarmPlan, pendingNudgeAt: Instant?): Boolean =
-    plan.mode == AlarmMode.NAP && plan.wakeAt != null && pendingNudgeAt != null
+    plan.mode == AlarmMode.NAP && plan.wakeAt != null && !plan.onsetIsProjected && pendingNudgeAt != null
 
 /**
  * H7.2: cancels a still-pending out-of-bed nudge once a tick arms a nap - see [napSupersedesPendingNudge]'s

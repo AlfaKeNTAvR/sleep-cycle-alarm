@@ -14,8 +14,9 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 
 class OutOfBedNudgeSupersessionTest {
-    private fun plan(mode: AlarmMode, wakeAt: Instant?) =
-        AlarmPlan(mode, wakeAt, 0, Instant.parse("2026-09-17T07:10:00Z"), false, "r")
+    /** [onsetIsProjected] false is a plan measured from a REAL onset, i.e. the owner is actually asleep. */
+    private fun plan(mode: AlarmMode, wakeAt: Instant?, onsetIsProjected: Boolean = false) =
+        AlarmPlan(mode, wakeAt, 0, Instant.parse("2026-09-17T07:10:00Z"), onsetIsProjected, "r")
 
     private val nudgeAt = Instant.parse("2026-09-17T07:15:00Z")
 
@@ -34,6 +35,18 @@ class OutOfBedNudgeSupersessionTest {
     @Test
     fun `H7_2 a NAP plan that arms nothing (F5's AWAKE safety net past the wake alarm) does not supersede - there is no fresh alarm to replace the nudge with`() {
         assertFalse(napSupersedesPendingNudge(plan(AlarmMode.NAP, wakeAt = null), nudgeAt))
+    }
+
+    @Test
+    fun `H8 a NAP plan measured from a PROJECTED onset never supersedes - the owner is awake, which is what the nudge is for`() {
+        // Rule 7 covers lying awake too, and since H8 such a plan carries the still-pending morning alarm as
+        // its own wakeAt (before H8, a slid nap - equally non-null). Cancelling the nudge on either would
+        // silence it in exactly the situation it exists for: awake, in bed, not getting up.
+        assertFalse(
+            napSupersedesPendingNudge(
+                plan(AlarmMode.NAP, Instant.parse("2026-09-17T07:30:00Z"), onsetIsProjected = true), nudgeAt
+            )
+        )
     }
 
     @Test
