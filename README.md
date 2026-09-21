@@ -164,8 +164,12 @@ which means a simulated night dies if the app process is killed, unlike a real o
     **Night finished** with an **End night** button, without you having to press "I'm awake" to get there.
     L1 detail worth seeing here: the nudge chain does NOT repeat past this point. Reaching **Night finished**
     clears the night's own state, and the receiver needs that state to arm the next nudge - so whichever nudge
-    was already armed rings one last time and the chain stops. See the L1 record in `docs/decisions.md`, where
-    that boundary is carried as an open question rather than a decided rule.
+    was already armed rings one last time and the chain stops. Do not read that as a general safety net: this
+    walkthrough only gets there because turning **Asleep** on forces the one state that ends a no-deadline
+    night (asleep again, both naps spent). On a real no-deadline night where you are up and about, or your
+    band is off, that state never happens and the chain keeps ringing every 15 minutes until you press
+    "I'm awake". See the L1 record in `docs/decisions.md`, where that is carried as an open question rather
+    than a decided rule.
 13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
     night also resets every Debug switch and any active clock warp - the same happens on its own if the app
     sits unopened for 2 h after they were last changed, so a desk test like this one can never leak into a

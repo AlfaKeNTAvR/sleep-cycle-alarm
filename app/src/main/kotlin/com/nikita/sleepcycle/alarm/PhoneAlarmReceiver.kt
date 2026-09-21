@@ -239,15 +239,28 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      * L1 (owner decision, 2026-09-21) SUPERSEDES this doc's own previous claim that the nudge is "never
      * re-armed by the nudge's own firing". THE CONTRACT NOW: pressing "I'm awake" is the only thing that means
      * the owner is genuinely up, so if it was never pressed, something is wrong and ringing again is the right
-     * answer. A nudge firing arms the next nudge, one outOfBedDelay later, and the chain ends only when the
-     * night ends - "I'm awake" on the ring screen, or ending the night from the app, both of which go through
-     * NightController.endNight and cancel the pending nudge, its H7.3 pre-check and its record together.
-     * There is deliberately NO cap, no maximum count and no deadline stop: a night that can never be ended
-     * nags every outOfBedDelay until the owner notices, which is the direction the owner judged right to fail
-     * in. One boundary that is NOT a cap but falls out of G1 is worth knowing: once a tick reaches FINISHED,
-     * night state is cleared, [onReceive] never calls [recordRealAlarmFired] again, and the already-armed
-     * nudge rings once more and stops. See docs/decisions.md's own L1 record, which carries that as an open
-     * question rather than a settled rule.
+     * answer. A nudge firing arms the next nudge, one outOfBedDelay later. There is deliberately NO cap, no
+     * maximum count and no deadline stop: a night that can never be ended nags every outOfBedDelay until the
+     * owner notices, which is the direction the owner judged right to fail in.
+     *
+     * EXACTLY THREE THINGS END A CHAIN. Reviewed 2026-09-21; this doc previously claimed only the first.
+     *  1. The owner - "I'm awake" on the ring screen, or ending the night from the app. Both go through
+     *     NightController.endNight, which cancels the pending nudge, its H7.3 pre-check and its record
+     *     together. This is the intended one.
+     *  2. The H7.3 pre-check, on a confirmed-ASLEEP re-sync: OutOfBedPreNudgeCheck.runPreNudgeCheck cancels
+     *     the alarm and clears the record, which ends the WHOLE chain, not just the one nudge. It restarts
+     *     only if a nap alarm is armed and actually fires. Correct by intent (the owner is asleep again and
+     *     the nap logic owns the wake-up), but it does mean the chain is not unconditional.
+     *  3. G1's FINISHED bookkeeping, and ONLY on a night with a deadline set. Once a tick reaches FINISHED
+     *     night state is cleared, [onReceive] never calls [recordRealAlarmFired] again, and the already-armed
+     *     nudge rings once more and stops.
+     *
+     * Item 3 does NOT apply to a night with no deadline, which is the correction: there FINISHED is reachable
+     * only through isPostWakeNapCapSpent, needing ASLEEP && afterAwakening && napAlarmsUsed >= 2 - a
+     * combination an awake owner (or a band taken off, which reads as anything but ASLEEP) never produces. So
+     * a no-deadline night genuinely has no terminator short of items 1 and 2, which is what the owner asked
+     * for. The deadline-night stop in item 3 is the part he did not, and it is carried as an open question in
+     * docs/decisions.md's L1 record rather than as a settled rule.
      *
      * G4: the armed instant is persisted so [com.nikita.sleepcycle.night.BootReceiver] can restore it across a
      * reboot or app update before it fires. A repeat goes through that same single record, which [onReceive]
