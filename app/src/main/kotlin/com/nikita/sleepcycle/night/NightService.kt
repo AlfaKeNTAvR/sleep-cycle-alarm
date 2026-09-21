@@ -208,16 +208,23 @@ private fun buildNotification(
         .build()
 }
 
-/** T12 (amended): SIMULATED_TIME's own notification label carries the live "HH:mm[, Nx]" reading - [debugOptions.warp] is this night's own FROZEN warp (see NightState.debugOptions's own doc), and [nowInstant] recovers the matching virtual instant to format it against. */
+/**
+ * T12: SIMULATED_TIME's own notification label carries the live clock reading, so the tracking notification
+ * says what time the app thinks it is without opening the app.
+ *
+ * W8: the reading is shown on any simulated night, not only a warped one - a simulation at real speed with
+ * no jump used to show the bare word SIMULATED, which answers nothing.
+ */
 private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): String {
     val zone = ZoneId.systemDefault()
-    val labels = activeDebugSwitches(debugOptions).map { switch ->
+    val switches = activeDebugSwitches(debugOptions).let { live ->
+        if (debugOptions.isAnyEnabled && ActiveDebugSwitch.SIMULATED_TIME !in live) live + ActiveDebugSwitch.SIMULATED_TIME else live
+    }
+    val labels = switches.map { switch ->
         when (switch) {
             ActiveDebugSwitch.SIMULATED_SLEEP_DATA -> context.getString(R.string.debug_switch_simulated_sleep_data)
-            ActiveDebugSwitch.SIMULATED_TIME -> {
-                val value = debugOptions.warp?.let { formatSimulatedTimeValue(it, nowInstant(), zone) } ?: ""
-                context.getString(R.string.debug_switch_simulated_time, value)
-            }
+            ActiveDebugSwitch.SIMULATED_TIME ->
+                context.getString(R.string.debug_switch_simulated_time, formatSimulatedTimeValue(nowInstant(), zone))
         }
     }
     return if (labels.isEmpty()) "" else "[${labels.joinToString(" · ")}] "

@@ -8,6 +8,7 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
+import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.formatSimulatedTimeValue
 import com.nikita.sleepcycle.ui.format.formatClockTime
@@ -43,13 +44,24 @@ fun buildNightUiState(
 
     val state = nightState ?: return null
     val syncLabel = state.lastSyncAt?.let { formatClockTime(it, zone) }
-    val simulatedTimeValue = state.debugOptions.warp?.let { formatSimulatedTimeValue(it, now, zone) }
+    // W8: on a simulated night the banner always carries the app's own clock reading, warped or not. It used
+    // to appear only when a warp existed, so a simulation running at real speed with no jump showed the bare
+    // word SIMULATED and gave no way to tell what time the app thought it was - the one thing the reader
+    // needs while watching a night unfold.
+    val simulatedTimeValue = if (state.debugOptions.isAnyEnabled) formatSimulatedTimeValue(now, zone) else null
+    val debugSwitches = activeDebugSwitches(state.debugOptions).let { switches ->
+        if (simulatedTimeValue != null && ActiveDebugSwitch.SIMULATED_TIME !in switches) {
+            switches + ActiveDebugSwitch.SIMULATED_TIME
+        } else {
+            switches
+        }
+    }
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
             syncLabel, state.lastSyncOk, state.lastSyncFailureCause,
             NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight, endingNight,
-            activeDebugSwitches = activeDebugSwitches(state.debugOptions),
+            activeDebugSwitches = debugSwitches,
             simulatedTimeValue = simulatedTimeValue,
         )
     }
@@ -69,7 +81,7 @@ fun buildNightUiState(
     }
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
-        activeDebugSwitches = activeDebugSwitches(state.debugOptions),
+        activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
     )
 }

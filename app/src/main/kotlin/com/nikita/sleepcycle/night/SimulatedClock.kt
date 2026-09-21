@@ -118,8 +118,7 @@ private val SIMULATED_TIME_VALUE_FORMAT: DateTimeFormatter = DateTimeFormatter.o
  * Callers wrap this in a localized template (`debug_switch_simulated_time` in strings.xml); this function
  * stays plain JVM/no-Android so it is directly unit-testable.
  */
-@Suppress("UNUSED_PARAMETER")
-fun formatSimulatedTimeValue(warp: ClockWarp, virtualNow: Instant, zone: ZoneId): String =
+fun formatSimulatedTimeValue(virtualNow: Instant, zone: ZoneId): String =
     SIMULATED_TIME_VALUE_FORMAT.withZone(zone).format(virtualNow)
 
 /** [Duration.between] followed by [Duration.toMillis], saturating instead of throwing when the millis value would overflow a [Long]. */
