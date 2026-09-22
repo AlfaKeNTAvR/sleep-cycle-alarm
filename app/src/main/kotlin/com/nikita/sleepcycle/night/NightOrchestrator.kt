@@ -927,10 +927,11 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
  * night is over - see its own doc), so `decisionNow.plus(delay)` is always strictly after [decisionNow] by
  * construction; the `isAfter` check below is a defensive invariant, not dead code - it is what this function's
  * own test pins down, and it is what protects this call site if that guarantee about [nextSyncDelay] ever
- * changes. `internal`, not `private`: JVM-testable directly without a Context. See TickScheduling.kt's own
- * in-process skip-arming guard for the second, independent line of defence this pairs with (residual
- * real-time drift between this decision and the moment [scheduleTick] actually arms it - disk saves, logging -
- * that no choice of virtual instant alone can fully absorb).
+ * changes. `internal`, not `private`: JVM-testable directly without a Context. N5: this is now the ONLY
+ * defence against that tight loop. TickScheduling.kt briefly carried a second one - a skip-arming guard that
+ * was meant to absorb the residual real-time drift between this decision and the moment [scheduleTick] actually
+ * arms it (disk saves, logging) - and it has been removed, because it also suppressed a tick's own terminal
+ * re-arm and killed the whole warped night's tick chain. See that file's own header for the full record.
  */
 internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineConfig): Instant? {
     val delay = nextSyncDelay(plan, decisionNow, config) ?: return null

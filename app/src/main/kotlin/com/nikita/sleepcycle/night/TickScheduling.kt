@@ -21,20 +21,25 @@ package com.nikita.sleepcycle.night
 // - see NightController.rearmAfterSpeedChange) would call `delay(0)`, spinning through its own disk I/O in a
 // tight loop with no gap between iterations at all.
 //
-// FIX2 (owner-reported, 2026-09-21) SUPERSEDES the flooring above as the WHOLE story: NightOrchestrator's own
-// FIX2 (booking from the decision instant, not a tick's stale entry one - see its own doc) shrinks how often a
-// freshly-computed target is already overdue, but cannot fully eliminate it - a tick's own save/log work after
-// that decision still costs real time, which at 600x is still several virtual minutes. Flooring ALONE left the
-// tight loop V3's own comment above already worried about: an overdue tick re-arms at the 250 ms floor, that
-// next tick's own disk work again overruns whatever it computes, so it too re-arms at 250 ms - a continuous
-// 250 ms disk-IO loop where every iteration is itself an OVERLAPPING tick, exactly the precondition FIX1
-// (NightOrchestrator.kt) needs. [scheduleTickInProcess] now additionally SKIPS arming (rather than flooring
-// and arming anyway) when the most recently STARTED in-process tick began less than [IN_PROCESS_TICK_MIN_DELAY]
-// ago: that tick is either still running or has only just handed off, and it will call [scheduleTick] again
-// itself once it finishes, from its own fresher decision instant - nothing is lost, only pre-empted by a
-// fresher arm soon to follow. This cannot stall the loop permanently: FIX1's own transaction lock means two
-// ticks can never both finish within the same instant, so the real gap between successive ticks' own start
-// times keeps growing until it clears the floor and a new job is armed again.
+// FIX2 (2026-09-21) briefly added a SECOND guard on top of the flooring above, and N5 REVERTED it. It made
+// [scheduleTickInProcess] skip arming entirely whenever the most recently STARTED in-process tick had begun
+// less than [IN_PROCESS_TICK_MIN_DELAY] ago, on the reasoning that such a tick "will call [scheduleTick] again
+// itself once it finishes". That reasoning is circular: the call it suppressed was, in the overwhelmingly
+// common case, that very tick's own terminal re-arm. A tick that finished within 250 ms of its own start
+// therefore armed nothing, nothing else was left to arm anything, and the whole warped night's tick chain
+// died on the spot - no further syncs, a countdown frozen at its last committed plan, and no alarm. The only
+// in-app action that cleared the stamp was [cancelInProcessTick], reached from `rearmAfterSpeedChange`, which
+// is exactly the change-the-speed-and-change-it-back recovery the owner found by hand.
+//
+// N5 (owner-reported, 2026-09-21): the guard is removed rather than repaired, because this file cannot answer
+// the question the guard was really asking. "Is a tick still working" is not knowable here at all:
+// `startNightServiceForTick` hands off to a foreground service and returns immediately, so the coroutine's own
+// lifetime says nothing about when the tick's work ends. What remains is V3's floor, which already bounds the
+// start rate at one tick per [IN_PROCESS_TICK_MIN_DELAY] (the next tick is armed at least that far from NOW,
+// and the previous one started no later than now), and FIX1's transaction lock in NightOrchestrator.kt, which
+// is what actually serializes two ticks whose work overlaps. Accepted cost: while a run of freshly-computed
+// targets keeps landing in the virtual past, ticks run at up to 4 per real second until the run ends. That is
+// bounded, transient, debug-only, and vastly preferable to a silent night - see docs/decisions.md (N5).
 //
 // Accept and document: a warped night dies if the process dies, since the in-process job has no reboot- or
 // process-death-recovery of its own (unlike the AlarmManager path, which BootReceiver re-arms). That is fine -
@@ -69,14 +74,11 @@ val IN_PROCESS_TICK_MIN_DELAY: Duration = Duration.ofMillis(250)
 /** T6: process-scoped - a warped night's in-process tick dies with the process, on purpose (see this file's own header). */
 private val tickScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-/** T6/V3: guards every read AND write of [inProcessTickJob] (and, FIX2, [lastInProcessTickStartedRealAt]), so a [scheduleTickInProcess]/[cancelTick] call's own cancel-then-replace step is atomic with respect to any other one - see this file's own header ("Assign inProcessTickJob..."). */
+/** T6/V3: guards every read AND write of [inProcessTickJob], so a [scheduleTickInProcess]/[cancelTick] call's own cancel-then-replace step is atomic with respect to any other one - see this file's own header ("Assign inProcessTickJob..."). */
 private val inProcessTickLock = Any()
 
 /** T6: at most one pending in-process tick job at a time, cancel-and-replace on every [scheduleTick] call - only ever read or written under [inProcessTickLock]. */
 private var inProcessTickJob: Job? = null
-
-/** FIX2: the real wall-clock instant the most recently STARTED in-process tick actually began running (the moment its `delay()` elapsed and `startNightServiceForTick` was called) - null before the first one. Only ever read or written under [inProcessTickLock], alongside [inProcessTickJob]. See [scheduleTickInProcess]'s own doc for the skip-arming guard this backs. */
-private var lastInProcessTickStartedRealAt: Instant? = null
 
 /** T6/V3: the pure AlarmManager-vs-in-process choice, extracted so it is testable without Android - see this file's own header for why it must stay a named predicate rather than an inline check, and why it is now keyed on [warped] rather than a duration. */
 fun shouldScheduleTickInProcess(warped: Boolean): Boolean = warped
@@ -128,24 +130,17 @@ private fun armTickAlarmManager(context: Context, realAt: Instant, at: Instant) 
  * it a moment later: whichever call acquires the lock LAST wins, deterministically, rather than whichever
  * coroutine happens to finish running its own launch() call first.
  *
- * FIX2 (owner-reported, 2026-09-21): skips arming entirely - cancels nothing, launches nothing - when the most
- * recently STARTED in-process tick began less than [IN_PROCESS_TICK_MIN_DELAY] ago (see this file's own header
- * for the tight-loop bug this replaces). That tick is either still running under FIX1's own transaction lock
- * or has only just finished; either way it will call [scheduleTick] again itself once it completes, from its
- * own fresher decision instant (NightOrchestrator's own FIX2) - so nothing is dropped, only pre-empted by a
- * fresher arm soon to follow, rather than this call replacing an imminent, still-relevant job with another
- * artificially-floored one of its own.
+ * N5 (owner-reported, 2026-09-21): every call that gets here ARMS. There is deliberately no condition under
+ * which this returns without a job pending, because on a warped night the caller is almost always the previous
+ * tick booking its own successor: refusing that one call ends the night's tick chain outright, with nothing
+ * left anywhere to restart it. FIX2's own skip-arming debounce did exactly that and was removed - see this
+ * file's own header for what it was trying to prevent and what covers that instead.
  */
 private fun scheduleTickInProcess(context: Context, realDelay: Duration, at: Instant) {
     synchronized(inProcessTickLock) {
-        val startedAt = lastInProcessTickStartedRealAt
-        if (startedAt != null && Duration.between(startedAt, Instant.now()) < IN_PROCESS_TICK_MIN_DELAY) {
-            return
-        }
         inProcessTickJob?.cancel()
         inProcessTickJob = tickScope.launch {
             delay(inProcessTickDelay(realDelay).toMillis())
-            synchronized(inProcessTickLock) { lastInProcessTickStartedRealAt = Instant.now() }
             startNightServiceForTick(context, scheduledFor = at, receivedAt = nowInstant())
         }
     }
@@ -165,17 +160,9 @@ private fun cancelAlarmManagerTick(context: Context) {
 /**
  * The other half of [cancelTick]; nothing replaces an in-process job implicitly, so every arming path cancels
  * this one first.
- *
- * FIX2: also clears [lastInProcessTickStartedRealAt] - an explicit cancel (the night ending, FINISHED, or
- * [com.nikita.sleepcycle.night.rearmAfterSpeedChange]'s own cancel-then-immediate-retick) means there is no
- * longer an in-flight in-process tick left to call [scheduleTick] again on its own, so [scheduleTickInProcess]'s
- * own skip-arming debounce must not keep suppressing the NEXT, unrelated arm request past this point - or a
- * cancel immediately followed by a fresh arm request (exactly [rearmAfterSpeedChange]'s own shape) could be
- * silently skipped with nothing left to re-arm it, stalling the night's ticks rather than merely delaying one.
  */
 private fun cancelInProcessTick() {
     synchronized(inProcessTickLock) {
-        lastInProcessTickStartedRealAt = null
         inProcessTickJob?.cancel()
         inProcessTickJob = null
     }
