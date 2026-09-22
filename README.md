@@ -164,18 +164,22 @@ which means a simulated night dies if the app process is killed, unlike a real o
     stop. That turned out to be an accident of structure rather than the owner's intent (it also meant a
     deadline night's chain stopped one ring after the deadline, which he had not asked for either), so
     `finishNightIfNeeded` now defers its bookkeeping - state, tick alarm, tracking notification, all of it -
-    for as long as a nudge is still pending. Wait 15 more virtual minutes right here on the **Night finished**
-    screen and watch the same nudge ring again; tap **Stop** and it arms yet another one. Only **End night**
-    actually silences it - since N1 the ring screen has no end-the-night button of its own. See the L2 record in
+    for as long as a nudge is still pending. N2 (owner-reported, 2026-09-21): you will not actually see
+    **Night finished** while that is true. The screen shows the pending nudge instead - named, with its time
+    and a countdown - under an **I'm up, end night** button. It used to say "Night finished" over a still-armed
+    alarm, which read as the deadline having cancelled the chain; it never does. Wait 15 more virtual minutes
+    right there and watch the nudge ring again; tap **Stop** and it arms yet another one. Only ending the
+    night actually silences it - since N1 the ring screen has no end-the-night button of its own. See the L2 record in
     `docs/decisions.md` for the owner's reasoning and what he accepted in exchange (the notification and tick
     alarm staying up past the point the night would otherwise have closed).
-13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
+13. End the night to see the morning report, built entirely from what you just simulated. Ending the
     night also resets every Debug switch and any active clock warp - the same happens on its own if the app
     sits unopened for 2 h after they were last changed. L2 correction: that auto-reset only fires once no
     night state is left (`DebugScreenController.resetIfIdle` skips outright while any exists), so it will NOT
-    fire on its own for a **Night finished** screen left sitting the way step 12 describes - the deferred
-    night's state is still there. **End night** is what actually clears it, which is exactly what this step
-    has you do; a desk test only leaks into a real bedtime if you walk away from **Night finished** without
+    fire on its own for a finished night left sitting the way step 12 describes - the deferred
+    night's state is still there whether the screen is showing the pending nudge or the **Night finished**
+    wording. Ending the night is what actually clears it, which is exactly what this step
+    has you do; a desk test only leaks into a real bedtime if you walk away from a finished night without
     ending it.
 14. Open **Logs**: the night you just ran carries a **simulated** tag, and its file is named
     `night-sim-<yyyyMMdd-HHmm>.jsonl` (a real night is always `night-<yyyyMMdd-HHmm>.jsonl`, so the two can
