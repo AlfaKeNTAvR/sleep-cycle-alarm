@@ -18,21 +18,20 @@ There is no phone-backup switch: the phone alarm is the only alarm there is, dea
 
 One screen whose content depends on the moment you look at it. Opening it syncs first.
 
-- **Mode header (A, B, C):** owner request - a small amber block above the hero number naming which alarm is coming ("Morning alarm" / "Nap alarm"), with the engine's own one-sentence reason underneath, so a 3am glance says which alarm and why. Reads "No alarm armed" instead of naming one when nothing is actually armed (e.g. the morning alarm has just fired and the band has not yet reported the owner awake). The reason line is left out in state A's already-rang case below, where the subtitle already explains it.
-- **A. Going to bed:** "If you fall asleep by 00:25", big planned alarm, "7.5 h of sleep" (or, once the morning alarm has already rung while the band still reads asleep, "Already rang, waiting for you to wake up" with the real rung time as the hero number instead of a blank dash), a plain "Deadline HH:mm" caption when a deadline is set, Stop night. The "possible wake-ups" timeline this state used to show was removed on owner request - not worth reading at 3am.
-- **B. Woke up, more sleep fits:** "You slept 1 h 59" (hours only, no from-to times, no cycles). Header "Fall back asleep by 02:45", alarm estimate. The timeline of wake-time options this state used to show alongside the header was removed for the same reason as state A's.
-- **C. Woke up, only a nap fits:** "You slept 3 h 35", "No full cycle fits before 08:30", nap card (alarm rings 20 min after you fall asleep), tonight-so-far total, "I'm up, end night".
-- **Night finished (the FINISHED amendment):** the deadline passed, or the two nap alarms the whole night allows (pre-wake or after the wake alarm alike) are both spent with no deadline left to fall back on - not band-detected wake by itself any more. Reason text plus an "End night" button; the alarm is not re-armed from here, it already rang. If the two naps are spent but a deadline is still ahead, the screen does not reach this state at all: it shows state B instead, with the alarm held at the deadline.
+- **A live night (N1, decided 2026-09-21 - one layout, replacing the separate A, B and C states below):** three centred lines and nothing else. Which alarm is coming, in plain text ("Morning alarm" / "Nap alarm" / "Out-of-bed nudge", or "No alarm armed" when nothing is); its own time as the big amber numeral; and how long until then ("in 20 min", "in 5 h 38"). Same layout going to bed, asleep, awake again and napping - the mode changes the words in those three lines, never their number or arrangement. When the morning alarm has already rung while the band still reads asleep, there is no next alarm, so the numeral is a dash and the line underneath reads "Morning alarm rang at 07:00" instead of a countdown.
+- **What A, B and C used to add, all removed by N1, none of it moved elsewhere:** the onset captions ("If you fall asleep by 00:25", "Asleep since 01:12", "Napping, asleep since 07:06"), "7.5 h of sleep", "Deadline HH:mm", "Alarm rings at the deadline", "You slept 1 h 59" as the hero number, "Fall back asleep by 02:45", "No full cycle fits before 08:30", the nap explainer card, the tonight-so-far row, and the engine's own one-sentence reason under the mode header. The owner's verdict on the result: "way too much information". Total slept is on the morning report, which is where he reads it. (An earlier owner request had already removed the "possible wake-ups" timeline these states carried, for the same reason: not worth reading at 3am.)
+- **Night finished (the FINISHED amendment):** the deadline passed, or the two nap alarms the whole night allows (pre-wake or after the wake alarm alike) are both spent with no deadline left to fall back on - not band-detected wake by itself any more. Reason text plus an "End night" button; the alarm is not re-armed from here, it already rang. If the two naps are spent but a deadline is still ahead, the screen does not reach this state at all: it stays on the ordinary live-night layout, with the alarm held at the deadline.
 - **D. Morning:** total slept, each stretch with from-to times, length and cycles in parentheses (one decimal), note that the night log was saved.
 
 ## Alarm ring screen
 
-Shown full-screen, over the lock screen, whichever alarm just rang (the main wake alarm, a nap alarm, or the out-of-bed nudge 15 min after either). Two buttons:
+Shown full-screen, over the lock screen, whichever alarm just rang (the main wake alarm, a nap alarm, or the out-of-bed nudge 15 min after either). One button:
 
 - **Stop:** silences the sound and vibration only. The night keeps running - falling back asleep afterward still counts as a nap.
-- **I'm awake:** silences it and ends the night right there, landing on the morning report (D above).
 
-The out-of-bed nudge is the same screen with different wording ("Time to get up" instead of "Wake up"); both buttons behave identically either way.
+N1 (decided 2026-09-21) removed the second button, **I'm awake**, which silenced the ring and ended the night on the spot. A mis-tap half asleep therefore cancelled every alarm left in the night, the repeating out-of-bed nudge included. Ending a night now takes the Night screen's own button, behind its own confirmation, which is deliberately harder to reach without being awake.
+
+The out-of-bed nudge is the same screen with different wording ("Time to get up" instead of "Wake up"); Stop behaves identically either way.
 
 ## Logs
 

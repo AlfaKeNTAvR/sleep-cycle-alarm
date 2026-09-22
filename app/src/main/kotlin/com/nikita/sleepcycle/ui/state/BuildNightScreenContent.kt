@@ -1,134 +1,59 @@
 package com.nikita.sleepcycle.ui.state
 
-// File purpose: pure derivation of each night-screen content variant (states A-D plus the FINISHED amendment)
-// from one AlarmPlan and NightEngineView. Split from BuildNightUiState.kt to keep each file small.
+// File purpose: pure derivation of each night-screen content variant from one AlarmPlan and NightEngineView.
+// Split from BuildNightUiState.kt to keep each file small. N1 collapsed the three live-night variants into
+// one - see NightScreenContent.NextAlarm's own doc - so what remains here is that one builder plus the two
+// dead-end states (FINISHED, the morning report).
 
 import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.alarm.alarmLabelFor
-import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
-import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
-import com.nikita.sleepcycle.night.napLengthFor
-import com.nikita.sleepcycle.night.sleepLengthFor
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import com.nikita.sleepcycle.ui.format.formatCycles
 import com.nikita.sleepcycle.ui.format.formatDuration
-import com.nikita.sleepcycle.ui.format.formatSleepLengthLabel
-import java.time.Duration
+import com.nikita.sleepcycle.ui.format.formatTimeUntil
 import java.time.Instant
 import java.time.ZoneId
 
 /**
- * Shown instead of a real time only in the defensive fallback branches that remain after the 09/21 review's
- * must-fix 1: [buildGoingToBedContent]'s own `else` (wakeAt null with no [morningAlarmAt] latched to fall back
- * on either - should not normally happen) and [buildNapAsleepContent]'s equivalent `?:` (a NapAsleep state
- * reached with no armed wakeAt at all, likewise not expected). H8's own already-rang case - the morning alarm
- * has already rung while the band still reads ASLEEP - no longer reaches this dash: [buildGoingToBedContent]
- * shows the real rung time instead (from NightState.morningAlarmAt). Nor does the plain "nothing is armed"
- * case from must-fix 1 (F5, a nap alarm that already fired with nothing left to arm): that is a null
- * [NightScreenContent.WokeUp.modeLabel] rendered by
- * [AlarmModeHeader][com.nikita.sleepcycle.ui.components.AlarmModeHeader] as "no alarm armed", a deliberate
- * state of its own, not this dash standing in for a missing time.
+ * Shown instead of a real time when no alarm is armed at all: [AlarmPlan.wakeAt] is null and no out-of-bed
+ * nudge is pending either. Two cases reach it. H8's already-rang case - the morning alarm has already rung
+ * while the band still reads ASLEEP - fills the line underneath with the time it rang
+ * ([NightScreenContent.NextAlarm.rangAtTimeLabel]), so the dash is never the only thing on the screen there.
+ * The other is the defensive fallback that remains once that is ruled out: `wakeAt` null with no
+ * [com.nikita.sleepcycle.night.NightState.morningAlarmAt] latched to explain it either, a partially restored
+ * state file rather than a state a normal night reaches.
+ *
+ * N1 changed what this stands for. It used to mean "the hero number is missing", with the already-rang case
+ * showing the rung time in its place; now the hero number always answers one question - when does the next
+ * alarm ring - so a past ring belongs on the line underneath, not in the hero's own slot where it reads as an
+ * alarm that is still coming.
  */
 const val MISSING_TIME_LABEL = "--:--"
 
 /**
- * State A: going to bed, or still/again asleep with no completed awakening yet in this stretch. Sleep length
- * is [AlarmPlan.cycles] - what the plan actually landed on (e.g. capped by a deadline) - not the raw picked
- * length. [debugOptions] is the night's own captured options (see NightState.debugOptions), passed through to
- * [sleepLengthFor]/[napLengthFor]. [morningAlarmAt] is NightState's own latched morning-alarm time (H1),
- * needed for [alarmModeLabel] and for the H8 already-rang case below. [deadline] is the night's own deadline
- * setting (`NightSettings.deadline`), taken directly rather than the whole settings object - see the 09/21
- * review's must-fix 3, which dropped this function's former unused `settings`/`view` parameters; [deadline]
- * is the one piece of `settings` this function still needs, for [NightSubtitle.SLEEP_LENGTH]'s own caption.
+ * N1: the whole of a live night, in the one shape every state of it now uses - which alarm rings next, when,
+ * and how long until then. [morningAlarmAt] is NightState's own latched morning-alarm time (H1), needed both
+ * for [alarmModeLabel]'s own H8 disambiguation and for the already-rang line. [now] is what the countdown
+ * counts from, so the caller's clock (virtual on a simulated night - see AppClock.kt) is the one that decides
+ * it, not a second reading taken here.
+ *
+ * The plan's [AlarmPlan.referenceOnset], its cycle count, the night's deadline and the sleep state all used to
+ * feed this screen and no longer do: see [NightScreenContent.NextAlarm]'s own doc for what was dropped and why
+ * none of it moved elsewhere.
  */
-fun buildGoingToBedContent(plan: AlarmPlan, zone: ZoneId, debugOptions: DebugOptions, morningAlarmAt: Instant?, deadline: Instant?): NightScreenContent.GoingToBedOrAsleep {
-    val onset = checkNotNull(plan.referenceOnset) { "referenceOnset is only null once the night is FINISHED" }
-    val isDeadlineOnly = plan.mode == AlarmMode.DEADLINE_ONLY
-    // H8's one legitimate MISSING_TIME_LABEL case: wakeAt is null because the morning alarm already rang
-    // while the band still reads ASLEEP. morningAlarmAt is that same alarm's own latched time (H1), so it is
-    // the honest thing to show instead of a bare dash - "the alarm rang at 07:00", not "--:--".
+fun buildNextAlarmContent(plan: AlarmPlan, zone: ZoneId, morningAlarmAt: Instant?, now: Instant): NightScreenContent.NextAlarm {
     val wakeAt = plan.wakeAt
+    // H8: wakeAt is null because the morning alarm already rang while the band still reads ASLEEP, and
+    // morningAlarmAt is that same alarm's own latched time (H1) - the one thing worth saying on a screen that
+    // otherwise has no alarm to count down to.
     val alarmAlreadyRang = wakeAt == null && morningAlarmAt != null
-    val alarmTimeLabel = when {
-        wakeAt != null -> formatClockTime(wakeAt, zone)
-        alarmAlreadyRang -> formatClockTime(checkNotNull(morningAlarmAt), zone)
-        else -> MISSING_TIME_LABEL
-    }
-    // NightSubtitle's own precedence: already-rang beats deadline-only, since a DEADLINE_ONLY plan can also be
-    // H8's already-rang case (both booleans can be true at once - see NightSubtitle's own doc). Round 2 of the
-    // 09/21 review, should-fix 9: wakeAt == null with alarmAlreadyRang false means morningAlarmAt is null too
-    // (the only other way to reach a null wakeAt here) - the defensive fallback with nothing latched to
-    // explain it, which must not fall through to SLEEP_LENGTH's "X h of sleep" promise.
-    val subtitle = when {
-        alarmAlreadyRang -> NightSubtitle.ALREADY_RANG
-        wakeAt == null -> NightSubtitle.UNKNOWN
-        isDeadlineOnly -> NightSubtitle.DEADLINE_ONLY
-        else -> NightSubtitle.SLEEP_LENGTH
-    }
-    // The deadline caption (09/21 review round 1's must-fix 3 decision) is suppressed only for DEADLINE_ONLY:
-    // that subtitle already says the alarm rings at the deadline, and the hero number above it already IS the
-    // deadline, so naming it again would be redundant. Round 2's must-fix 2 corrected the original reasoning
-    // here, which also suppressed it for ALREADY_RANG on the theory that "the deadline no longer matters once
-    // the night has moved past it into the already-rang state" - wrong, because ALREADY_RANG is only reachable
-    // while the deadline is still ahead (a passed deadline sends the night to FINISHED first, per the engine's
-    // own tick order), and that already-rang state is exactly when the owner is deciding whether to go back to
-    // sleep - the moment this caption is most useful, on the nights that reach it. Round 3 of the 09/21
-    // review's own nit: reaching ALREADY_RANG with a live deadline still needs the band to under-count a cycle
-    // (see the README's simulated-night walkthrough, should-fix 5, for why the debug simulator can never
-    // exercise it) - genuinely rare, not "the one moment" this caption matters. See
-    // AUTONOMOUS_DECISIONS_09_21_2026_UI.md.
-    val deadlineTimeLabel = if (subtitle == NightSubtitle.DEADLINE_ONLY) null else deadline?.let { formatClockTime(it, zone) }
-    return NightScreenContent.GoingToBedOrAsleep(
-        onsetPhase = if (plan.onsetIsProjected) OnsetPhase.PROJECTED else OnsetPhase.ACTUAL,
-        onsetTimeLabel = formatClockTime(onset, zone),
-        alarmTimeLabel = alarmTimeLabel,
-        sleepLengthHoursLabel = formatSleepLengthLabel(sleepLengthFor(plan.cycles, debugOptions)),
-        subtitle = subtitle,
-        deadlineTimeLabel = deadlineTimeLabel,
+    return NightScreenContent.NextAlarm(
         modeLabel = alarmModeLabel(plan, morningAlarmAt),
-        // Suppressed once the alarm has already rung (09/21 review's should-fix 5): the "Already rang" subtitle
-        // already carries the explanation, and the engine's own reason sentence trails off with "... alarm
-        // none" once wakeAt is null, which reads as confusing two lines under a hero number showing a real time.
-        reasonText = if (alarmAlreadyRang) null else plan.reason,
-        alarmAlreadyRang = alarmAlreadyRang,
-    )
-}
-
-/** NAP mode while asleep again for the nap: asleep-style wording, the nap alarm as the hero number, no cycle timeline - a nap is one fixed short alarm, not a choice of cycles. */
-fun buildNapAsleepContent(plan: AlarmPlan, zone: ZoneId, morningAlarmAt: Instant?): NightScreenContent.NapAsleep {
-    val onset = checkNotNull(plan.referenceOnset) { "referenceOnset is only null once the night is FINISHED" }
-    return NightScreenContent.NapAsleep(
-        onsetTimeLabel = formatClockTime(onset, zone),
-        alarmTimeLabel = plan.wakeAt?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
-        modeLabel = alarmModeLabel(plan, morningAlarmAt),
-        reasonText = plan.reason,
-    )
-}
-
-/**
- * States B (more sleep fits) and C (only a nap fits), selected by [napOnly]. The header time differs by
- * state: C's "No full cycle fits before X" wants [deadline] itself, but B's "Fall back asleep by X"
- * wants a genuine fall-asleep time - the latest instant at which falling back asleep still lets one more
- * cycle land before the deadline, i.e. the deadline minus one cycle length (D4). On a night with no deadline
- * there is no such time at all (the picked total alone decides when the night ends), so the header is dropped.
- * [morningAlarmAt]: see [buildGoingToBedContent]'s own doc - here it matters most for state C (napOnly), where
- * [alarmModeLabel] can resolve to the morning alarm rather than the nap (rule 7's sliding AWAKE nap).
- */
-fun buildWokeUpContent(plan: AlarmPlan, deadline: Instant?, view: NightEngineView, zone: ZoneId, napOnly: Boolean, debugOptions: DebugOptions, morningAlarmAt: Instant?): NightScreenContent.WokeUp {
-    val latestStretchDuration = view.summary.stretches.lastOrNull()?.duration ?: Duration.ZERO
-    val headerTime = if (napOnly) deadline else deadline?.minus(sleepLengthFor(1, debugOptions))
-    return NightScreenContent.WokeUp(
-        napOnly = napOnly,
-        sleptDurationLabel = formatDuration(latestStretchDuration),
-        headerTimeLabel = headerTime?.let { formatClockTime(it, zone) },
-        napLengthLabel = if (napOnly) formatDuration(napLengthFor(debugOptions)) else null,
-        tonightSoFarLabel = if (napOnly) formatDuration(view.summary.totalSleep) else null,
-        alarmTimeLabel = if (napOnly) null else plan.wakeAt?.let { formatClockTime(it, zone) },
-        alarmIsEstimate = plan.onsetIsProjected,
-        modeLabel = alarmModeLabel(plan, morningAlarmAt),
-        reasonText = plan.reason,
+        alarmTimeLabel = wakeAt?.let { formatClockTime(it, zone) } ?: MISSING_TIME_LABEL,
+        countdownLabel = wakeAt?.let { formatTimeUntil(it, now) },
+        rangAtTimeLabel = if (alarmAlreadyRang) formatClockTime(checkNotNull(morningAlarmAt), zone) else null,
     )
 }
 
@@ -172,44 +97,47 @@ fun buildMorningReportContent(
  * reach here with a null `wakeAt`, and in both cases there genuinely is no armed alarm to name - the old
  * fallback named one anyway, which on an ordinary morning (F5's case, reached every time the band confirms
  * AWAKE after the morning alarm has already fired) read as a bold, wrong "Nap alarm" seconds after the owner
- * was woken by the real one. Callers render the null case with
- * [AlarmModeHeader][com.nikita.sleepcycle.ui.components.AlarmModeHeader]'s "no alarm armed" wording instead.
+ * was woken by the real one. Callers render the null case as the "no alarm armed" wording instead.
  */
 internal fun alarmModeLabel(plan: AlarmPlan, morningAlarmAt: Instant?): AlarmLabel? =
     plan.wakeAt?.let { alarmLabelFor(plan.mode, it, morningAlarmAt) }
 
 /**
- * Round 2 of the 09/21 review, must-fix 1: every "no alarm armed" reading (`modeLabel == null`) on states A and
- * C co-occurs with a real armed alarm the screen was not naming - the out-of-bed nudge. `PhoneAlarmReceiver`
+ * Round 2 of the 09/21 review, must-fix 1: every "no alarm armed" reading (`modeLabel == null`) on a live
+ * night co-occurs with a real armed alarm the screen was not naming - the out-of-bed nudge. `PhoneAlarmReceiver`
  * arms it unconditionally on every real (morning or nap) alarm firing, 15 minutes out, and nothing on this
  * screen's own data path knew about it: the nap-supersede path needs a non-null `wakeAt`, the ring screen's
- * Stop does not cancel it, and the pre-nudge check only cancels on a confirmed ASLEEP reading. So "No alarm
- * armed" was a guaranteed lie for the nudge's own first 15 minutes, every single time.
+ * Stop does not cancel it, and the pre-nudge check only cancels when another alarm is genuinely armed and
+ * still ahead (M1). So "No alarm armed" was a guaranteed lie for the nudge's own first 15 minutes, every
+ * single time.
  *
  * Round 3 of the 09/21 review, should-fix 1: a null `modeLabel` was the ONLY trigger, so the header stayed
  * wrong whenever a plan alarm was ALSO armed and happened to ring later than the nudge - e.g. the morning
  * alarm rings at 03:30, the owner stays in bed, the plan becomes DEADLINE_ONLY at 07:30 while the nudge armed
  * by that same ring is due at 03:45: the header kept showing "Morning alarm / 07:30" for those 15 minutes even
- * though the nudge, not the 07:30 alarm, is what actually rings next - wrong per this header's own contract
- * ([AlarmModeHeader]'s KDoc: "which alarm is coming next"). [planWakeAt] (the plan's own armed alarm instant,
- * `AlarmPlan.wakeAt`) now also overrides whenever it is null (the old condition, unchanged) OR later than
+ * though the nudge, not the 07:30 alarm, is what actually rings next. [planWakeAt] (the plan's own armed alarm
+ * instant, `AlarmPlan.wakeAt`) overrides whenever it is null (the old condition, unchanged) OR later than
  * [pendingOutOfBedNudgeAt] - i.e. whenever the nudge is the one that actually rings first.
  *
- * Applied once, after content is built, rather than threading `pendingOutOfBedNudgeAt` into every
- * content-builder: only [NightScreenContent.GoingToBedOrAsleep] and [NightScreenContent.WokeUp] can ever carry
- * a modeLabel this function needs to reconsider in the first place (see [alarmModeLabel]'s own doc) -
- * [NightScreenContent.NapAsleep] cannot (should-fix 5 of round 2 pins this), so it is left untouched here on
- * purpose. [pendingOutOfBedNudgeAt] must still be ahead of [now]: a stale/past instant (the nudge already
- * fired, or the read raced a cancel) must not resurrect a dead alarm on screen.
+ * N1 makes that override total rather than cosmetic. The nudge used to replace only the name above the hero
+ * number, leaving the hero itself showing the plan's own later alarm; now the hero number IS the next alarm,
+ * so winning the "rings first" test means the nudge owns the time and the countdown too. `rangAtTimeLabel` is
+ * cleared for the same reason: with a live countdown to show, a past ring is no longer what that line is for.
+ *
+ * Applied once, after content is built, rather than threading `pendingOutOfBedNudgeAt` into the builder, so
+ * the nudge (which lives in its own store, read by the caller as disk I/O - see `OutOfBedNudgeStore.kt`) stays
+ * out of the plan-shaped path. [pendingOutOfBedNudgeAt] must still be ahead of [now]: a stale/past instant
+ * (the nudge already fired, or the read raced a cancel) must not resurrect a dead alarm on screen.
  */
 internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingOutOfBedNudgeAt: Instant?, planWakeAt: Instant?, now: Instant, zone: ZoneId): NightScreenContent {
+    if (content !is NightScreenContent.NextAlarm) return content
     if (pendingOutOfBedNudgeAt == null || !pendingOutOfBedNudgeAt.isAfter(now)) return content
     val nudgeRingsFirst = planWakeAt == null || planWakeAt.isAfter(pendingOutOfBedNudgeAt)
     if (!nudgeRingsFirst) return content
-    val timeLabel = formatClockTime(pendingOutOfBedNudgeAt, zone)
-    return when (content) {
-        is NightScreenContent.GoingToBedOrAsleep -> content.copy(modeLabel = AlarmLabel.OUT_OF_BED, modeLabelTimeLabel = timeLabel)
-        is NightScreenContent.WokeUp -> content.copy(modeLabel = AlarmLabel.OUT_OF_BED, modeLabelTimeLabel = timeLabel)
-        else -> content
-    }
+    return content.copy(
+        modeLabel = AlarmLabel.OUT_OF_BED,
+        alarmTimeLabel = formatClockTime(pendingOutOfBedNudgeAt, zone),
+        countdownLabel = formatTimeUntil(pendingOutOfBedNudgeAt, now),
+        rangAtTimeLabel = null,
+    )
 }

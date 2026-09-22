@@ -104,33 +104,26 @@ class SleepLengthFallbackTest {
 }
 
 class NightScreenStateTest {
-    @Test fun `state A shows the projected caption before sleep is detected`() {
+    @Test fun `a live night shows the armed alarm, its countdown and Stop night`() {
         val plan = testAlarmPlan(
             mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5,
             referenceOnset = "2026-09-17T00:15", onsetIsProjected = true,
         )
         val night = testNightState(lastPlan = plan, settings = NightSettings(null, 5))
         val view = testEngineView(SleepState.NOT_YET_ASLEEP)
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        val content = result.night!!.content as NightScreenContent.GoingToBedOrAsleep
-        assertEquals(OnsetPhase.PROJECTED, content.onsetPhase)
-        assertEquals("00:15", content.onsetTimeLabel)
+        val result = state(nightState = night, engineView = view, now = "2026-09-17T00:05", screen = Screen.Night)
+        val nightUi = requireNotNull(result.night)
+        val content = nightUi.content as NightScreenContent.NextAlarm
+        assertEquals(AlarmLabel.MORNING, content.modeLabel)
         assertEquals("07:30", content.alarmTimeLabel)
+        assertEquals("7 h 25", content.countdownLabel)
+        assertEquals(EndNightAction.STOP, nightUi.endAction)
     }
 
-    @Test fun `state A shows the actual onset once asleep, before any awakening`() {
-        val plan = testAlarmPlan(
-            mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:30", cycles = 5,
-            referenceOnset = "2026-09-17T00:15", onsetIsProjected = false,
-        )
-        val night = testNightState(lastPlan = plan)
-        val view = testEngineView(SleepState.ASLEEP)
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
-        val content = result.night!!.content as NightScreenContent.GoingToBedOrAsleep
-        assertEquals(OnsetPhase.ACTUAL, content.onsetPhase)
-    }
-
-    @Test fun `state B shows the latest stretch duration and Stop night when more sleep fits`() {
+    @Test fun `N1 renders the same way awake as asleep, with no completed sleep on screen`() {
+        // The owner's own complaint about the screen this replaced: waking up mid-night swapped in a different
+        // layout built around "You slept 1 h 59", a nap explainer and a "tonight so far" row. There is one
+        // layout now, and the completed figure belongs to the morning report at the end of the night.
         val plan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:15", cycles = 3)
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(
@@ -138,24 +131,24 @@ class NightScreenStateTest {
             totalSleep = java.time.Duration.ofMinutes(119),
             stretches = listOf(com.nikita.sleepcycle.engine.StretchSummary(instant("2026-09-17T00:30"), instant("2026-09-17T02:29"), java.time.Duration.ofMinutes(119), 1.3)),
         )
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
+        val result = state(nightState = night, engineView = view, now = "2026-09-17T02:35", screen = Screen.Night)
         val nightUi = requireNotNull(result.night)
-        val content = nightUi.content as NightScreenContent.WokeUp
-        assertFalse(content.napOnly)
-        assertEquals("1 h 59", content.sleptDurationLabel)
+        val content = nightUi.content as NightScreenContent.NextAlarm
+        assertEquals("07:15", content.alarmTimeLabel)
+        assertEquals("4 h 40", content.countdownLabel)
         assertEquals(EndNightAction.STOP, nightUi.endAction)
     }
 
-    @Test fun `state C is nap-only and offers I'm up, end night`() {
+    @Test fun `a nap night offers I'm up, end night`() {
         val plan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = "2026-09-17T06:48")
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.AWAKE, totalSleep = java.time.Duration.ofMinutes(334))
-        val result = state(nightState = night, engineView = view, screen = Screen.Night)
+        val result = state(nightState = night, engineView = view, now = "2026-09-17T06:28", screen = Screen.Night)
         val nightUi = requireNotNull(result.night)
-        val content = nightUi.content as NightScreenContent.WokeUp
-        assertTrue(content.napOnly)
+        val content = nightUi.content as NightScreenContent.NextAlarm
+        assertEquals(AlarmLabel.NAP, content.modeLabel)
+        assertEquals("20 min", content.countdownLabel)
         assertEquals(EndNightAction.IM_UP, nightUi.endAction)
-        assertEquals("20 min", content.napLengthLabel)
     }
 
     @Test fun `FINISHED shows the engine's own reason and offers End night`() {
@@ -291,8 +284,8 @@ class OutOfBedNudgeWiringTest {
             pendingOutOfBedNudgeAt = "2026-09-17T07:15",
         )
         val content = result.night!!.content
-        check(content is NightScreenContent.WokeUp) { "expected state C (WokeUp/napOnly), got $content" }
+        check(content is NightScreenContent.NextAlarm) { "expected a live night, got $content" }
         assertEquals(AlarmLabel.OUT_OF_BED, content.modeLabel)
-        assertEquals("07:15", content.modeLabelTimeLabel)
+        assertEquals("07:15", content.alarmTimeLabel)
     }
 }

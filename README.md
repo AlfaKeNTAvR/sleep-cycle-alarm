@@ -102,55 +102,50 @@ which means a simulated night dies if the app process is killed, unlike a real o
 7. You land on the **Night screen**: amber banner, a gear icon top-right (only in a debug build) that takes
    you back to the Debug screen without leaving the running night.
 8. Tap that gear icon, then turn the **Asleep** toggle on. The **Simulated timeline** list grows a `LIGHT`
-   entry right there. Tap back - the Night screen now shows a real onset, an amber **"Morning alarm"** label
-   with the engine's own reason underneath it, and the alarm itself 4.5 h away in virtual time, which at 60x
-   is a few real minutes out.
+   entry right there. Tap back - the Night screen shows **"Morning alarm"**, the alarm's own time as the big
+   number, and how long until it: 4.5 h away in virtual time, which at 60x is a few real minutes out. Since N1
+   that is the whole screen, in every mode and whether you are asleep or awake - which alarm is coming, when
+   it rings, how long until then.
 
-   **Branch: reaching the already-rang header.** Steps 9-12 below toggle Asleep off and back on repeatedly,
+   **Branch: reaching the already-rang state.** Steps 9-12 below toggle Asleep off and back on repeatedly,
    which burns the night's budget into nap territory before the morning alarm ever reaches its own 4.5 h
    target - a nap ring is exempt from the "already rang" check that a real morning-alarm ring is not, so that
    path can never show what this branch shows. To see it, run this instead of step 9, on its own pass: leave
    **Asleep on** and do not touch it again, and wait about 4.5 real minutes at 60x (the picked length, with no
-   toggling to interrupt it) for the morning alarm to ring on its own. When it rings, tap **Stop**, not **I'm
-   awake**, and return to the Night screen. Expected: the header reads **"Out-of-bed nudge at HH:mm"**, the
-   time being 15 virtual minutes after the ring; the hero number shows the morning alarm's own time (the one
-   that just rang, not a dash); the subtitle reads **"Already rang"**; and there is no reason line underneath.
-   Then wait about 15 real seconds more for that nudge to ring on its own, tap **Stop** again, and return: the
-   header reads **"Out-of-bed nudge at HH:mm"** once more, another 15 virtual minutes on. That is L1 (decided
-   2026-09-21): the nudge repeats until the night ends, because tapping **Stop** only silences the ring and
-   only **I'm awake** means you actually got up. It will keep ringing every 15 virtual minutes from here, with
-   no cap, so end the night with **I'm awake** or **Stop night** when you are done looking at this step - the
-   header falls back to **"No alarm armed"** only once the night is over. One caption is not reachable this way: the deadline caption this
-   same already-rang state can also show (see must-fix 2 of the second review round) needs the deadline switch
-   on, but turning it on changes the post-firing plan to DEADLINE_ONLY - armed at the deadline itself, which
-   never reaches "already rang" at all. Reaching both the already-rang header and the deadline caption
-   together needs the band to under-count a cycle, which this synthetic simulator never does, so keep the
-   deadline switch off for this branch and do not expect that caption. Once done, start a fresh walkthrough
-   from step 6 to continue with step 9 below.
+   toggling to interrupt it) for the morning alarm to ring on its own. When it rings, tap **Stop** (the only
+   button the ring screen has since N1) and return to the Night screen. Expected: **"Out-of-bed nudge"**, the
+   big number 15 virtual minutes after the ring, and a countdown to it. Then wait about 15 real seconds more
+   for that nudge to ring on its own, tap **Stop** again, and return: the same, another 15 virtual minutes on.
+   That is L1 (decided 2026-09-21): the nudge repeats until the night ends, because **Stop** only silences the
+   ring. It will keep ringing every 15 virtual minutes from here, with no cap, so end the night with **Stop
+   night** on the Night screen when you are done looking at this step. The already-rang state itself - **"No
+   alarm armed"**, a dash where the time goes, and **"Morning alarm rang at HH:mm"** underneath - needs the
+   window between the pre-check cancelling a nudge and the next one being armed, which this branch will
+   usually skip straight past: most of the time a nudge is pending, and the screen names that instead, which
+   is the honest reading. Once done, start a fresh walkthrough from step 6 to continue with step 9 below.
 9. Wait about a minute of real time (roughly an hour of virtual sleep at 60x - `resolveEngineConfig` ignores
    the debug options, so the cycle length stays the real 90 minutes and the owed-cycle count rounds to
-   nearest; a round needs a full virtual hour before the subtitle visibly moves, so "wait a few seconds"
+   nearest; a round needs a full virtual hour before anything visibly moves, so "wait a few seconds"
    shows nothing at all), reopen Debug, turn **Asleep** off, wait about a minute again, turn it back on. The
    picked length is the whole night's budget, so every stretch you "sleep" is subtracted from it: the plan
-   does not start a fresh count from the new onset, it counts only what is still owed. Watch the Night
-   screen's "of sleep" subtitle count down a cycle each round (there is no separate list of candidate wake
-   times any more - the owner asked for it removed as not worth reading at 3am), and the alarm keep landing
-   4.5 h after you first fell asleep however often you wake.
-10. Keep repeating off / on (about a minute of real time each way) until the "of sleep" subtitle is down to
-    its last whole cycle and the alarm is only moments out. The next time you turn Asleep back on, less than
-    half a cycle is left of the budget,
-    nothing whole is owed, and the Night screen switches to the **nap** card: a short 20-minute nap from that
-    onset (rule 7), with the mode label now reading **"Nap alarm"**.
-    This is the way to reach the nap card on a night with no deadline - using up the total is the only thing
+   does not start a fresh count from the new onset, it counts only what is still owed. Since N1 the Night
+   screen says nothing about the budget directly - watch the countdown under the alarm time shrink instead,
+   while the alarm time itself stays put, 4.5 h after you first fell asleep however often you wake.
+10. Keep repeating off / on (about a minute of real time each way) until the alarm is only moments out. The
+    next time you turn Asleep back on, less than half a cycle is left of the budget,
+    nothing whole is owed, and the Night screen switches to a short 20-minute nap from that
+    onset (rule 7), the label now reading **"Nap alarm"** and the time with it.
+    This is the way to reach nap mode on a night with no deadline - using up the total is the only thing
     that ends such a night, so waking near the previous alarm no longer produces a nap by itself. (With the
     deadline switch on instead, a nap also appears as soon as less than one cycle fits before the deadline.)
     This nap already counts toward the whole night's two-nap cap even though the main wake alarm has never
     rung - the cap no longer waits for that. Keep the app open and do not press anything else: the nap alarm
     actually reaches its own time and you can watch it fire.
-11. When that alarm rings, you land on the ring screen with two buttons - **Stop** (silences it, the night
-    keeps running) and **I'm awake** (silences it and ends the night right there, landing on the morning
-    report). Tap **Stop**, then 15 virtual minutes later (about 15 real seconds at 60x) a second alarm rings on
-    its own: the out-of-bed nudge, worded "Time to get up" - the same two buttons, same either-way behaviour.
+11. When that alarm rings, you land on the ring screen with one button - **Stop**, which silences it and
+    leaves the night running. (N1 removed the second one, **I'm awake**, which used to end the night on the
+    spot: a mis-tap half asleep cancelled every alarm left in the night. Ending a night is the Night screen's
+    job now.) Tap **Stop**, then 15 virtual minutes later (about 15 real seconds at 60x) a second alarm rings
+    on its own: the out-of-bed nudge, worded "Time to get up" - the same screen, the same one button.
     Tap **Stop** there too - and note that since L1 that nudge has already armed the NEXT one, 15 virtual
     minutes out, so do the next part promptly or expect it to ring again while you are in Debug. Now reopen
     Debug and turn **Asleep** on again: this is the second nap this night,
@@ -161,7 +156,7 @@ which means a simulated night dies if the app process is killed, unlike a real o
 12. Let the second nap alarm ring, tap **Stop**, let its own nudge ring and tap **Stop** again. Now reopen
     Debug and turn **Asleep** on a third time: with the cap already spent and no deadline left to fall back
     on, the night finishes immediately on its own - no third nap, no fixed wait - and the screen shows
-    **Night finished** with an **End night** button, without you having to press "I'm awake" to get there.
+    **Night finished** with an **End night** button, without you having to end the night yourself to get there.
     L2 detail worth seeing here (decided 2026-09-21, superseding what this step used to say): the nudge chain
     does NOT stop at this point either. Before L2 the reasoning below was true in the OTHER direction -
     reaching **Night finished** cleared the night's own state immediately, and the receiver needs that state
@@ -171,7 +166,7 @@ which means a simulated night dies if the app process is killed, unlike a real o
     `finishNightIfNeeded` now defers its bookkeeping - state, tick alarm, tracking notification, all of it -
     for as long as a nudge is still pending. Wait 15 more virtual minutes right here on the **Night finished**
     screen and watch the same nudge ring again; tap **Stop** and it arms yet another one. Only **End night**
-    (or "I'm awake" on a ring screen, had one still been up) actually silences it. See the L2 record in
+    actually silences it - since N1 the ring screen has no end-the-night button of its own. See the L2 record in
     `docs/decisions.md` for the owner's reasoning and what he accepted in exchange (the notification and tick
     alarm staying up past the point the night would otherwise have closed).
 13. Tap **End night** to see the morning report, built entirely from what you just simulated. Ending the
@@ -187,7 +182,7 @@ which means a simulated night dies if the app process is killed, unlike a real o
     never be confused). Tap the row to reopen that night's summary - the same report you just saw - or use its
     three-dot button to **Share** it, and see every `data` event tagged `source=simulated`, every
     `phone_alarm_fired` and `out_of_bed_alarm_fired` entry the simulated night actually rang, and `night_end`
-    recording whether it ended by your own "I'm awake" tap or on its own. The same menu's **Delete** removes a
+    recording how it ended. The same menu's **Delete** removes a
     night for good after one confirmation, which is how to clear desk-test logs out.
 15. Separately, any time no night is active (the button is disabled, with a reason shown underneath, while a
     night is running - it must never be able to replace the real night's own alarm): from the Debug screen,
@@ -199,5 +194,5 @@ which means a simulated night dies if the app process is killed, unlike a real o
 
 - Reboot during the night (e.g. a system update): the phone alarm is restored only once the phone is unlocked once after the reboot (`BootReceiver` needs credential-protected storage). Direct Boot support, which would restore it before first unlock, is deferred - not fixed in this batch.
 - Without a deadline, if the band never reports sleep (e.g. it is taken off), the wake time keeps moving forward all night and nothing rings until the band eventually reports sleep or the owner ends the night by hand.
-- The night ending on its own (the deadline passing, or the two-nap cap spending itself with no deadline left) closes the night's own bookkeeping - the persisted state, the tick alarm, the tracking notification - only once there is nothing left pending; a still-ringing alarm is left alone either way. L2 (decided 2026-09-21): if an out-of-bed nudge is pending at that exact moment, closing the bookkeeping is deferred, not merely skipped for the nudge alone - state, the tick alarm and the notification all stay exactly as they are, and the chain keeps repeating, until your own "I'm awake" or "Stop night" silences it. The night reaching its own end does not.
+- The night ending on its own (the deadline passing, or the two-nap cap spending itself with no deadline left) closes the night's own bookkeeping - the persisted state, the tick alarm, the tracking notification - only once there is nothing left pending; a still-ringing alarm is left alone either way. L2 (decided 2026-09-21): if an out-of-bed nudge is pending at that exact moment, closing the bookkeeping is deferred, not merely skipped for the nudge alone - state, the tick alarm and the notification all stay exactly as they are, and the chain keeps repeating, until your own "Stop night" / "I'm up, end night" on the Night screen silences it. The night reaching its own end does not.
 - A simulated night dies if the app process is killed - the fast in-process tick path a high simulation speed relies on has no reboot or process-death recovery of its own, unlike a real night's `AlarmManager` path. Debug-only, never a real night's concern.

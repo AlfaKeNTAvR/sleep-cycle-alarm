@@ -1,11 +1,10 @@
 package com.nikita.sleepcycle.ui.state
 
-// File purpose: picks which night-screen content variant applies (spec states A-D plus the FINISHED
-// amendment; D2/D8 removed the band alarm status line and the OVERDUE amendment) from the engine's mode and
-// sleep state, and attaches the always-visible sync status.
+// File purpose: picks which night-screen content variant applies (N1: one for a live night, plus the morning
+// report, the FINISHED amendment and Loading) from the engine's mode, and attaches the always-visible sync
+// status.
 
 import com.nikita.sleepcycle.engine.AlarmMode
-import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
@@ -76,16 +75,13 @@ fun buildNightUiState(
 
     val (rawContent, endAction) = when (plan.mode) {
         AlarmMode.FINISHED -> buildFinishedContent(plan) to EndNightAction.END
-        // Asleep again for the nap: asleep-style wording, not "you slept" - there is no completed
-        // stretch to report yet, just the short nap alarm ahead.
-        AlarmMode.NAP -> when (engineView.sleepState) {
-            SleepState.ASLEEP -> buildNapAsleepContent(plan, zone, state.morningAlarmAt) to EndNightAction.IM_UP
-            SleepState.AWAKE, SleepState.NOT_YET_ASLEEP -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = true, state.debugOptions, state.morningAlarmAt) to EndNightAction.IM_UP
-        }
-        AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> when (engineView.sleepState) {
-            SleepState.AWAKE -> buildWokeUpContent(plan, state.settings.deadline, engineView, zone, napOnly = false, state.debugOptions, state.morningAlarmAt) to EndNightAction.STOP
-            SleepState.NOT_YET_ASLEEP, SleepState.ASLEEP -> buildGoingToBedContent(plan, zone, state.debugOptions, state.morningAlarmAt, state.settings.deadline) to EndNightAction.STOP
-        }
+        // N1: every live night renders the same way now (see NightScreenContent.NextAlarm), so the band's own
+        // sleep state no longer picks a content variant at all - it picked between wordings that no longer
+        // differ. The mode still picks the end-night button's wording: NAP is the one mode reached only after
+        // the owner has already been woken once, which is what "I'm up, end night" says and "Stop night"
+        // does not.
+        AlarmMode.NAP -> buildNextAlarmContent(plan, zone, state.morningAlarmAt, now) to EndNightAction.IM_UP
+        AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> buildNextAlarmContent(plan, zone, state.morningAlarmAt, now) to EndNightAction.STOP
     }
     // Round 2 of the 09/21 review, must-fix 1, extended by round 3's should-fix 1: see
     // applyPendingOutOfBedNudge's own doc for why the plan's own wakeAt (plan.wakeAt, not the FINISHED case's
