@@ -124,17 +124,28 @@ internal fun alarmModeLabel(plan: AlarmPlan, morningAlarmAt: Instant?): AlarmLab
  * so winning the "rings first" test means the nudge owns the time and the countdown too. `rangAtTimeLabel` is
  * cleared for the same reason: with a live countdown to show, a past ring is no longer what that line is for.
  *
+ * N2 (owner-reported, 2026-09-21) extends the override to [NightScreenContent.NightFinished], which it used to
+ * pass straight through. L2 had already decided that a pending nudge outlives FINISHED - `finishNightIfNeeded`
+ * defers its whole bookkeeping and the chain keeps repeating - but the screen still drew the plain "Night
+ * finished" wording, asserting the night was over while an alarm was minutes from ringing. The owner hit
+ * exactly that on his own phone and asked whether the deadline had stopped the nudges; it had not (his log
+ * shows `night_end_deferred` and then a nudge ringing 35 virtual minutes later), and nothing on screen said
+ * so. A finished plan whose nudge is still pending is therefore drawn as the ordinary live-night layout
+ * naming that nudge, and reverts to the finished wording the moment the chain genuinely ends.
+ *
  * Applied once, after content is built, rather than threading `pendingOutOfBedNudgeAt` into the builder, so
  * the nudge (which lives in its own store, read by the caller as disk I/O - see `OutOfBedNudgeStore.kt`) stays
  * out of the plan-shaped path. [pendingOutOfBedNudgeAt] must still be ahead of [now]: a stale/past instant
- * (the nudge already fired, or the read raced a cancel) must not resurrect a dead alarm on screen.
+ * (the nudge already fired, or the read raced a cancel) must not resurrect a dead alarm on screen. The morning
+ * report and [NightScreenContent.Loading] are never overridden: the report is shown after the night has
+ * genuinely ended, which cancels the nudge, and Loading has no alarm to talk about yet.
  */
 internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingOutOfBedNudgeAt: Instant?, planWakeAt: Instant?, now: Instant, zone: ZoneId): NightScreenContent {
-    if (content !is NightScreenContent.NextAlarm) return content
+    if (content !is NightScreenContent.NextAlarm && content !is NightScreenContent.NightFinished) return content
     if (pendingOutOfBedNudgeAt == null || !pendingOutOfBedNudgeAt.isAfter(now)) return content
     val nudgeRingsFirst = planWakeAt == null || planWakeAt.isAfter(pendingOutOfBedNudgeAt)
     if (!nudgeRingsFirst) return content
-    return content.copy(
+    return NightScreenContent.NextAlarm(
         modeLabel = AlarmLabel.OUT_OF_BED,
         alarmTimeLabel = formatClockTime(pendingOutOfBedNudgeAt, zone),
         countdownLabel = formatTimeUntil(pendingOutOfBedNudgeAt, now),

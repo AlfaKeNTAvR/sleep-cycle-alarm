@@ -152,14 +152,84 @@ class BuildNightUiStateTest {
     }
 }
 
-/** Runs buildNightUiState on a live night and returns the one content variant it produces, failing loudly otherwise. */
-private fun nightContent(
+/**
+ * N2 (owner-reported, 2026-09-21): a FINISHED plan with a nudge still armed was drawn as the plain "Night
+ * finished" screen, which says the night is over while an alarm is minutes away from ringing. The owner hit
+ * this on his own phone and asked, reasonably, whether the deadline had stopped the nudges - it had not
+ * (`night_end_deferred`, cause `out_of_bed_nudge_pending`, then a nudge ringing 35 virtual minutes later, in
+ * `night-sim-20260921-2151`), but the screen gave him no way to know that. L2 already decided a pending nudge
+ * outlives FINISHED; this is that decision reaching the screen.
+ */
+class FinishedNightWithPendingNudgeTest {
+    private val finishedPlan = testAlarmPlan(mode = AlarmMode.FINISHED, reason = "Night finished, deadline was 07:30.")
+
+    @Test fun `a finished night with a nudge still armed shows the nudge, not the finished screen`() {
+        val state = testNightState(lastPlan = finishedPlan)
+
+        val content = nightContent(state, SleepState.AWAKE, now = "2026-09-17T07:35", pendingOutOfBedNudgeAt = "2026-09-17T07:45")
+
+        assertEquals(AlarmLabel.OUT_OF_BED, content.modeLabel)
+        assertEquals("07:45", content.alarmTimeLabel)
+        assertEquals("10 min", content.countdownLabel)
+    }
+
+    @Test fun `that screen offers I'm up, end night rather than the bare End night`() {
+        // The owner's own words on what he saw: "at the bottom, it didn't say that I'm awake and the night.
+        // It's just like end night." With an alarm still coming, this is an ordinary live night as far as the
+        // owner is concerned, so it gets the live night's own wording.
+        val state = testNightState(lastPlan = finishedPlan)
+
+        assertEquals(EndNightAction.IM_UP, endActionWith(state, pendingOutOfBedNudgeAt = "2026-09-17T07:45"))
+    }
+
+    @Test fun `a finished night with nothing armed still shows the finished screen`() {
+        val state = testNightState(lastPlan = finishedPlan)
+
+        val uiState = uiStateFor(state, now = "2026-09-17T07:35", pendingOutOfBedNudgeAt = null)
+
+        val content = uiState.content
+        check(content is NightScreenContent.NightFinished) { "expected the finished screen, got $content" }
+        assertEquals("Night finished, deadline was 07:30.", content.reasonText)
+        assertEquals(EndNightAction.END, uiState.endAction)
+    }
+
+    @Test fun `a finished night whose nudge has already fired still shows the finished screen`() {
+        // A stale or past pending instant must not resurrect a dead alarm here any more than anywhere else.
+        val state = testNightState(lastPlan = finishedPlan)
+
+        val uiState = uiStateFor(state, now = "2026-09-17T07:50", pendingOutOfBedNudgeAt = "2026-09-17T07:45")
+
+        check(uiState.content is NightScreenContent.NightFinished) { "expected the finished screen, got ${uiState.content}" }
+        assertEquals(EndNightAction.END, uiState.endAction)
+    }
+
+    @Test fun `the morning report is never overridden by a pending nudge`() {
+        // The report is shown after the night has genuinely been ended, which cancels the nudge - but the
+        // caller still passes whatever it last read, so this pins that the report wins regardless.
+        val uiState = checkNotNull(
+            buildNightUiState(
+                nightState = null,
+                engineView = testEngineView(SleepState.AWAKE),
+                now = instant("2026-09-17T07:35"),
+                zone = testZone,
+                showingMorningReport = true,
+                morningReportEndedAt = instant("2026-09-17T07:35"),
+                confirmingEndNight = false,
+                pendingOutOfBedNudgeAt = instant("2026-09-17T07:45"),
+            )
+        )
+
+        check(uiState.content is NightScreenContent.MorningReport) { "expected the morning report, got ${uiState.content}" }
+    }
+}
+
+private fun uiStateFor(
     state: com.nikita.sleepcycle.night.NightState,
-    sleepState: SleepState,
     now: String,
     pendingOutOfBedNudgeAt: String?,
-): NightScreenContent.NextAlarm {
-    val uiState = buildNightUiState(
+    sleepState: SleepState = SleepState.AWAKE,
+): NightUiState = checkNotNull(
+    buildNightUiState(
         nightState = state,
         engineView = testEngineView(sleepState),
         now = instant(now),
@@ -169,21 +239,22 @@ private fun nightContent(
         confirmingEndNight = false,
         pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt?.let(::instant),
     )
-    val content = uiState?.content
+)
+
+/** Runs buildNightUiState on a live night and returns the one content variant it produces, failing loudly otherwise. */
+private fun nightContent(
+    state: com.nikita.sleepcycle.night.NightState,
+    sleepState: SleepState,
+    now: String,
+    pendingOutOfBedNudgeAt: String?,
+): NightScreenContent.NextAlarm {
+    val content = uiStateFor(state, now, pendingOutOfBedNudgeAt, sleepState).content
     check(content is NightScreenContent.NextAlarm) { "expected a live night, got $content" }
     return content
 }
 
-private fun endAction(state: com.nikita.sleepcycle.night.NightState, sleepState: SleepState): EndNightAction {
-    val uiState = buildNightUiState(
-        nightState = state,
-        engineView = testEngineView(sleepState),
-        now = instant("2026-09-17T03:05"),
-        zone = testZone,
-        showingMorningReport = false,
-        morningReportEndedAt = null,
-        confirmingEndNight = false,
-        pendingOutOfBedNudgeAt = null,
-    )
-    return checkNotNull(uiState).endAction
-}
+private fun endAction(state: com.nikita.sleepcycle.night.NightState, sleepState: SleepState): EndNightAction =
+    uiStateFor(state, now = "2026-09-17T03:05", pendingOutOfBedNudgeAt = null, sleepState = sleepState).endAction
+
+private fun endActionWith(state: com.nikita.sleepcycle.night.NightState, pendingOutOfBedNudgeAt: String): EndNightAction =
+    uiStateFor(state, now = "2026-09-17T07:35", pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt).endAction

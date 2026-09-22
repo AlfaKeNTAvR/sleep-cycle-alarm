@@ -73,7 +73,7 @@ fun buildNightUiState(
         )
     }
 
-    val (rawContent, endAction) = when (plan.mode) {
+    val (rawContent, rawEndAction) = when (plan.mode) {
         AlarmMode.FINISHED -> buildFinishedContent(plan) to EndNightAction.END
         // N1: every live night renders the same way now (see NightScreenContent.NextAlarm), so the band's own
         // sleep state no longer picks a content variant at all - it picked between wordings that no longer
@@ -87,6 +87,15 @@ fun buildNightUiState(
     // applyPendingOutOfBedNudge's own doc for why the plan's own wakeAt (plan.wakeAt, not the FINISHED case's
     // null) is passed alongside the nudge - it can also override a NON-null modeLabel now, not just a null one.
     val content = applyPendingOutOfBedNudge(rawContent, pendingOutOfBedNudgeAt, plan.wakeAt, now, zone)
+    // N2: when that override turns a finished night back into a live one, the button follows the screen. The
+    // owner's own words on what the finished screen offered him while a nudge was still armed: "it didn't say
+    // that I'm awake and the night. It's just like end night." With an alarm still coming this is an ordinary
+    // live night to him, so it gets the live night's own wording.
+    val endAction = if (rawContent is NightScreenContent.NightFinished && content is NightScreenContent.NextAlarm) {
+        EndNightAction.IM_UP
+    } else {
+        rawEndAction
+    }
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
         activeDebugSwitches = debugSwitches,
