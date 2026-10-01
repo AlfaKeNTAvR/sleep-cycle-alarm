@@ -13,8 +13,11 @@ import java.time.Duration
 import java.time.Instant
 
 private val syncMutex = Mutex()
-private val SYNC_TIMEOUT: Duration = Duration.ofSeconds(60)
-private val EXPORT_TIMEOUT: Duration = Duration.ofSeconds(60)
+// P2 (owner decision, 2026-09-30): 20 s per step, was 60 s. A stale band link (2026-09-30) never answers, so the
+// first sync after Start night took a full minute to fail and show the "band not syncing" warning; 20 s is the
+// same bound the connection test uses and about 4x the slowest healthy night sync on record (2.5-5.3 s, ~200).
+private val SYNC_TIMEOUT: Duration = Duration.ofSeconds(20)
+private val EXPORT_TIMEOUT: Duration = Duration.ofSeconds(20)
 
 /**
  * Runs sync -> wait for finish -> export -> wait for success/fail -> read, one step at a time.

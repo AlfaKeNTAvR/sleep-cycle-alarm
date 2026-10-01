@@ -172,8 +172,9 @@ private fun BandNotSyncingWarning() {
 private fun statusLineText(state: NightUiState): String = when {
     state.content is NightScreenContent.MorningReport -> stringResource(R.string.night_morning_ended_at, state.content.endedAtTimeLabel)
     state.lastSyncOk == null && state.lastSyncTimeLabel == null -> stringResource(R.string.night_status_never_synced)
+    // Owner request, 2026-09-30: the technical cause ("timed out after PT20S") is not shown - the night log keeps it.
     state.lastSyncOk == false && state.syncFailureCause != null ->
-        stringResource(R.string.night_status_sync_failed, state.lastSyncTimeLabel.orEmpty(), state.syncFailureCause)
+        stringResource(R.string.night_status_sync_failed, state.lastSyncTimeLabel.orEmpty())
     state.lastSyncOk == false -> stringResource(R.string.night_status_data_stale, state.lastSyncTimeLabel.orEmpty())
     else -> stringResource(R.string.night_status_synced_ok, state.lastSyncTimeLabel.orEmpty())
 }
