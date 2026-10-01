@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
+import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
@@ -53,6 +54,7 @@ fun buildBeforeBedUiState(
     nightActive: Boolean,
     debugOptions: DebugOptions = DebugOptions(),
     confirmingDebugNightStart: Boolean = false,
+    connectionTest: ConnectionTestState,
 ): BeforeBedUiState {
     val deadline = deadlineInstantFor(appSettings, now, zone)
     val resolvedCycles = resolvePickedCycles(appSettings.pickedCycles, now, deadline, debugOptions)
@@ -67,8 +69,9 @@ fun buildBeforeBedUiState(
     }
     val checklistComplete = isSetupComplete(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions)
     val gate = startNightGate(checklistComplete, appSettings.lastSetupCheckPassedAt, now, debugOptions)
+    val bandCheck = bandCheckStatusFor(connectionTest)
     return BeforeBedUiState(
-        bandReady = bandReady,
+        bandStatus = bandStatusFor(bandReady, bandCheck),
         deadlineEnabled = appSettings.deadlineEnabled,
         deadlineTime = appSettings.lastDeadline ?: DEFAULT_DEADLINE_TIME,
         sleepLengthOptions = sleepLengthOptions,
@@ -81,5 +84,26 @@ fun buildBeforeBedUiState(
         activeDebugSwitches = activeDebugSwitches(debugOptions).map { ActiveDebugSwitch.SIMULATED_SLEEP_DATA }.distinct(),
         simulatedTimeValue = null,
         confirmingDebugNightStart = confirmingDebugNightStart,
+        bandCheck = bandCheck,
     )
+}
+
+/** P2: a failed test's reason is its first action-needed line (the band line comes first in every report), falling back to its first line. */
+private fun bandCheckStatusFor(connectionTest: ConnectionTestState): BandCheckStatus = when (connectionTest) {
+    ConnectionTestState.Idle -> BandCheckStatus.None
+    ConnectionTestState.Running -> BandCheckStatus.Checking
+    is ConnectionTestState.Done -> if (connectionTest.report.isReady) {
+        BandCheckStatus.None
+    } else {
+        val lines = connectionTest.report.lines
+        val reasonLine = lines.firstOrNull { it.severity == SetupCheckLineSeverity.ACTION_NEEDED } ?: lines.firstOrNull()
+        BandCheckStatus.Failed(reasonLine?.text.orEmpty())
+    }
+}
+
+/** P2: the corner status line - see [BandStatus]. [bandSetUp]: Gadgetbridge installed, band address and export file chosen. */
+internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus): BandStatus = when {
+    !bandSetUp -> BandStatus.SETUP_INCOMPLETE
+    bandCheck is BandCheckStatus.Failed -> BandStatus.NOT_RESPONDING
+    else -> BandStatus.CONNECTED
 }

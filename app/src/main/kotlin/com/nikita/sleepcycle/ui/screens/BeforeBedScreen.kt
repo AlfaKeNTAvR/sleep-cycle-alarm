@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
@@ -21,13 +22,18 @@ import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.MediumTimeText
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
+import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.components.SleepLengthChip
 import com.nikita.sleepcycle.ui.components.StatusLine
 import com.nikita.sleepcycle.ui.components.ToggleRow
+import com.nikita.sleepcycle.ui.state.BandCheckStatus
+import com.nikita.sleepcycle.ui.state.BandStatus
 import com.nikita.sleepcycle.ui.state.BeforeBedUiState
 import com.nikita.sleepcycle.ui.state.SleepLengthOption
+import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.ChipGap
+import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import java.time.LocalTime
 
 /**
@@ -50,12 +56,19 @@ fun BeforeBedScreen(
     onStartNight: () -> Unit,
     onConfirmDebugNightStart: () -> Unit = {},
     onCancelDebugNightStart: () -> Unit = {},
+    onTestAgain: () -> Unit = {},
 ) {
     ScreenContainer(scrollable = false) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             StatusLine(
-                text = if (state.bandReady) stringResource(R.string.before_bed_band_connected) else stringResource(R.string.before_bed_band_not_ready),
-                ok = state.bandReady,
+                text = stringResource(
+                    when (state.bandStatus) {
+                        BandStatus.CONNECTED -> R.string.before_bed_band_connected
+                        BandStatus.NOT_RESPONDING -> R.string.before_bed_band_not_responding
+                        BandStatus.SETUP_INCOMPLETE -> R.string.before_bed_band_not_ready
+                    }
+                ),
+                ok = state.bandStatus == BandStatus.CONNECTED,
             )
             Row {
                 MenuLinesButton(stringResource(R.string.content_description_open_logs), onOpenLogs)
@@ -94,12 +107,13 @@ fun BeforeBedScreen(
 
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
+        BandCheckLine(state.bandCheck, onTestAgain)
         if (state.startNightBlocker != null) {
             Text(
                 text = stringResource(setupBlockerReasonRes(state.startNightBlocker)),
                 style = MaterialTheme.typography.bodySmall,
             )
-        } else if (state.startNightBlockedBySetupCheck) {
+        } else if (state.startNightBlockedBySetupCheck && state.bandCheck == BandCheckStatus.None) {
             Text(
                 text = stringResource(R.string.start_blocked_setup_check_stale),
                 style = MaterialTheme.typography.bodySmall,
@@ -121,6 +135,34 @@ fun BeforeBedScreen(
             onConfirm = onConfirmDebugNightStart,
             onDismiss = onCancelDebugNightStart,
         )
+    }
+}
+
+/**
+ * P2: the latest connection test, quietly, right above "Start night": a muted "checking" line while one runs, or
+ * the failure reason in amber with a "Test again" button. Never a dialog, and never itself disables Start night.
+ */
+@Composable
+private fun BandCheckLine(bandCheck: BandCheckStatus, onTestAgain: () -> Unit) {
+    when (bandCheck) {
+        BandCheckStatus.None -> Unit
+        BandCheckStatus.Checking -> Text(
+            text = stringResource(R.string.before_bed_band_check_running),
+            style = MaterialTheme.typography.bodySmall,
+            color = NightOnSurfaceMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        is BandCheckStatus.Failed -> {
+            Text(
+                text = stringResource(R.string.before_bed_band_check_failed, bandCheck.reason),
+                style = MaterialTheme.typography.bodySmall,
+                color = AmberAccent,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            SecondaryActionButton(text = stringResource(R.string.before_bed_band_check_retry), onClick = onTestAgain)
+        }
     }
 }
 

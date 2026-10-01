@@ -280,3 +280,15 @@ Owner-reproduced on a simulated night (`files/nightlogs/night-sim-20260921-1729.
 - **Night screen (owner's choice "warn, still arm"):** while the last sync is failing, a banner reads "Band not syncing - alarm is only an estimate. Disconnect and reconnect the band in Gadgetbridge." The estimated alarm stays armed; the banner clears on the first successful sync. Rejected: blocking Start night (a dead band would mean no alarm at all) and asking each time.
 - **No new saved state:** both conditions read the existing last-sync result. Cost: a single transient failure shows the banner until the next tick (5 to 15 min); the 8 real nights before this one had 0 failed syncs between them.
 - **Error colour, not amber,** because amber already means debug mode on this screen. The warning is its own field on `NightUiState`, so the N1 `NextAlarm` content is untouched.
+
+## P2: an automatic, bounded connection test (decided 2026-09-30)
+
+- **The owner's asks:** run "Test connection" by itself instead of from Setup every 24 h, and stop it stalling when the band is not talking to Gadgetbridge ("I need to completely kill the app and restart it").
+- **The 24 h requirement** is `SETUP_CHECK_VALIDITY_WINDOW`: Start night is disabled unless a test passed in the last 24 h.
+- **Trigger: every app open outside a night**, when no pass is newer than 1 h and no attempt started in the last 2 min. App-open rather than a background scheduler, because a night always starts by opening the app. The 1 h re-check is much shorter than 24 h on purpose: on 2026-09-30 the night started on a still-valid pass from the evening before, and all 36 syncs that night timed out (see P1).
+- **Every attempt ends within 20 s** (`CONNECTION_TEST_DEADLINE`, about 4x the slowest healthy round trip: tests took 2.5-4.8 s over 11 passes, night syncs 2.5-5.3 s over ~200). The old wait was 60 s per step (sync, then export), so up to about 2 min with the button disabled and no way to retry; every logged failure was a sync that never finished. Night sync timeouts (60 s per step) are unchanged.
+- **The automatic test retries once after 5 s** before showing a failure (owner's choice; in 3 of the 4 logged failures a retry soon after passed). Worst case about 45 s. A tapped test runs once.
+- **A failed test, automatic or tapped, keeps the earlier pass** (owner's choice, matching P1's "warn, still arm"): it shows in amber on Before bed with "Test again" and the fix ("disconnect and reconnect the band in Gadgetbridge"), but never greys out Start night on its own. Start night still needs a pass within 24 h.
+- **Only a finished sync counts as a pass.** On 2026-09-30 Gadgetbridge showed the band as connected (no battery level) while no sync completed, so its "connected" status is never trusted.
+- **Each attempt is logged** to `setup.jsonl`: automatic or tapped, which attempt, pass or fail, duration.
+- **Not built, for later:** Gadgetbridge 0.94.0 registers receivers for `BLUETOOTH_CONNECT` and `BLUETOOTH_DISCONNECT`, so the app could probably force the reconnect itself. The extra naming the band and the Gadgetbridge setting that enables them are unverified.

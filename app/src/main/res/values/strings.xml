@@ -59,11 +59,17 @@
     <!-- W17 (owner request): one line, so it does not wrap under the button. How old the last pass is was the
          half that wrapped, and it is already implied by the line appearing at all. -->
     <string name="start_blocked_setup_check_stale">Run \"Test connection\" in Setup.</string>
+    <!-- P2: the automatic (or tapped) connection test, shown quietly above "Start night" on Before bed. -->
+    <string name="before_bed_band_check_running">Checking the band connection…</string>
+    <string name="before_bed_band_check_failed">Band check failed: %1$s</string>
+    <string name="before_bed_band_check_retry">Test again</string>
 
     <!-- Before bed screen -->
     <string name="before_bed_title">Tonight</string>
     <string name="before_bed_band_connected">Band connected</string>
     <string name="before_bed_band_not_ready">Band setup incomplete</string>
+    <!-- P2: the latest connection test failed; see BandStatus.NOT_RESPONDING. -->
+    <string name="before_bed_band_not_responding">Band not responding</string>
     <string name="before_bed_wake_me_by">Wake me by</string>
     <string name="content_description_deadline_switch">Use a deadline</string>
     <string name="before_bed_sleep_up_to">Sleep up to</string>

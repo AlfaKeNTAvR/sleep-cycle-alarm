@@ -47,7 +47,7 @@ fun buildUiState(
         screen = screen,
         setup = buildSetupUiState(appSettings, permissionStatus, gadgetbridgeInstalled, connectionTest),
         beforeBed = buildBeforeBedUiState(
-            appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart
+            appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart, connectionTest
         ),
         night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingOutOfBedNudgeAt),
         logs = buildLogsUiState(nightLogFiles, zone),
