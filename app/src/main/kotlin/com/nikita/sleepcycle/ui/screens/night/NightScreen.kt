@@ -65,7 +65,9 @@ fun NightScreen(
             // W15 (owner request): the sync line shares one row with the toolbar icon beside it, the same header
             // shape Before bed uses for "Band connected" - not a lone icon with the status stacked underneath.
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                StatusLine(text = statusLineText(state), ok = state.lastSyncOk != false)
+                // Owner request, 2026-09-30: "Not synced yet" is not good news, so no green dot - grey (null) until
+                // the first sync answers, then green or red.
+                StatusLine(text = statusLineText(state), ok = state.lastSyncOk)
                 // BuildConfig.DEBUG-gated, same as the Debug row Settings carries (SettingsScreen.kt): the
                 // simulator's buttons must be reachable while a simulated night runs, not just before it starts.
                 if (BuildConfig.DEBUG) {

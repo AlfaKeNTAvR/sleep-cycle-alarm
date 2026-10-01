@@ -44,7 +44,9 @@ private val NightColorScheme = darkColorScheme(
     error = ErrorRed,
     onError = NightOnBackground,
     errorContainer = ErrorRed,
-    onErrorContainer = NightOnBackground,
+    // P1 (owner request on the phone, 2026-09-30): the near-white text on the red "band not syncing" banner was
+    // too bright at night; dark text on the same red instead.
+    onErrorContainer = NightBackground,
     outline = NightSurfaceBorder,
     outlineVariant = NightSurfaceBorder,
 )
