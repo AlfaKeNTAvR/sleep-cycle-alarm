@@ -29,8 +29,11 @@ sealed interface BandCheckStatus {
  * report only whether the band was set up, which is not what "connected" means to someone reading it.
  */
 enum class BandStatus {
-    /** Set up, and the latest connection test did not fail (it passed, is running, or none ran this session). */
+    /** Set up, and the latest connection test passed, or none ran this session. */
     CONNECTED,
+
+    /** Set up, and a connection test is running right now: the corner does not claim an answer before it has one (owner-reported on the phone, 2026-09-30). */
+    CHECKING,
 
     /** Set up, but the latest connection test failed. */
     NOT_RESPONDING,
