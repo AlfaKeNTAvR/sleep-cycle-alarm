@@ -29,8 +29,15 @@ sealed interface BandCheckStatus {
  * report only whether the band was set up, which is not what "connected" means to someone reading it.
  */
 enum class BandStatus {
-    /** Set up, and the latest connection test passed, or none ran this session. */
+    /** Set up, and a connection test passed within [AUTO_CONNECTION_TEST_RECHECK_AFTER]; shown with that pass's time. */
     CONNECTED,
+
+    /**
+     * Set up, but no pass within [AUTO_CONNECTION_TEST_RECHECK_AFTER] (or none at all). Owner-reported on the phone,
+     * 2026-09-30: the band was disconnected while the corner still said "Band connected" from an old pass - the app
+     * only knows what its last check found, so an old pass reads "Not synced yet", never "connected".
+     */
+    NOT_CHECKED_RECENTLY,
 
     /** Set up, and a connection test is running right now: the corner does not claim an answer before it has one (owner-reported on the phone, 2026-09-30). */
     CHECKING,
@@ -45,6 +52,8 @@ enum class BandStatus {
 /** Everything the "Before bed" screen shows. */
 data class BeforeBedUiState(
     val bandStatus: BandStatus,
+    /** P2 (owner request, 2026-09-30): the clock time of the last passed connection test, e.g. "23:06", shown in brackets after "Band connected"; null when none has passed. */
+    val bandCheckedAtLabel: String? = null,
     val deadlineEnabled: Boolean,
     val deadlineTime: LocalTime,
     val sleepLengthOptions: List<SleepLengthOption>,

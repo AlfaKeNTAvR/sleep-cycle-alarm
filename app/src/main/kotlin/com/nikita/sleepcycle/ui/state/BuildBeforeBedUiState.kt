@@ -11,8 +11,10 @@ import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
 import com.nikita.sleepcycle.night.sleepLengthFor
 import com.nikita.sleepcycle.night.sleepLengthIsAvailable
+import com.nikita.sleepcycle.ui.format.formatClockTime
 import com.nikita.sleepcycle.ui.format.formatSleepLengthLabel
 import com.nikita.sleepcycle.ui.format.nextOccurrenceOfDeadline
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -71,7 +73,8 @@ fun buildBeforeBedUiState(
     val gate = startNightGate(checklistComplete, appSettings.lastSetupCheckPassedAt, now, debugOptions)
     val bandCheck = bandCheckStatusFor(connectionTest)
     return BeforeBedUiState(
-        bandStatus = bandStatusFor(bandReady, bandCheck),
+        bandStatus = bandStatusFor(bandReady, bandCheck, appSettings.lastSetupCheckPassedAt, now),
+        bandCheckedAtLabel = appSettings.lastSetupCheckPassedAt?.let { formatClockTime(it, zone) },
         deadlineEnabled = appSettings.deadlineEnabled,
         deadlineTime = appSettings.lastDeadline ?: DEFAULT_DEADLINE_TIME,
         sleepLengthOptions = sleepLengthOptions,
@@ -101,10 +104,21 @@ private fun bandCheckStatusFor(connectionTest: ConnectionTestState): BandCheckSt
     }
 }
 
-/** P2: the corner status line - see [BandStatus]. [bandSetUp]: Gadgetbridge installed, band address and export file chosen. */
-internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus): BandStatus = when {
+/**
+ * P2: the corner status line - see [BandStatus]. [bandSetUp]: Gadgetbridge installed, band address and export file
+ * chosen. [lastPassedAt] is REAL time like the setting it comes from; [now] is the screen's clock, re-read only
+ * every 30 s, so a pass up to [SETUP_CHECK_FUTURE_TOLERANCE] ahead of it still counts (see that constant).
+ */
+internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus, lastPassedAt: Instant?, now: Instant): BandStatus = when {
     !bandSetUp -> BandStatus.SETUP_INCOMPLETE
     bandCheck is BandCheckStatus.Failed -> BandStatus.NOT_RESPONDING
     bandCheck is BandCheckStatus.Checking -> BandStatus.CHECKING
-    else -> BandStatus.CONNECTED
+    passedRecently(lastPassedAt, now) -> BandStatus.CONNECTED
+    else -> BandStatus.NOT_CHECKED_RECENTLY
+}
+
+private fun passedRecently(lastPassedAt: Instant?, now: Instant): Boolean {
+    if (lastPassedAt == null) return false
+    val elapsed = Duration.between(lastPassedAt, now)
+    return elapsed >= SETUP_CHECK_FUTURE_TOLERANCE.negated() && elapsed <= AUTO_CONNECTION_TEST_RECHECK_AFTER
 }

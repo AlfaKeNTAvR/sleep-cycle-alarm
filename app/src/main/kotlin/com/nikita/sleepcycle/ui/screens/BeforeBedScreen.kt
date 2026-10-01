@@ -61,17 +61,16 @@ fun BeforeBedScreen(
     ScreenContainer(scrollable = false) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             StatusLine(
-                text = stringResource(
-                    when (state.bandStatus) {
-                        BandStatus.CONNECTED -> R.string.before_bed_band_connected
-                        BandStatus.CHECKING -> R.string.before_bed_band_checking
-                        BandStatus.NOT_RESPONDING -> R.string.before_bed_band_not_responding
-                        BandStatus.SETUP_INCOMPLETE -> R.string.before_bed_band_not_ready
-                    }
-                ),
+                text = when (state.bandStatus) {
+                    BandStatus.CONNECTED -> stringResource(R.string.before_bed_band_connected_at, state.bandCheckedAtLabel.orEmpty())
+                    BandStatus.NOT_CHECKED_RECENTLY -> stringResource(R.string.night_status_never_synced)
+                    BandStatus.CHECKING -> stringResource(R.string.before_bed_band_checking)
+                    BandStatus.NOT_RESPONDING -> stringResource(R.string.before_bed_band_not_responding)
+                    BandStatus.SETUP_INCOMPLETE -> stringResource(R.string.before_bed_band_not_ready)
+                },
                 ok = when (state.bandStatus) {
                     BandStatus.CONNECTED -> true
-                    BandStatus.CHECKING -> null
+                    BandStatus.CHECKING, BandStatus.NOT_CHECKED_RECENTLY -> null
                     BandStatus.NOT_RESPONDING, BandStatus.SETUP_INCOMPLETE -> false
                 },
             )

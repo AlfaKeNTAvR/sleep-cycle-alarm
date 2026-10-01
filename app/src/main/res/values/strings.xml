@@ -66,7 +66,8 @@
 
     <!-- Before bed screen -->
     <string name="before_bed_title">Tonight</string>
-    <string name="before_bed_band_connected">Band connected</string>
+    <!-- P2 (owner request, 2026-09-30): the time is the last passed connection test, in brackets. -->
+    <string name="before_bed_band_connected_at">Band connected (%1$s)</string>
     <string name="before_bed_band_not_ready">Band setup incomplete</string>
     <!-- P2: the latest connection test failed; see BandStatus.NOT_RESPONDING. -->
     <string name="before_bed_band_not_responding">Band not responding</string>
@@ -82,7 +83,7 @@
     <!-- Night screen: common -->
     <string name="night_status_never_synced">Not synced yet</string>
     <string name="night_status_synced_ok">Synced at %1$s</string>
-    <string name="night_status_sync_failed">Sync failed at %1$s: %2$s</string>
+    <string name="night_status_sync_failed">Sync failed at %1$s</string>
     <string name="night_status_data_stale">Data may be stale as of %1$s</string>
     <string name="night_loading">Getting the first reading…</string>
     <string name="night_stop_night">Stop night</string>
