@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
@@ -142,12 +143,16 @@ private fun BandCheckLine(bandCheck: BandCheckStatus, onTestAgain: () -> Unit) {
             text = stringResource(R.string.before_bed_band_check_running),
             style = MaterialTheme.typography.bodySmall,
             color = NightOnSurfaceMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
         is BandCheckStatus.Failed -> {
             Text(
                 text = stringResource(R.string.before_bed_band_check_failed, bandCheck.reason),
                 style = MaterialTheme.typography.bodySmall,
                 color = AmberAccent,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
             SecondaryActionButton(text = stringResource(R.string.before_bed_band_check_retry), onClick = onTestAgain)
         }

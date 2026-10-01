@@ -47,12 +47,12 @@ class BeforeBedBandCheckTest {
             isReady = false,
             lines = listOf(
                 SetupCheckLine("Notifications are enabled.", SetupCheckLineSeverity.INFO),
-                SetupCheckLine("The band did not finish a sync within 20 s. In Gadgetbridge, disconnect and reconnect the band, then test again.", SetupCheckLineSeverity.ACTION_NEEDED),
+                SetupCheckLine("In Gadgetbridge, disconnect and reconnect the band, then test again.", SetupCheckLineSeverity.ACTION_NEEDED),
                 SetupCheckLine("Notifications are disabled; the alarm will not show its stop screen.", SetupCheckLineSeverity.ACTION_NEEDED),
             ),
         )
         assertEquals(
-            BandCheckStatus.Failed("The band did not finish a sync within 20 s. In Gadgetbridge, disconnect and reconnect the band, then test again."),
+            BandCheckStatus.Failed("In Gadgetbridge, disconnect and reconnect the band, then test again."),
             beforeBedWith(ConnectionTestState.Done(failed)).bandCheck,
         )
     }

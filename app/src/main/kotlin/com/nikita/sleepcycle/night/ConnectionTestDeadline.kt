@@ -31,7 +31,7 @@ suspend fun runConnectionTestWithin(deadline: Duration, attempt: suspend () -> S
     val report = withTimeoutOrNull(deadline.toMillis()) { running.await() }
     if (report != null) return report
     running.cancel()
-    return connectionTestTimedOutReport(deadline)
+    return connectionTestTimedOutReport()
 }
 
 /**
@@ -56,13 +56,14 @@ suspend fun runWithOneRetry(pause: Duration, attempt: suspend (attemptNumber: In
  * P2: the failed report a timed-out attempt shows. It names the fix, not just the symptom: on 2026-09-30
  * Gadgetbridge showed the band as connected (but with no battery level) while no sync ever finished, all night;
  * disconnecting and reconnecting the band in Gadgetbridge fixed it. Gadgetbridge's own "connected" is therefore
- * never trusted - only a finished sync round trip counts.
+ * never trusted - only a finished sync round trip counts. The owner cut the wording to the fix alone
+ * (2026-09-30 prototype review): how long the app waited is not something he acts on.
  */
-fun connectionTestTimedOutReport(deadline: Duration): SetupCheckReport = SetupCheckReport(
+fun connectionTestTimedOutReport(): SetupCheckReport = SetupCheckReport(
     isReady = false,
     lines = listOf(
         SetupCheckLine(
-            "The band did not finish a sync within ${deadline.toSeconds()} s. In Gadgetbridge, disconnect and reconnect the band, then test again.",
+            "In Gadgetbridge, disconnect and reconnect the band, then test again.",
             SetupCheckLineSeverity.ACTION_NEEDED
         )
     )

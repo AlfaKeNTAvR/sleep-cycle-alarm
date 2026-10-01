@@ -27,7 +27,7 @@ class ConnectionTestDeadlineTest {
         val line = report.lines.single()
         assertEquals(SetupCheckLineSeverity.ACTION_NEEDED, line.severity)
         assertEquals(
-            "The band did not finish a sync within 0 s. In Gadgetbridge, disconnect and reconnect the band, then test again.",
+            "In Gadgetbridge, disconnect and reconnect the band, then test again.",
             line.text
         )
     }
@@ -51,11 +51,11 @@ class ConnectionTestDeadlineTest {
     }
 
     @Test
-    fun `the app's deadline is 20 seconds and the failure line says so`() {
+    fun `the app's deadline is 20 seconds and the failure line names only the fix`() {
         assertEquals(Duration.ofSeconds(20), CONNECTION_TEST_DEADLINE)
         assertEquals(
-            "The band did not finish a sync within 20 s. In Gadgetbridge, disconnect and reconnect the band, then test again.",
-            connectionTestTimedOutReport(CONNECTION_TEST_DEADLINE).lines.single().text
+            "In Gadgetbridge, disconnect and reconnect the band, then test again.",
+            connectionTestTimedOutReport().lines.single().text
         )
     }
 }
