@@ -434,8 +434,11 @@ private fun logAlarmReadiness(context: Context, now: Instant, debugNight: Boolea
  * screen can redraw this night later from its log alone - the old single `summary=total=... stretches=...`
  * line said how much was slept but not when, which is not enough to draw a morning report.
  */
-private fun nightEndFields(state: NightState, now: Instant): Map<String, String> =
-    encodeNightEndFields(buildNightEngineView(state, now).summary, state.settings)
+private fun nightEndFields(state: NightState, now: Instant): Map<String, String> {
+    val view = buildNightEngineView(state, now)
+    // P1: the same noBandData the morning report shows, so the Past night screen says the same thing later.
+    return encodeNightEndFields(view.summary, state.settings, view.noBandData)
+}
 
 /**
  * The `night_summary` event, written straight after `night_end` on both paths that end a night. `night_end`

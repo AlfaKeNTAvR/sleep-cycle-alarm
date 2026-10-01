@@ -77,6 +77,8 @@ sealed interface NightScreenContent {
         val stretches: List<StretchLine>,
         /** False only for a past night whose log kept the total but not the per-stretch times (see PastNightLog.kt): the report then shows the real total and leaves the stretch card out, instead of drawing it empty or zeroed. Defaults to true, which is every night ended by this app. */
         val stretchDetailRecorded: Boolean = true,
+        /** P1: no band data reached the app this night (every sync was failing and no stretch exists), so the report says that instead of "No sleep recorded tonight". False for every night logged before P1 - their wording is unchanged. */
+        val noBandData: Boolean = false,
     ) : NightScreenContent
 
     data object Loading : NightScreenContent
@@ -97,4 +99,12 @@ data class NightUiState(
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
     /** T12 (amended): the live simulated-clock reading, e.g. "03:15" or "03:15, 60x" - null when not warped or while showing the morning report. See [com.nikita.sleepcycle.night.formatSimulatedTimeValue]. */
     val simulatedTimeValue: String? = null,
+    /**
+     * P1 (owner decision, 2026-09-30, "warn, still arm"): true while the last sync did not succeed (failed, or
+     * returned only stale data) - band data is not reaching the app, so the alarm on screen is only the
+     * engine's estimate. The night keeps running and the alarm stays armed as a backup; the screen just says
+     * so prominently and names the fix that worked on 2026-09-30 (disconnect and reconnect the band in
+     * Gadgetbridge). Derived from [lastSyncOk], no new persisted field. Always false on the morning report.
+     */
+    val bandNotSyncingWarning: Boolean = false,
 )

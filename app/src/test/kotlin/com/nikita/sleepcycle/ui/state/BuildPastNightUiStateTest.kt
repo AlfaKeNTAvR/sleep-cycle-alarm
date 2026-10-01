@@ -130,6 +130,20 @@ class BuildPastNightUiStateTest {
     }
 
     @Test
+    fun `P1 a night logged with no band data shows the no-data wording, not no sleep`() {
+        val state = buildPastNightUiState(row(), log(PastNightSummary.Detailed(Duration.ZERO, emptyList())).copy(noBandData = true), TEST_ZONE)
+
+        assertTrue(requireNotNull(state.report).noBandData)
+    }
+
+    @Test
+    fun `P1 a no-sleep night logged without the flag keeps the no-sleep wording`() {
+        val state = buildPastNightUiState(row(), log(PastNightSummary.Detailed(Duration.ZERO, emptyList())), TEST_ZONE)
+
+        assertFalse(requireNotNull(state.report).noBandData)
+    }
+
+    @Test
     fun `a log with no night_end instant still renders, with the ended time marked unknown`() {
         val log = log(detailed).copy(endedAt = null)
 

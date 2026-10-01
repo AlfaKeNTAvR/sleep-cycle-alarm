@@ -43,7 +43,10 @@ fun MorningReportBody(content: NightScreenContent.MorningReport, caption: String
     val noSleepRecorded = content.stretchDetailRecorded && content.stretches.isEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         if (noSleepRecorded) {
-            Text(text = stringResource(R.string.night_morning_no_sleep), style = MaterialTheme.typography.headlineSmall)
+            // P1: "no band data reached the app" is a different fact from "the band reported no sleep" - the
+            // night of 2026-09-30 said the latter when every sync had failed.
+            val noSleepText = if (content.noBandData) R.string.night_morning_no_band_data else R.string.night_morning_no_sleep
+            Text(text = stringResource(noSleepText), style = MaterialTheme.typography.headlineSmall)
         } else {
             val detail = content.wokeAtTimeLabel?.let { stringResource(R.string.night_morning_woke_at, it) }
             HeroNumeral(
