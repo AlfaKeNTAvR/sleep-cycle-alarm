@@ -63,6 +63,8 @@ fun buildNightUiState(
             switches
         }
     }
+    // P1: see NightUiState.bandNotSyncingWarning. Null (no sync finished yet) is not a failure.
+    val bandNotSyncingWarning = state.lastSyncOk == false
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
@@ -70,6 +72,7 @@ fun buildNightUiState(
             NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight, endingNight,
             activeDebugSwitches = debugSwitches,
             simulatedTimeValue = simulatedTimeValue,
+            bandNotSyncingWarning = bandNotSyncingWarning,
         )
     }
 
@@ -100,5 +103,6 @@ fun buildNightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
         activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
+        bandNotSyncingWarning = bandNotSyncingWarning,
     )
 }

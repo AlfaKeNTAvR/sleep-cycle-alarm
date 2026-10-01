@@ -26,6 +26,7 @@ private const val STRETCHES_FIELD = "stretches"
 private const val DEADLINE_FIELD = "deadline"
 private const val PICKED_CYCLES_FIELD = "pickedCycles"
 private const val SPEED_FIELD = "speed"
+private const val NO_BAND_DATA_FIELD = "noBandData"
 
 private const val STRETCH_ONSET_KEY = "onset"
 private const val STRETCH_END_KEY = "end"
@@ -66,18 +67,22 @@ data class PastNightLog(
     val pickedCycles: Int?,
     /** T7: the simulated-clock speed that night ran at (1 = real time), read from night_start's `speed` field. A log written before T7 (or one that still carries the old `fastNight` boolean) has no such field and reads as speed 1 - the least surprising default, and per T7's own instruction there is no fastNight-to-speed fallback to keep. */
     val speed: Int,
+    /** P1: night_end's `noBandData` flag - no band data reached the app that night. Absent (every log written before P1) reads as false, keeping that night's old "no sleep recorded" wording. */
+    val noBandData: Boolean = false,
 )
 
 /**
  * The night_end event's fields: the human-readable summary line the log has always carried, plus the whole
  * summary and the night's settings as structured fields, so a past night can be redrawn from its log alone.
  */
-fun encodeNightEndFields(summary: NightSummary, settings: NightSettings): Map<String, String> = mapOf(
+fun encodeNightEndFields(summary: NightSummary, settings: NightSettings, noBandData: Boolean): Map<String, String> = mapOf(
     SUMMARY_TEXT_FIELD to nightEndSummaryText(summary),
     TOTAL_SLEEP_FIELD to summary.totalSleep.toString(),
     STRETCHES_FIELD to encodeRecordedStretches(summary).toString(),
     DEADLINE_FIELD to (settings.deadline?.toString() ?: NO_DEADLINE_FIELD_VALUE),
     PICKED_CYCLES_FIELD to settings.pickedCycles.toString(),
+    // P1: see NightEngineView.noBandData - lets the Past night screen say "no band data" for this night too.
+    NO_BAND_DATA_FIELD to noBandData.toString(),
 )
 
 /** The one-line human-readable summary, unchanged from before night_end carried structured fields. */
@@ -132,6 +137,7 @@ fun parsePastNightLog(lines: List<String>): PastNightLog {
         deadline = readDeadline(endFields) ?: readDeadline(startFields),
         pickedCycles = endFields[PICKED_CYCLES_FIELD]?.toIntOrNull() ?: startFields[PICKED_CYCLES_FIELD]?.toIntOrNull(),
         speed = readSpeed(startFields),
+        noBandData = endFields[NO_BAND_DATA_FIELD] == "true",
     )
 }
 

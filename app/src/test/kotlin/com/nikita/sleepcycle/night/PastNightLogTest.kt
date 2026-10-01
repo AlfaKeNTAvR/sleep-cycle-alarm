@@ -4,6 +4,7 @@ import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.NightSummary
 import com.nikita.sleepcycle.engine.StretchSummary
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -21,9 +22,13 @@ private const val REAL_NIGHT_START_LINE =
 private const val REAL_OLD_FORMAT_NIGHT_END_LINE =
     """{"at":"2026-09-18T12:17:31.710887Z","type":"night_end","fields":{"summary":"total=PT6H50M stretches=5"}}"""
 
+/** P1: the real night_end of 2026-09-30 (every sync failed, zero stretches), written before night_end carried the noBandData flag. */
+private const val REAL_PRE_P1_NO_DATA_NIGHT_END_LINE =
+    """{"at":"2026-09-30T13:38:51.081Z","type":"night_end","fields":{"summary":"total=PT0S stretches=0","totalSleep":"PT0S","stretches":"[]","deadline":"none","pickedCycles":"5"}}"""
+
 class PastNightLogTest {
     private fun nightEndLine(summary: NightSummary, settings: NightSettings, at: Instant): String =
-        formatNightLogLine(NightLogEvent(at, "night_end", encodeNightEndFields(summary, settings)))
+        formatNightLogLine(NightLogEvent(at, "night_end", encodeNightEndFields(summary, settings, noBandData = false)))
 
     private fun nightStartLine(settings: NightSettings, at: Instant, speed: Int = 1): String =
         formatNightLogLine(
@@ -83,7 +88,7 @@ class PastNightLogTest {
 
     @Test
     fun `keeps the human-readable summary line alongside the structured fields`() {
-        val fields = encodeNightEndFields(twoStretchSummary, deadlineSettings)
+        val fields = encodeNightEndFields(twoStretchSummary, deadlineSettings, noBandData = false)
 
         assertEquals("total=PT5H30M stretches=2", fields["summary"])
     }
@@ -104,6 +109,30 @@ class PastNightLogTest {
 
         val parsed = parsePastNightLog(listOf(nightEndLine(emptySummary, deadlineSettings, Instant.parse("2026-09-18T04:25:00Z"))))
 
+        assertEquals(PastNightSummary.Detailed(Duration.ZERO, emptyList()), parsed.summary)
+    }
+
+    @Test
+    fun `P1 a night that ended with no band data reads back as such`() {
+        val emptySummary = NightSummary(Duration.ZERO, emptyList())
+        val line = formatNightLogLine(
+            NightLogEvent(
+                Instant.parse("2026-09-30T13:38:51.081Z"), "night_end",
+                encodeNightEndFields(emptySummary, NightSettings(deadline = null, pickedCycles = 5), noBandData = true)
+            )
+        )
+
+        val parsed = parsePastNightLog(listOf(line))
+
+        assertTrue(parsed.noBandData)
+        assertEquals(PastNightSummary.Detailed(Duration.ZERO, emptyList()), parsed.summary)
+    }
+
+    @Test
+    fun `P1 the real 2026-09-30 night_end, written before the flag existed, keeps the old no-sleep reading`() {
+        val parsed = parsePastNightLog(listOf(REAL_PRE_P1_NO_DATA_NIGHT_END_LINE))
+
+        assertFalse(parsed.noBandData)
         assertEquals(PastNightSummary.Detailed(Duration.ZERO, emptyList()), parsed.summary)
     }
 

@@ -20,7 +20,15 @@ import java.time.Instant
 data class NightEngineView(
     val sleepState: SleepState,
     val summary: NightSummary,
-    val wakeOptions: List<WakeOption>
+    val wakeOptions: List<WakeOption>,
+    /**
+     * P1 (owner-reported, 2026-09-30): true when this night has no sleep stretch at all AND its last sync did
+     * not succeed (failed, or returned only stale data) - i.e. no band data reached the app, which is not the
+     * same thing as the band reporting no sleep. The night of 2026-09-30 had every one of its 36 syncs time
+     * out at `activity_sync` and its report said "No sleep recorded tonight". Derived from the existing
+     * [NightState.lastSyncOk], not a new persisted field.
+     */
+    val noBandData: Boolean = false,
 )
 
 /**
@@ -44,7 +52,10 @@ fun buildNightEngineView(state: NightState, now: Instant): NightEngineView {
     val plan = state.lastPlan
     val referenceOnset = plan?.referenceOnset ?: now
     val wakeOptions = listWakeOptions(referenceOnset, state.settings, config, upToCycles = plan?.cycles ?: state.settings.pickedCycles)
-    return NightEngineView(sleepState, summary, wakeOptions)
+    // P1: see NightEngineView.noBandData. lastSyncOk null (no sync has finished yet, e.g. a night ended seconds
+    // after it started) keeps today's "no sleep recorded" reading - nothing has failed yet.
+    val noBandData = summary.stretches.isEmpty() && state.lastSyncOk == false
+    return NightEngineView(sleepState, summary, wakeOptions, noBandData)
 }
 
 /**

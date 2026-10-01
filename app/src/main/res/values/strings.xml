@@ -97,6 +97,11 @@
          to count down to - this says what happened instead, next to the dash the hero time shows. -->
     <string name="night_morning_alarm_rang_at">Morning alarm rang at %1$s</string>
 
+    <!-- P1 (owner decision, 2026-09-30, "warn, still arm"): shown while the band's data is not reaching the
+         app. The fix in the text is what worked on 2026-09-30: Gadgetbridge showed the band connected but with
+         no battery level, and syncs never completed until the band was disconnected and reconnected. -->
+    <string name="night_band_not_syncing_warning">Band not syncing - alarm is only an estimate. Disconnect and reconnect the band in Gadgetbridge.</string>
+
     <!-- Night screen: finished -->
     <string name="night_finished_title">Night finished</string>
 
@@ -106,6 +111,10 @@
     <string name="night_morning_woke_at">Woke %1$s</string>
     <string name="night_morning_log_saved">Night log saved for export.</string>
     <string name="night_morning_no_sleep">No sleep recorded tonight</string>
+    <!-- P1: the night ended with no stretch while its syncs were failing - nothing reached the app, which is
+         not the same as the band reporting no sleep. "were failing", not "every sync failed": the flag is
+         derived from the LAST sync, so an earlier one may have succeeded with no sleep in it. -->
+    <string name="night_morning_no_band_data">No band data reached the app: the band\'s syncs were failing</string>
 
     <!-- Logs screen -->
     <string name="logs_title">Night logs</string>

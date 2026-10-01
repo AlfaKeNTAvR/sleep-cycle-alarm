@@ -37,7 +37,7 @@ private fun toMorningReport(log: PastNightLog, zone: ZoneId): NightScreenContent
         stretches = summary.stretches.map { toStretchLine(it, zone) },
         stretchDetailRecorded = true,
         zone = zone,
-    )
+    ).copy(noBandData = log.noBandData) // P1: only a structured night_end can carry the flag.
     is PastNightSummary.TotalOnly -> morningReport(
         endedAt = log.endedAt,
         totalSleep = summary.totalSleep,

@@ -4,10 +4,16 @@ package com.nikita.sleepcycle.ui.screens.night
 // variant for the current engine mode (N1: one variant for every live night, plus FINISHED and the morning
 // report).
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.nikita.sleepcycle.ui.theme.CardCornerRadius
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +66,9 @@ fun NightScreen(
         // above them - the sync line is the one thing worth reading first, and the banner only ever renders on
         // a simulated night anyway.
         DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
+        // P1: while band data is not reaching the app, say so where it cannot be missed - see
+        // NightUiState.bandNotSyncingWarning.
+        if (state.bandNotSyncingWarning) BandNotSyncingWarning()
 
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             when (val content = state.content) {
@@ -103,6 +112,21 @@ fun NightScreen(
             onDismiss = onCancelEndNight,
         )
     }
+}
+
+/** P1: the "band not syncing" warning - the alarm is still armed, but it is only the engine's estimate. */
+@Composable
+private fun BandNotSyncingWarning() {
+    Text(
+        text = stringResource(R.string.night_band_not_syncing_warning),
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onErrorContainer,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(CardCornerRadius))
+            .padding(12.dp),
+    )
 }
 
 @Composable

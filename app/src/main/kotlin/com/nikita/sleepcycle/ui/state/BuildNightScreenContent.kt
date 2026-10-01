@@ -80,6 +80,7 @@ fun buildMorningReportContent(
         totalSleepDurationLabel = formatDuration(view.summary.totalSleep),
         wokeAtTimeLabel = view.summary.stretches.lastOrNull()?.end?.let { formatClockTime(it, zone) },
         stretches = stretches,
+        noBandData = view.noBandData,
     )
 }
 
