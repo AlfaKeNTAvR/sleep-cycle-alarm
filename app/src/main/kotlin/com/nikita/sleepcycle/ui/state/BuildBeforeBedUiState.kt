@@ -69,8 +69,9 @@ fun buildBeforeBedUiState(
     }
     val checklistComplete = isSetupComplete(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions)
     val gate = startNightGate(checklistComplete, appSettings.lastSetupCheckPassedAt, now, debugOptions)
+    val bandCheck = bandCheckStatusFor(connectionTest)
     return BeforeBedUiState(
-        bandReady = bandReady,
+        bandStatus = bandStatusFor(bandReady, bandCheck),
         deadlineEnabled = appSettings.deadlineEnabled,
         deadlineTime = appSettings.lastDeadline ?: DEFAULT_DEADLINE_TIME,
         sleepLengthOptions = sleepLengthOptions,
@@ -83,7 +84,7 @@ fun buildBeforeBedUiState(
         activeDebugSwitches = activeDebugSwitches(debugOptions).map { ActiveDebugSwitch.SIMULATED_SLEEP_DATA }.distinct(),
         simulatedTimeValue = null,
         confirmingDebugNightStart = confirmingDebugNightStart,
-        bandCheck = bandCheckStatusFor(connectionTest),
+        bandCheck = bandCheck,
     )
 }
 
@@ -98,4 +99,11 @@ private fun bandCheckStatusFor(connectionTest: ConnectionTestState): BandCheckSt
         val reasonLine = lines.firstOrNull { it.severity == SetupCheckLineSeverity.ACTION_NEEDED } ?: lines.firstOrNull()
         BandCheckStatus.Failed(reasonLine?.text.orEmpty())
     }
+}
+
+/** P2: the corner status line - see [BandStatus]. [bandSetUp]: Gadgetbridge installed, band address and export file chosen. */
+internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus): BandStatus = when {
+    !bandSetUp -> BandStatus.SETUP_INCOMPLETE
+    bandCheck is BandCheckStatus.Failed -> BandStatus.NOT_RESPONDING
+    else -> BandStatus.CONNECTED
 }

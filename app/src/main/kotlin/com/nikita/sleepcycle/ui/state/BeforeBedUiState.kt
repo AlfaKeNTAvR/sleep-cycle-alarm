@@ -23,9 +23,25 @@ sealed interface BandCheckStatus {
     data class Failed(val reason: String) : BandCheckStatus
 }
 
+/**
+ * P2: what the status line in the screen's top corner says about the band. [NOT_RESPONDING] was added after the
+ * owner saw the prototype read "Band connected" directly above an amber "Band check failed": the corner used to
+ * report only whether the band was set up, which is not what "connected" means to someone reading it.
+ */
+enum class BandStatus {
+    /** Set up, and the latest connection test did not fail (it passed, is running, or none ran this session). */
+    CONNECTED,
+
+    /** Set up, but the latest connection test failed. */
+    NOT_RESPONDING,
+
+    /** Gadgetbridge missing, or no band address or export file chosen yet. */
+    SETUP_INCOMPLETE,
+}
+
 /** Everything the "Before bed" screen shows. */
 data class BeforeBedUiState(
-    val bandReady: Boolean,
+    val bandStatus: BandStatus,
     val deadlineEnabled: Boolean,
     val deadlineTime: LocalTime,
     val sleepLengthOptions: List<SleepLengthOption>,

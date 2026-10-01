@@ -56,4 +56,32 @@ class BeforeBedBandCheckTest {
             beforeBedWith(ConnectionTestState.Done(failed)).bandCheck,
         )
     }
+
+    // The status line in the top corner. Owner-reported on the prototype: it said "Band connected" right above an
+    // amber "Band check failed", contradicting it. Tested at bandStatusFor rather than through buildUiState: a
+    // fully set-up band needs an export Uri, which android.net.Uri cannot build on the JVM.
+
+    @Test fun `a failed test turns the corner status to not responding`() {
+        assertEquals(
+            BandStatus.NOT_RESPONDING,
+            bandStatusFor(bandSetUp = true, bandCheck = BandCheckStatus.Failed("In Gadgetbridge, disconnect and reconnect the band, then test again.")),
+        )
+    }
+
+    @Test fun `a passed test shows the band as connected`() {
+        assertEquals(BandStatus.CONNECTED, bandStatusFor(bandSetUp = true, bandCheck = BandCheckStatus.None))
+    }
+
+    @Test fun `a running test keeps the band shown as connected`() {
+        assertEquals(BandStatus.CONNECTED, bandStatusFor(bandSetUp = true, bandCheck = BandCheckStatus.Checking))
+    }
+
+    @Test fun `a band not set up says so even when a test failed`() {
+        assertEquals(BandStatus.SETUP_INCOMPLETE, bandStatusFor(bandSetUp = false, bandCheck = BandCheckStatus.Failed("x")))
+    }
+
+    @Test fun `the screen state carries the corner status through`() {
+        // The fixture has no export Uri, so the band is not set up: the wiring, not the rule, is what this pins.
+        assertEquals(BandStatus.SETUP_INCOMPLETE, beforeBedWith(ConnectionTestState.Running).bandStatus)
+    }
 }

@@ -25,7 +25,7 @@ data class UiState(
                 canRunConnectionTest = false,
             ),
             beforeBed = BeforeBedUiState(
-                bandReady = false,
+                bandStatus = BandStatus.SETUP_INCOMPLETE,
                 deadlineEnabled = false,
                 deadlineTime = LocalTime.of(8, 0),
                 sleepLengthOptions = emptyList(),

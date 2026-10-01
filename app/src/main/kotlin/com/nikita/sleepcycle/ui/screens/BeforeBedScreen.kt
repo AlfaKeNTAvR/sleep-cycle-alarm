@@ -28,6 +28,7 @@ import com.nikita.sleepcycle.ui.components.SleepLengthChip
 import com.nikita.sleepcycle.ui.components.StatusLine
 import com.nikita.sleepcycle.ui.components.ToggleRow
 import com.nikita.sleepcycle.ui.state.BandCheckStatus
+import com.nikita.sleepcycle.ui.state.BandStatus
 import com.nikita.sleepcycle.ui.state.BeforeBedUiState
 import com.nikita.sleepcycle.ui.state.SleepLengthOption
 import com.nikita.sleepcycle.ui.theme.AmberAccent
@@ -60,8 +61,14 @@ fun BeforeBedScreen(
     ScreenContainer(scrollable = false) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             StatusLine(
-                text = if (state.bandReady) stringResource(R.string.before_bed_band_connected) else stringResource(R.string.before_bed_band_not_ready),
-                ok = state.bandReady,
+                text = stringResource(
+                    when (state.bandStatus) {
+                        BandStatus.CONNECTED -> R.string.before_bed_band_connected
+                        BandStatus.NOT_RESPONDING -> R.string.before_bed_band_not_responding
+                        BandStatus.SETUP_INCOMPLETE -> R.string.before_bed_band_not_ready
+                    }
+                ),
+                ok = state.bandStatus == BandStatus.CONNECTED,
             )
             Row {
                 MenuLinesButton(stringResource(R.string.content_description_open_logs), onOpenLogs)
