@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.CardDivider
 import com.nikita.sleepcycle.ui.components.HeroNumeral
@@ -25,7 +26,13 @@ import com.nikita.sleepcycle.ui.theme.SmallNumeralStyle
 fun MorningReportContent(content: NightScreenContent.MorningReport) {
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         MorningReportBody(content = content, caption = stringResource(R.string.night_morning_greeting))
-        Text(text = stringResource(R.string.night_morning_log_saved), style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)
+        Text(
+            text = stringResource(R.string.night_morning_log_saved),
+            style = MaterialTheme.typography.bodySmall,
+            color = NightOnSurfaceMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -46,7 +53,12 @@ fun MorningReportBody(content: NightScreenContent.MorningReport, caption: String
             // P1: "no band data reached the app" is a different fact from "the band reported no sleep" - the
             // night of 2026-09-30 said the latter when every sync had failed.
             val noSleepText = if (content.noBandData) R.string.night_morning_no_band_data else R.string.night_morning_no_sleep
-            Text(text = stringResource(noSleepText), style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = stringResource(noSleepText),
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         } else {
             val detail = content.wokeAtTimeLabel?.let { stringResource(R.string.night_morning_woke_at, it) }
             HeroNumeral(
