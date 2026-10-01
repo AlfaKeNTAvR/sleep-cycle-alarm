@@ -65,50 +65,49 @@ class AlarmSequenceReplayTest {
         assertEquals(0, replay.napAlarmsUsed, replay.trace())
     }
 
-    @Test fun `a genuine return to sleep arms a nap that holds its target across ticks and actually rings`() {
+    // P3 (owner spec, 2026-09-30) REWROTE the three cases below. They used to walk D5/G8's band-detected
+    // post-wake naps (a nap 20 min after the band saw him asleep again at 06:46, two of them, then FINISHED; a
+    // deadline-capped one on a deadline night). After the morning alarm the engine now arms nothing at all: the
+    // owner's own "Nap 20 min" button (app layer) and the repeating nudge own every further ring. Same nights,
+    // same band timelines, new expectations. In this harness nobody presses Stop, so each ring runs to its
+    // 9 min auto-stop and the nudge lands 10 min after that: 06:30 -> 06:49 -> 07:08 -> 07:27.
+
+    @Test fun `P3 a return to sleep after the morning alarm arms no nap - the nudge rings instead`() {
         val replay = nightAsleepAtEleven()
         replay.advanceTo("2026-09-21T06:31")
         replay.markAwake("2026-09-21T06:32")
         replay.advanceTo("2026-09-21T06:45")
 
-        // Asleep again at 06:46: rule 7's nap, 20 minutes on from that onset.
+        // Asleep again at 06:46: this used to arm a 07:06 nap.
         replay.markAsleep("2026-09-21T06:46")
-
-        // Four ticks pass before it is due: the target must hold steady at 07:06, never slide out of reach.
-        replay.advanceTo("2026-09-21T07:05")
-        assertEquals(listOf(instant("2026-09-21T07:06")), replay.armedTargetsAfter("2026-09-21T06:46"), replay.trace())
-        assertEquals(emptyList<NightReplay.Firing>(), replay.firingsAfter("2026-09-21T06:31"), replay.trace())
-
         replay.advanceTo("2026-09-21T07:07")
-        assertEquals(
-            listOf(instant("2026-09-21T07:06")),
-            replay.firingsAfter("2026-09-21T06:31").map { it.firedFor },
-            replay.trace()
-        )
-        assertEquals(AlarmMode.NAP, replay.firingsAfter("2026-09-21T06:31").single().mode, replay.trace())
-        assertEquals(1, replay.napAlarmsUsed, replay.trace())
+
+        assertEquals(emptyList<java.time.Instant>(), replay.armedTargetsAfter("2026-09-21T06:31"), replay.trace())
+        assertEquals(emptyList<NightReplay.Firing>(), replay.firingsAfter("2026-09-21T06:31"), replay.trace())
+        assertEquals(listOf(instant("2026-09-21T06:49")), replay.nudgeFirings, replay.trace())
+        assertEquals(0, replay.napAlarmsUsed, replay.trace())
     }
 
-    @Test fun `D5 two nap alarms ring, and the night then finishes instead of arming a third`() {
+    @Test fun `P3 sleeping on after the morning alarm never finishes the night by a nap cap - the nudge keeps repeating`() {
         val replay = nightAsleepAtEleven()
         replay.advanceTo("2026-09-21T06:31")
         replay.markAwake("2026-09-21T06:32")
         replay.advanceTo("2026-09-21T06:45")
         replay.markAsleep("2026-09-21T06:46")
 
-        // Slept straight through both naps: the first rings at 07:06, H2's fresh 20 minutes rings at 07:26.
+        // Used to: naps at 07:06 and 07:26, then FINISHED by the two-nap cap.
         replay.advanceTo("2026-09-21T07:40")
 
+        assertEquals(emptyList<NightReplay.Firing>(), replay.firingsAfter("2026-09-21T06:31"), replay.trace())
         assertEquals(
-            listOf(instant("2026-09-21T07:06"), instant("2026-09-21T07:26")),
-            replay.firingsAfter("2026-09-21T06:31").map { it.firedFor },
+            listOf(instant("2026-09-21T06:49"), instant("2026-09-21T07:08"), instant("2026-09-21T07:27")),
+            replay.nudgeFirings,
             replay.trace()
         )
-        assertEquals(MAX_NAP_ALARMS, replay.napAlarmsUsed, replay.trace())
-        assertEquals(AlarmMode.FINISHED, replay.lastPlan?.mode, replay.trace())
+        assertTrue(replay.lastPlan?.mode != AlarmMode.FINISHED, replay.trace())
     }
 
-    @Test fun `a deadline night rings the morning alarm, then a deadline-capped nap, then finishes`() {
+    @Test fun `P3 a deadline night rings the morning alarm, then only nudges - no deadline-capped nap`() {
         val replay = nightAsleepAtEleven(deadline = "2026-09-21T07:00")
         replay.advanceTo("2026-09-21T06:31")
         replay.markAwake("2026-09-21T06:32")
@@ -116,13 +115,15 @@ class AlarmSequenceReplayTest {
         replay.markAsleep("2026-09-21T06:46")
         replay.advanceTo("2026-09-21T07:30")
 
+        // Used to: a second firing at the 07:00 deadline. The deadline now caps the owner's own nap instead.
+        assertEquals(listOf(instant("2026-09-21T06:30")), replay.firings.map { it.firedFor }, replay.trace())
+        assertEquals(AlarmMode.FINISHED, replay.lastPlan?.mode, replay.trace())
+        assertEquals(emptyList<java.time.Instant>(), replay.armedTargetsAfter("2026-09-21T06:31"), replay.trace())
         assertEquals(
-            listOf(instant("2026-09-21T06:30"), instant("2026-09-21T07:00")),
-            replay.firings.map { it.firedFor },
+            listOf(instant("2026-09-21T06:49"), instant("2026-09-21T07:08"), instant("2026-09-21T07:27")),
+            replay.nudgeFirings,
             replay.trace()
         )
-        assertEquals(AlarmMode.FINISHED, replay.lastPlan?.mode, replay.trace())
-        assertEquals(emptyList<java.time.Instant>(), replay.armedTargetsAfter("2026-09-21T07:01"), replay.trace())
     }
 
     // ---- J2 SHOULD FIX S4 (reviewer note, adversarial review of J1.1-J1.6): every fixture above this line

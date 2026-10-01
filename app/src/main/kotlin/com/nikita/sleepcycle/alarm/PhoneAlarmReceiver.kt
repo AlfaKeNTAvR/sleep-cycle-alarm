@@ -15,6 +15,12 @@ package com.nikita.sleepcycle.alarm
 // alarm share the same request code/slot (D1: "one alarm, and it is the phone's"), so whichever of them just
 // fired arms the out-of-bed nudge in turn (15 min later, H7.1).
 //
+// P3 (owner spec, 2026-09-30) SUPERSEDES "15 min later": a firing now arms a safety-net nudge 9 + 10 min out,
+// and the ring's own end (AlarmRingService: Stop or auto-stop) moves it to 10 min after that end. The owner's
+// own "Nap 20 min" alarm rides the out-of-bed slot too (label NAP), so its firing is excluded from the plan
+// bookkeeping below exactly like a nudge's - it never counts toward MAX_NAP_ALARMS - and arms the next nudge
+// like any other firing. See night/PostAlarmCycle.kt and night/PostAlarmFollowUp.kt.
+//
 // L1 (owner decision, 2026-09-21) SUPERSEDES the rule this paragraph used to state here, and again above
 // [PhoneAlarmReceiver.armOutOfBedNudge]: "the nudge itself never re-arms another one (no chaining)". A nudge
 // firing now arms the NEXT nudge, one outOfBedDelay later, exactly as a wake or nap firing already does, so
@@ -63,10 +69,9 @@ import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.night.saveLastNapAlarmFiredAt
 import com.nikita.sleepcycle.night.saveNapAlarmsUsed
-import com.nikita.sleepcycle.night.saveOutOfBedNudgePendingAt
+import com.nikita.sleepcycle.night.armFollowUpAfterAlarmFired
 import com.nikita.sleepcycle.night.savePhoneAlarmFiredFor
 import com.nikita.sleepcycle.night.saveWakeAlarmFiredAt
-import com.nikita.sleepcycle.night.schedulePreNudgeCheck
 import java.time.Instant
 
 /**
@@ -147,7 +152,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
                 recordWakeOrNapFired(context, state, firedFor)
             }
         }
-        armOutOfBedNudge(context, state, now, isOutOfBed)
+        armOutOfBedNudge(context, state, now, isOutOfBed, intent.readAlarmLabel())
     }
 
     /**
@@ -297,40 +302,19 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      * events rather than a run of identical `out_of_bed_alarm_fired` lines. No counter and no phase field is
      * kept for this: the log line is derived entirely from [isOutOfBed] and [at], both already in hand.
      */
-    private fun armOutOfBedNudge(context: Context, state: NightState, now: Instant, isOutOfBed: Boolean) {
-        val config = resolveEngineConfig(state.debugOptions)
-        val at = now.plus(config.outOfBedDelay)
-        val armed = scheduleOutOfBedAlarm(context, at)
-        if (!armed) {
-            appendNightLog(
-                context, state.startedAt,
-                NightLogEvent(nowInstant(), "error", mapOf("step" to "out_of_bed_alarm", "cause" to "exact alarm permission was likely revoked")),
-                state.debugOptions.isAnyEnabled
-            )
-            return
+    private fun armOutOfBedNudge(context: Context, state: NightState, now: Instant, isOutOfBed: Boolean, label: AlarmLabel) {
+        // P3 (owner spec, 2026-09-30) SUPERSEDES the arming that stood here (`now + outOfBedDelay`, 15 min, with
+        // a pre-check always): every firing now arms a safety-net nudge `ringAutoStopAfter + outOfBedDelay`
+        // (19 min) out, which the ring's own end (Stop or auto-stop, AlarmRingService) moves to 10 min after it;
+        // the pre-check is armed only for a nudge pending before the morning alarm has rung. The owner's own
+        // nap (label NAP on this out-of-bed slot) is one more firing like any other: it arms the nudge in turn,
+        // so the cycle repeats without limit. See night/PostAlarmFollowUp.kt and PostAlarmCycle.kt.
+        val cause = when {
+            !isOutOfBed -> "wake_or_nap_alarm_fired"
+            label == AlarmLabel.NAP -> "manual_nap_fired"
+            else -> "out_of_bed_nudge_fired"
         }
-        appendNightLog(
-            context, state.startedAt,
-            NightLogEvent(
-                now, "out_of_bed_nudge_armed",
-                mapOf("at" to at.toString(), "cause" to if (isOutOfBed) "out_of_bed_nudge_fired" else "wake_or_nap_alarm_fired")
-            ),
-            state.debugOptions.isAnyEnabled
-        )
-        if (!saveOutOfBedNudgePendingAt(context, at)) {
-            appendNightLog(
-                context, state.startedAt,
-                NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist the pending out-of-bed nudge instant")),
-                state.debugOptions.isAnyEnabled
-            )
-        }
-        if (!schedulePreNudgeCheck(context, at.minus(config.preNudgeCheckLead))) {
-            appendNightLog(
-                context, state.startedAt,
-                NightLogEvent(nowInstant(), "error", mapOf("step" to "pre_nudge_check", "cause" to "exact alarm permission was likely revoked - the nudge will still ring on schedule")),
-                state.debugOptions.isAnyEnabled
-            )
-        }
+        armFollowUpAfterAlarmFired(context, state, now, cause)
     }
 
     /** startForegroundService can be refused outright (background-start restrictions); the alarm must still be reachable. */

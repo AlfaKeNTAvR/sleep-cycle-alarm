@@ -97,4 +97,11 @@ data class NightUiState(
     val activeDebugSwitches: List<ActiveDebugSwitch> = emptyList(),
     /** T12 (amended): the live simulated-clock reading, e.g. "03:15" or "03:15, 60x" - null when not warped or while showing the morning report. See [com.nikita.sleepcycle.night.formatSimulatedTimeValue]. */
     val simulatedTimeValue: String? = null,
+    /**
+     * P3 (owner spec, 2026-09-30): the "Nap N min" button's minutes when the screen offers it, null when it does
+     * not. Offered exactly while the out-of-bed nudge is pending and still ahead - pressing it trades that nudge
+     * for a nap alarm N minutes out (night/PostAlarmCycle.kt). Never while a nap is already armed, nothing is
+     * pending, or the night has ended.
+     */
+    val napButtonMinutes: Int? = null,
 )

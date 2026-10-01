@@ -82,8 +82,14 @@ data class EngineConfig(
      * rings. Armed by the app layer when that alarm fires, not by the engine - kept here so a fast debug
      * night can still shorten it like every other timing constant. H7.1 (owner decision, 2026-09-20): raised
      * from 10 to 15 minutes.
+     *
+     * P3 (owner spec, 2026-09-30) SUPERSEDES H7.1: back to 10 minutes, and measured from when the ring ENDS
+     * (Stop pressed, or the ring's own auto-stop), not from the firing - "once I stop it, it arms the
+     * out-of-bed nudge in 10 minutes". The firing itself still arms a safety-net nudge at
+     * firing + [ringAutoStopAfter] + this delay, so a ring whose end is never observed (the ring service died)
+     * still has a nudge behind it. See app/night/PostAlarmCycle.kt.
      */
-    val outOfBedDelay: Duration = Duration.ofMinutes(15),
+    val outOfBedDelay: Duration = Duration.ofMinutes(10),
     /**
      * F1: how long AlarmRingService lets the ring sound before auto-stopping if nobody touches it, and the
      * timeout on the ringing wake lock (AlarmWakeLock) - not read by the engine itself, kept here purely so a

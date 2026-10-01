@@ -8,6 +8,7 @@ import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
+import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import java.io.File
 import java.time.Instant
@@ -16,7 +17,8 @@ import java.time.ZoneId
 /**
  * Derives the whole app's [UiState] from settings, night state, the engine's view of it, and every UI-only
  * input. [debugOptions] must already have passed through [com.nikita.sleepcycle.night.resolveDebugOptions] -
- * this function does not itself know whether the build is debug or release. [pendingOutOfBedNudgeAt]: see
+ * this function does not itself know whether the build is debug or release. [pendingFollowUp] (P3: the
+ * out-of-bed nudge or the owner's own nap, whichever is pending - it used to be the nudge's bare instant): see
  * [buildNightUiState]'s own doc (round 2 of the 09/21 review, must-fix 1). Round 3, should-fix 3: no default -
  * a caller that drops this argument now fails to compile instead of silently reverting to "no alarm armed"
  * forever; see [buildNightUiState]'s own doc for why the same applies there.
@@ -39,7 +41,7 @@ fun buildUiState(
     simulatedSleepEvents: List<SimulatedSleepEvent> = emptyList(),
     confirmingDebugNightStart: Boolean = false,
     endingNight: Boolean = false,
-    pendingOutOfBedNudgeAt: Instant?,
+    pendingFollowUp: PendingFollowUp?,
     errorMessage: String?,
 ): UiState {
     val nightActive = nightState != null
@@ -49,7 +51,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingOutOfBedNudgeAt),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp),
         logs = buildLogsUiState(nightLogFiles, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
         errorMessage = errorMessage,

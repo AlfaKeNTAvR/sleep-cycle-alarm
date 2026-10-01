@@ -39,6 +39,9 @@ fun computeWakeAlarm(
     /** J1.3 (owner-reported, 2026-09-21): NightState.phoneAlarmFiredFor, the last phone alarm instant that fired AT ALL, written unconditionally by PhoneAlarmReceiver.markPhoneAlarmFired even when the same firing's attribution to wakeAlarmFiredAt was skipped (a stale state.lastPlan read racing the in-flight tick's own save). See [morningAlarmAlreadyRang]'s own doc for why this closes the hole [wakeAlarmFiredAt] alone left open. */
     phoneAlarmFiredFor: Instant?
 ): Instant? {
+    // P3: after the morning alarm, the owner's own "Nap 20 min" button and the out-of-bed nudge own every
+    // further ring - see morningAlarmHasRung.
+    if (morningAlarmHasRung(wakeAlarmFiredAt, morningAlarmAt, phoneAlarmFiredFor)) return null
     val raw = when (rule) {
         // Rule 1: the night is already over, there is no alarm to schedule.
         PlanRule.FINISHED -> return null
@@ -56,6 +59,27 @@ fun computeWakeAlarm(
     if (rule != PlanRule.NAP && morningAlarmAlreadyRang(raw, wakeAlarmFiredAt, phoneAlarmFiredFor)) return null
     return pullForwardIfTooSoon(raw, deadline, now, config)
 }
+
+/**
+ * P3 (owner spec, 2026-09-30): whether the night's morning alarm has rung - from then on the engine arms
+ * nothing at all. "Nothing after the morning alarm should depend on band sleep state any more": the owner's
+ * "Nap 20 min" button and the repeating out-of-bed nudge (app layer, night/PostAlarmCycle.kt) own every further
+ * ring. This SUPERSEDES D5/G8's band-detected post-wake naps (and so the two-nap cap's role after the morning
+ * alarm), and subsumes F5 and H8a, which each stopped one kind of re-arming after the wake alarm by hand.
+ *
+ * Two ways it counts as rung:
+ *  - [wakeAlarmFiredAt] is set: the firing was attributed to the morning alarm itself (F6/H8).
+ *  - some phone alarm fired AT OR AFTER the latched [morningAlarmAt] ([phoneAlarmFiredFor], which is written
+ *    for every wake or nap firing). That covers a pre-wake rule 7 nap that took the morning alarm's place in
+ *    the one phone-alarm slot (woke at 06:20, dozed off 06:25, the 06:45 nap rang instead of the 06:30 alarm) -
+ *    to the owner that ring WAS his morning alarm - and J1.3's skipped-attribution race, where
+ *    [wakeAlarmFiredAt] stays null although the morning alarm really rang.
+ *
+ * A nap that fired BEFORE the morning alarm's time (a deadline night where no whole cycle fits) does not
+ * count, so the morning alarm still rings after it - the pre-wake nap is left exactly as it was.
+ */
+fun morningAlarmHasRung(wakeAlarmFiredAt: Instant?, morningAlarmAt: Instant?, phoneAlarmFiredFor: Instant?): Boolean =
+    wakeAlarmFiredAt != null || (morningAlarmAt != null && firedAtOrBefore(morningAlarmAt, phoneAlarmFiredFor))
 
 /**
  * H8: whether the instant rules 3/4/5/6 just produced is one the MAIN wake alarm has already rung for

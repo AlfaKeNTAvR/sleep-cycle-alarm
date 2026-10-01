@@ -31,7 +31,9 @@ import com.nikita.sleepcycle.night.uiTickerIntervalMillis
 import com.nikita.sleepcycle.night.observedNightState
 import com.nikita.sleepcycle.night.publishNightState
 import com.nikita.sleepcycle.night.readAppSettings
-import com.nikita.sleepcycle.night.readOutOfBedNudgePendingAt
+import com.nikita.sleepcycle.night.PendingFollowUp
+import com.nikita.sleepcycle.night.readPendingFollowUp
+import com.nikita.sleepcycle.night.startManualNap
 import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
@@ -155,10 +157,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * only way the Night screen finds out. Both reads go through [refreshPendingOutOfBedNudge], off the main
      * thread: unlike [currentPermissionStatus]/[isGadgetbridgeInstalled] (a PackageManager/AlarmManager query,
      * read only once per resume), this is a disk read (`File.exists()` + `readText()`,
-     * `readOutOfBedNudgePendingAt`) on the 500 ms-floored ticker - at the debug screen's 600x speed that is two
-     * blocking main-thread file reads a second, on every screen, not just the Night screen.
+     * `readPendingFollowUp`) on the 500 ms-floored ticker - at the debug screen's 600x speed that is two
+     * blocking main-thread file reads a second, on every screen, not just the Night screen. P3: the record now
+     * also says whether it is the nudge or the owner's own nap, which decides the label and the Nap button.
      */
-    private val pendingOutOfBedNudgeAt = MutableStateFlow<Instant?>(null)
+    private val pendingFollowUp = MutableStateFlow<PendingFollowUp?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
 
     private val appSettings: StateFlow<AppSettings?> =
@@ -177,7 +180,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
         // Bundled with errorMessage rather than added as a 6th top-level flow: kotlinx.coroutines' combine has
         // fixed-arity overloads only up to 5 flows.
-        combine(errorMessage, pendingOutOfBedNudgeAt, ::Pair),
+        combine(errorMessage, pendingFollowUp, ::Pair),
     ) { core, extra, report, debugInputs, errorAndNudge ->
         toUiState(core, extra, report, debugInputs, errorAndNudge.first, errorAndNudge.second)
     }
@@ -196,7 +199,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         report: ReportInputs,
         debugInputs: DebugInputs,
         error: String?,
-        pendingOutOfBedNudgeAt: Instant?,
+        pendingFollowUp: PendingFollowUp?,
     ): UiState {
         val settings = core.appSettings ?: return UiState.initial()
         val engineView = when {
@@ -222,7 +225,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             debugOptions = debug.effectiveOptions(),
             simulatedSleepEvents = debugInputs.simulatedSleepEvents,
             confirmingDebugNightStart = debugInputs.confirmingDebugNightStart,
-            pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt,
+            pendingFollowUp = pendingFollowUp,
             errorMessage = error,
         )
     }
@@ -339,13 +342,13 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Round 3 of the 09/21 review, should-fix 2: [readOutOfBedNudgePendingAt] is a synchronous `File.exists()`
+     * Round 3 of the 09/21 review, should-fix 2: [readPendingFollowUp] is a synchronous `File.exists()`
      * plus `readText()` (`OutOfBedNudgeStore.kt`), so it must never run on `viewModelScope`'s own
      * `Dispatchers.Main.immediate` - shared by both call sites ([watchScreenVisibilityTicker]'s ticker and
      * [refreshStatuses]'s resume) so there is exactly one place that reads this file off the main thread.
      */
     private suspend fun refreshPendingOutOfBedNudge() {
-        pendingOutOfBedNudgeAt.value = withContext(Dispatchers.IO) { readOutOfBedNudgePendingAt(context) }
+        pendingFollowUp.value = withContext(Dispatchers.IO) { readPendingFollowUp(context) }
     }
 
     /** Called from the Activity on every resume: re-checks permissions/Gadgetbridge, re-syncs if the night screen is showing, and resets idle debug switches (A1) - this is the app's own definition of "opened". */
@@ -521,6 +524,20 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         confirmingEndNight.value = true
     }
     fun cancelEndNight() { confirmingEndNight.value = false }
+
+    /**
+     * P3 (owner spec, 2026-09-30): the Night screen's "Nap for 20 min". Trades the pending out-of-bed nudge for
+     * a nap alarm 20 min out (night/PostAlarmFollowUp.kt's startManualNap), off the main thread since it is
+     * disk and AlarmManager work, then re-reads the record so the screen switches to the nap at once rather than
+     * on the next ticker pass. No confirmation: unlike ending the night, a mis-tap here costs nothing - the nap
+     * alarm rings 20 min later and the nudge cycle carries on from it.
+     */
+    fun startNap() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { startManualNap(context, nowInstant()) }
+            refreshPendingOutOfBedNudge()
+        }
+    }
 
     /**
      * Renders the report endNight returns from inside its own lock (D1), not a snapshot taken here beforehand -

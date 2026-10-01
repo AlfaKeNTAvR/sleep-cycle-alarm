@@ -114,7 +114,10 @@ class BootReceiver : BroadcastReceiver() {
     private fun restorePendingOutOfBedNudge(context: Context, state: NightState?) {
         // T4: virtual - compared against pendingNudgeAt, which was persisted as a virtual instant (T5).
         val now = nowInstant()
-        val pendingNudgeAt = readOutOfBedNudgePendingAt(context) ?: return
+        // P3: the record may hold the owner's own nap rather than the nudge - restored the same way, under its
+        // own label and kind, so a reboot mid-nap still wakes him and still names it as the nap it is.
+        val pending = readPendingFollowUp(context) ?: return
+        val pendingNudgeAt = pending.at
         val config = resolveEngineConfig(state?.debugOptions ?: DebugOptions())
         val restoreAt = restoredOutOfBedNudgeAt(pendingNudgeAt, now, config)
         if (restoreAt == null) {
@@ -125,7 +128,7 @@ class BootReceiver : BroadcastReceiver() {
             clearOutOfBedNudgePendingAt(context)
             return
         }
-        if (!scheduleOutOfBedAlarm(context, restoreAt)) {
+        if (!scheduleOutOfBedAlarm(context, restoreAt, alarmLabelForFollowUp(pending.kind))) {
             logBootEvent(
                 context, state, now, "error",
                 mapOf("step" to "out_of_bed_alarm", "cause" to "could not restore the pending nudge at $restoreAt after boot - exact alarm permission was likely revoked")
@@ -137,7 +140,7 @@ class BootReceiver : BroadcastReceiver() {
             context, state, now, "out_of_bed_nudge_restored_late",
             mapOf("pendingNudgeAt" to pendingNudgeAt.toString(), "restoredAt" to restoreAt.toString())
         )
-        if (!saveOutOfBedNudgePendingAt(context, restoreAt)) {
+        if (!savePendingFollowUp(context, pending.copy(at = restoreAt))) {
             logBootEvent(
                 context, state, now, "error",
                 mapOf("step" to "save_night_state", "cause" to "restored the overdue nudge at $restoreAt but could not persist the new instant - the screen may still show $pendingNudgeAt")

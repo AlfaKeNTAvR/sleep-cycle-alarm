@@ -22,7 +22,6 @@ package com.nikita.sleepcycle.night
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.EngineConfig
-import com.nikita.sleepcycle.engine.MAX_NAP_ALARMS
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SegmentKind
 import com.nikita.sleepcycle.engine.SleepSegment
@@ -30,7 +29,6 @@ import com.nikita.sleepcycle.engine.computeAlarmPlan
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -41,8 +39,19 @@ class WholeMorningSequenceTest {
     private fun at(text: String): Instant = Instant.parse("${text}Z")
     private fun seg(start: String, end: String, kind: SegmentKind) = SleepSegment(at(start), at(end), kind)
 
+    /**
+     * P3 (owner spec, 2026-09-30) REPLACES the three cases that stood here: the two-nap morning that FINISHED,
+     * its F4 deadline twin, and H2's "sleeps straight through both naps". All three walked band-detected naps
+     * AFTER the morning alarm - armed, fired, counted against MAX_NAP_ALARMS - and P3 removed exactly that: after
+     * the morning alarm the engine arms nothing, and the owner's own Nap button (PostAlarmCycle.kt) takes over,
+     * uncounted. The F2 contract this file exists for (the receiver's fire-time counter and the engine's cap
+     * check, composed for real) still holds on the same timeline, in its new shape: with nothing armed, nothing
+     * fires, so the counter never moves and the cap never bites, however many times he dozes off. The cap's own
+     * mode logic keeps its engine tests (PostWakeNapTest.kt), and the pre-wake side keeps
+     * SlidingAwakeNapSequenceTest below.
+     */
     @Test
-    fun `a whole morning - wake alarm fires, two naps fire, a genuinely new third return to sleep FINISHES - the fire-time counter and the engine's cap check agree`() {
+    fun `P3 a whole morning of dozing off three times after the wake alarm arms nothing, counts nothing, and never finishes the night`() {
         val setting = NightSettings(deadline = null, pickedCycles = 3)
 
         // The app's own bookkeeping, mutated only by calling the exact functions PhoneAlarmReceiver and
@@ -51,274 +60,42 @@ class WholeMorningSequenceTest {
         var wakeAlarmFiredAt: Instant? = null
         var napAlarmsUsed = 0
         var lastNapAlarmFiredAt: Instant? = null
-        // J1.3: mirrors NightState.phoneAlarmFiredFor, written unconditionally by
-        // PhoneAlarmReceiver.markPhoneAlarmFired - see recordFiring's own doc below.
         var phoneAlarmFiredFor: Instant? = null
 
-        /** Models NightOrchestrator.runNightTickLocked: compute the plan from the CURRENT latch, then re-latch from its own result - see NightOrchestrator.latchMorningAlarmAt. */
         fun tick(segments: List<SleepSegment>, now: String): AlarmPlan {
             val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor)
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
             return plan
         }
 
-        /** Models PhoneAlarmReceiver.recordWakeOrNapFired for a plan whose own wakeAt has just fired. G8: a NAP firing always counts, pre-wake or post-wake alike - no further guard. H2: also records lastNapAlarmFiredAt. J1.3: phoneAlarmFiredFor is set unconditionally, exactly like markPhoneAlarmFired - this harness never simulates the stale-load race that can skip the branch below, only its always-written counterpart. */
-        fun recordFiring(plan: AlarmPlan) {
-            val firedFor = requireNotNull(plan.wakeAt)
-            phoneAlarmFiredFor = firedFor
-            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
-                wakeAlarmFiredAt = firedFor
-            } else {
-                napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
-                lastNapAlarmFiredAt = firedFor
-            }
-        }
-
-        // The main wake alarm rings at 07:00 (mode FULL_CYCLES, the picked total all used) and fires. Modeled
-        // as a hand-built plan "arriving" from an earlier tick this sequence does not otherwise walk through.
+        // The main wake alarm rings at 07:00 and fires (PhoneAlarmReceiver.recordWakeOrNapFired).
         val wakePlan = AlarmPlan(AlarmMode.FULL_CYCLES, at("2026-09-17T07:00:00"), 3, at("2026-09-17T02:30:00"), false, "r")
         morningAlarmAt = latchMorningAlarmAt(null, wakePlan)
-        recordFiring(wakePlan)
+        phoneAlarmFiredFor = wakePlan.wakeAt
+        if (firedAlarmIsWakeAlarm(wakePlan.mode, at("2026-09-17T07:00:00"), morningAlarmAt)) wakeAlarmFiredAt = wakePlan.wakeAt
         assertEquals(at("2026-09-17T07:00:00"), wakeAlarmFiredAt)
+
+        // Awake 07:00-07:10, asleep 07:10-07:30, awake 07:30-07:35, asleep 07:35-07:55, awake 07:55-08:00,
+        // asleep from 08:00. Each return to sleep used to arm a nap (07:30, 07:55) and the third FINISHED.
+        val timeline = listOf(
+            "2026-09-17T07:00:00" to SegmentKind.AWAKE, "2026-09-17T07:10:00" to SegmentKind.LIGHT,
+            "2026-09-17T07:30:00" to SegmentKind.AWAKE, "2026-09-17T07:35:00" to SegmentKind.LIGHT,
+            "2026-09-17T07:55:00" to SegmentKind.AWAKE, "2026-09-17T08:00:00" to SegmentKind.LIGHT,
+        )
+        fun segmentsUntil(now: String): List<SleepSegment> {
+            val marks = listOf("2026-09-16T22:30:00" to SegmentKind.LIGHT) + timeline.filter { at(it.first).isBefore(at(now)) }
+            return marks.mapIndexed { index, (start, kind) -> seg(start, marks.getOrNull(index + 1)?.first ?: now, kind) }
+        }
+        val ticks = listOf("2026-09-17T07:05:00", "2026-09-17T07:11:00", "2026-09-17T07:15:00", "2026-09-17T07:33:00",
+            "2026-09-17T07:36:00", "2026-09-17T07:40:00", "2026-09-17T07:58:00", "2026-09-17T08:01:00")
+        for (now in ticks) {
+            val plan = tick(segmentsUntil(now), now)
+            assertNull(plan.wakeAt, "nothing armed at $now")
+            assertEquals(AlarmMode.NAP, plan.mode, "rule 7's mode still applies at $now, it just arms nothing")
+        }
         assertEquals(0, napAlarmsUsed)
-
-        // 07:05: still awake, unconfirmed. F5: the AWAKE safety net arms nothing once the wake alarm fired.
-        val stillAwake = tick(
-            listOf(seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT), seg("2026-09-17T07:00:00", "2026-09-17T07:05:00", SegmentKind.AWAKE)),
-            "2026-09-17T07:05:00"
-        )
-        assertEquals(AlarmMode.NAP, stillAwake.mode)
-        assertNull(stillAwake.wakeAt)
-
-        // 07:11: falls back asleep - the first D5 nap, onset 07:10, alarm at 07:30. Nothing has fired yet.
-        val firstNapArmed = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:11:00", SegmentKind.LIGHT)
-            ),
-            "2026-09-17T07:11:00"
-        )
-        assertEquals(AlarmMode.NAP, firstNapArmed.mode)
-        assertEquals(at("2026-09-17T07:30:00"), firstNapArmed.wakeAt)
-        assertEquals(0, napAlarmsUsed, "an armed but not yet fired nap must never inflate the counter")
-
-        // 07:30: the first nap alarm FIRES.
-        recordFiring(firstNapArmed)
-        assertEquals(1, napAlarmsUsed)
-
-        // 07:33: briefly awake again after the first nap alarm. Arms nothing (F5).
-        val secondAwake = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:30:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:30:00", "2026-09-17T07:33:00", SegmentKind.AWAKE)
-            ),
-            "2026-09-17T07:33:00"
-        )
-        assertEquals(AlarmMode.NAP, secondAwake.mode)
-        assertNull(secondAwake.wakeAt)
-
-        // 07:36: falls back asleep again - a GENUINE new awakening happened first, so this is the SECOND D5
-        // nap on a fresh onset (07:35), not "the same nap re-firing" - lastNapAlarmFiredAt (07:30) is before
-        // this new onset, so H2's fix does not apply here; the ordinary onset + napLength target governs.
-        val secondNapArmed = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:30:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:30:00", "2026-09-17T07:35:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:35:00", "2026-09-17T07:36:00", SegmentKind.LIGHT)
-            ),
-            "2026-09-17T07:36:00"
-        )
-        assertEquals(AlarmMode.NAP, secondNapArmed.mode)
-        assertEquals(at("2026-09-17T07:55:00"), secondNapArmed.wakeAt)
-        assertEquals(1, napAlarmsUsed, "still armed, not yet fired")
-
-        // 07:55: the second nap alarm FIRES - the cap is now spent.
-        recordFiring(secondNapArmed)
-        assertEquals(MAX_NAP_ALARMS, napAlarmsUsed)
-
-        // 07:58: briefly awake again. Arms nothing (F5) - the cap does not change that.
-        val thirdAwake = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:30:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:30:00", "2026-09-17T07:35:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:35:00", "2026-09-17T07:55:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:55:00", "2026-09-17T07:58:00", SegmentKind.AWAKE)
-            ),
-            "2026-09-17T07:58:00"
-        )
-        assertEquals(AlarmMode.NAP, thirdAwake.mode)
-        assertNull(thirdAwake.wakeAt)
-
-        // 08:01: falls asleep a THIRD time - a genuinely new return to sleep with the cap already spent and no
-        // deadline to fall back on (F4): the night FINISHES instead of arming a third nap.
-        val thirdReturnToSleep = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:30:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:30:00", "2026-09-17T07:35:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:35:00", "2026-09-17T07:55:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:55:00", "2026-09-17T08:00:00", SegmentKind.AWAKE),
-                seg("2026-09-17T08:00:00", "2026-09-17T08:01:00", SegmentKind.LIGHT)
-            ),
-            "2026-09-17T08:01:00"
-        )
-        assertEquals(AlarmMode.FINISHED, thirdReturnToSleep.mode)
-        assertNull(thirdReturnToSleep.wakeAt)
-    }
-
-    @Test
-    fun `the same whole morning keeps a deadline alarm instead of finishing when one is still ahead (F4)`() {
-        val setting = NightSettings(deadline = at("2026-09-17T08:30:00"), pickedCycles = 3)
-        var morningAlarmAt: Instant? = null
-        var wakeAlarmFiredAt: Instant? = at("2026-09-17T07:00:00")
-        var napAlarmsUsed = MAX_NAP_ALARMS
-        var lastNapAlarmFiredAt: Instant? = null
-        // J1.3: mirrors NightState.phoneAlarmFiredFor - starts at the same instant wakeAlarmFiredAt is
-        // pre-set to above, since that firing is what set both in the real app.
-        var phoneAlarmFiredFor: Instant? = at("2026-09-17T07:00:00")
-
-        fun tick(segments: List<SleepSegment>, now: String): AlarmPlan {
-            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor)
-            morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
-            return plan
-        }
-
-        fun recordFiring(plan: AlarmPlan) {
-            val firedFor = requireNotNull(plan.wakeAt)
-            phoneAlarmFiredFor = firedFor
-            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
-                wakeAlarmFiredAt = firedFor
-            } else {
-                napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
-                lastNapAlarmFiredAt = firedFor
-            }
-        }
-
-        val secondNapArmed = AlarmPlan(AlarmMode.NAP, at("2026-09-17T07:55:00"), 0, at("2026-09-17T07:35:00"), false, "r")
-        recordFiring(secondNapArmed) // cap already at MAX before this call; stays there.
-        assertEquals(MAX_NAP_ALARMS, napAlarmsUsed)
-
-        val thirdAwake = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:30:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:30:00", "2026-09-17T07:35:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:35:00", "2026-09-17T07:55:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:55:00", "2026-09-17T07:58:00", SegmentKind.AWAKE)
-            ),
-            "2026-09-17T07:58:00"
-        )
-        assertEquals(AlarmMode.NAP, thirdAwake.mode)
-        assertNull(thirdAwake.wakeAt)
-
-        val thirdReturnToSleep = tick(
-            listOf(
-                seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:10:00", "2026-09-17T07:30:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:30:00", "2026-09-17T07:35:00", SegmentKind.AWAKE),
-                seg("2026-09-17T07:35:00", "2026-09-17T07:55:00", SegmentKind.LIGHT),
-                seg("2026-09-17T07:55:00", "2026-09-17T08:00:00", SegmentKind.AWAKE),
-                seg("2026-09-17T08:00:00", "2026-09-17T08:01:00", SegmentKind.LIGHT)
-            ),
-            "2026-09-17T08:01:00"
-        )
-        assertEquals(AlarmMode.DEADLINE_ONLY, thirdReturnToSleep.mode)
-        assertEquals(at("2026-09-17T08:30:00"), thirdReturnToSleep.wakeAt)
-    }
-
-    @Test
-    fun `H2 SUPERSEDES G2 - the owner sleeps straight through both naps - the second nap is a fresh napLength after the first fired, not a 2-minute pull-forward, and the interval between them is a full napLength`() {
-        // G2's own regression case (a stretch that never gets interrupted by another awakening) already
-        // proved the cap can ENGAGE without an awakening between naps. H2 walks the SAME scenario one step
-        // further, into the part G2's own fix still got wrong: what the SECOND nap's own alarm time actually
-        // is. Before H2, napAlarm's ASLEEP branch always recomputed referenceOnset + napLength - once nap 1
-        // has fired without the onset changing, that recompute (07:10 + 20 = 07:30) is already in the past,
-        // and pullForwardIfTooSoon squeezed it into a bare two minutes (07:33) instead of a second real
-        // twenty-minute chance.
-        val setting = NightSettings(deadline = null, pickedCycles = 3)
-        var morningAlarmAt: Instant? = null
-        var wakeAlarmFiredAt: Instant? = null
-        var napAlarmsUsed = 0
-        var lastNapAlarmFiredAt: Instant? = null
-        // J1.3: mirrors NightState.phoneAlarmFiredFor - see the first scenario's own note above.
-        var phoneAlarmFiredFor: Instant? = null
-
-        fun tick(segments: List<SleepSegment>, now: String): AlarmPlan {
-            val plan = computeAlarmPlan(segments, setting, at(now), morningAlarmAt, zone, config, wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor)
-            morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
-            return plan
-        }
-
-        fun recordFiring(plan: AlarmPlan) {
-            val firedFor = requireNotNull(plan.wakeAt)
-            phoneAlarmFiredFor = firedFor
-            if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
-                wakeAlarmFiredAt = firedFor
-            } else {
-                napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
-                lastNapAlarmFiredAt = firedFor
-            }
-        }
-
-        // A single continuous stretch from 07:10 onward, with the tick's own `now` as its open end - unlike
-        // every case above, NO further AWAKE segment is ever inserted: the owner truly never wakes again.
-        fun asleepSince0710(now: String) = listOf(
-            seg("2026-09-16T22:30:00", "2026-09-17T07:00:00", SegmentKind.LIGHT),
-            seg("2026-09-17T07:00:00", "2026-09-17T07:10:00", SegmentKind.AWAKE),
-            seg("2026-09-17T07:10:00", now, SegmentKind.LIGHT)
-        )
-
-        // The main wake alarm rings at 07:00 and fires; the owner briefly registers awake before falling back
-        // asleep at 07:10 - a real transition is unavoidable there, but nothing after it.
-        val wakePlan = AlarmPlan(AlarmMode.FULL_CYCLES, at("2026-09-17T07:00:00"), 3, at("2026-09-17T02:30:00"), false, "r")
-        morningAlarmAt = latchMorningAlarmAt(null, wakePlan)
-        recordFiring(wakePlan)
-
-        // 07:11: falls back asleep - the first D5/G8 nap, onset 07:10, alarm at 07:30.
-        val firstNapArmed = tick(asleepSince0710("2026-09-17T07:11:00"), "2026-09-17T07:11:00")
-        assertEquals(AlarmMode.NAP, firstNapArmed.mode)
-        assertEquals(at("2026-09-17T07:30:00"), firstNapArmed.wakeAt)
-
-        // 07:30: the first nap alarm FIRES. The band still shows the SAME continuous stretch onset 07:10.
-        recordFiring(firstNapArmed)
-        assertEquals(1, napAlarmsUsed)
-
-        // 07:31: referenceOnset is still 07:10 (no awakening ever recorded) and a nap alarm already fired for
-        // THIS onset (lastNapAlarmFiredAt 07:30 >= 07:10) - H2's fix: the target is lastNapAlarmFiredAt (07:30)
-        // + a full napLength (20 min) = 07:50, a genuinely fresh second chance, not now (07:31) pulled forward
-        // to a bare 07:33.
-        val secondNapArmed = tick(asleepSince0710("2026-09-17T07:31:00"), "2026-09-17T07:31:00")
-        assertEquals(AlarmMode.NAP, secondNapArmed.mode)
-        assertEquals(at("2026-09-17T07:50:00"), secondNapArmed.wakeAt)
-        // H2's own DoD: the INTERVAL between the two nap alarms, not just their count, must be a full napLength.
-        assertEquals(Duration.ofMinutes(20), Duration.between(firstNapArmed.wakeAt, secondNapArmed.wakeAt))
-
-        // 07:40: a LATER tick, still before the second nap has fired, still the SAME continuous stretch. The
-        // target must hold STEADY at 07:50 - not recompute to now (07:40) + 20 = 08:00, which is exactly the
-        // drift bug a naive "now + napLength" fix would introduce (see WakeAlarm.kt's asleepNapTarget doc).
-        val secondNapHeld = tick(asleepSince0710("2026-09-17T07:40:00"), "2026-09-17T07:40:00")
-        assertEquals(AlarmMode.NAP, secondNapHeld.mode)
-        assertEquals(at("2026-09-17T07:50:00"), secondNapHeld.wakeAt, "the second nap's own target must not drift forward on a later tick before it fires")
-
-        // 07:50: the second (genuinely fresh) nap alarm FIRES - the cap is now spent.
-        recordFiring(secondNapArmed)
-        assertEquals(MAX_NAP_ALARMS, napAlarmsUsed)
-
-        // 07:52: still the SAME continuous stretch, onset still 07:10. The cap engages (G2's own fix, still
-        // correct and untouched by H2): FINISHED, no further alarm armed.
-        val afterSecondNapFires = tick(asleepSince0710("2026-09-17T07:52:00"), "2026-09-17T07:52:00")
-        assertEquals(AlarmMode.FINISHED, afterSecondNapFires.mode)
-        assertNull(afterSecondNapFires.wakeAt)
+        assertNull(lastNapAlarmFiredAt)
+        assertEquals(at("2026-09-17T07:00:00"), morningAlarmAt)
     }
 }
 

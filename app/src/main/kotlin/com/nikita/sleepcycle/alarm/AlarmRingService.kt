@@ -53,6 +53,7 @@ import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendToCurrentNightLog
 import com.nikita.sleepcycle.night.nowInstant
+import com.nikita.sleepcycle.night.rearmFollowUpAfterRingEnded
 import java.time.Duration
 import java.time.Instant
 
@@ -83,6 +84,8 @@ val AUTO_STOP_AFTER: Duration = EngineConfig().ringAutoStopAfter
 class AlarmRingService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var isRinging = false
+    /** P3: which ring is sounding, so its end can re-time the nudge - never for the Debug screen's test ring. */
+    private var ringingLabel: AlarmLabel = AlarmLabel.MORNING
     private val stopHandler = Handler(Looper.getMainLooper())
     private val stopRunnable = Runnable { stopRinging(ALARM_STOP_REASON_AUTO) }
 
@@ -103,7 +106,8 @@ class AlarmRingService : Service() {
         // notification's and AlarmActivity's wording; sound, vibration and every stop path are identical either way.
         val isOutOfBed = intent?.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false) ?: false
         val autoStopAfterMillis = intent?.getLongExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, AUTO_STOP_AFTER.toMillis()) ?: AUTO_STOP_AFTER.toMillis()
-        startForeground(NOTIFICATION_ID, buildAlarmNotification(this, isOutOfBed, intent.readAlarmLabel()))
+        ringingLabel = intent.readAlarmLabel()
+        startForeground(NOTIFICATION_ID, buildAlarmNotification(this, isOutOfBed, ringingLabel))
         startRinging(Duration.ofMillis(autoStopAfterMillis))
         return START_NOT_STICKY
     }
@@ -168,6 +172,13 @@ class AlarmRingService : Service() {
     private fun stopRinging(reason: String) {
         if (isRinging) {
             appendToCurrentNightLog(this, NightLogEvent(nowInstant(), "alarm_stopped", mapOf("reason" to reason)))
+        }
+        // P3 (owner spec, 2026-09-30): "once I stop it, it arms the out-of-bed nudge in 10 minutes" - the ring's
+        // own end (Stop, or the auto-stop) re-times the nudge the firing already armed as a safety net. Never on
+        // the night ending (endNight cancels everything itself) and never for the Debug test ring. Guarded: a
+        // failure here must never keep the sound playing.
+        if (isRinging && reason != ALARM_STOP_REASON_NIGHT_ENDED && ringingLabel != AlarmLabel.TEST) {
+            runGuarded("re-time the out-of-bed nudge after the ring ended") { rearmFollowUpAfterRingEnded(this, nowInstant()) }
         }
         stopRingingArtifacts()
         runGuarded("release the alarm wake lock") { releaseAlarmWakeLock() }
