@@ -106,6 +106,7 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                             onRequestEndNight = viewModel::requestEndNight,
                             onConfirmEndNight = viewModel::confirmEndNight,
                             onCancelEndNight = viewModel::cancelEndNight,
+                            onStartNap = viewModel::startNap,
                             onDone = viewModel::finishMorningReport,
                             onSpeedChange = viewModel::setSpeed,
                             onSetSimulatedAsleep = viewModel::setSimulatedAsleep,

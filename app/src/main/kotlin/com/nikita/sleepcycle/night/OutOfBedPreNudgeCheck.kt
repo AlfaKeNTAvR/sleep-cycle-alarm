@@ -48,6 +48,14 @@ package com.nikita.sleepcycle.night
 // [runPreNudgeCheck] directly - no foreground service, no wake lock: a warped night is by definition being
 // watched with the app open (see this file's own T6-derived reasoning). Real (unwarped) nights keep the exact
 // AlarmManager-plus-foreground-service path they always had.
+//
+// P3 (owner spec, 2026-09-30) NARROWS where this check is armed, without changing what it decides: only for a
+// NUDGE pending before the morning alarm has rung (PostAlarmFollowUp.kt's followUpNeedsPreNudgeCheck). After
+// the morning alarm the engine arms nothing at all, so `lastPlan.wakeAt` is always null there and this check
+// could never cancel anything - it was dead on the post-alarm path, and on a pending manual NAP (which shares
+// the nudge's slot and record) it would have been harmful. Whether to delete it outright stays the owner's
+// open decision; pre-morning (a pre-wake rule 7 nap's own nudge, with the morning alarm still to come) it still
+// does M1's job.
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
@@ -209,6 +217,10 @@ private suspend fun runPreNudgeCheck(context: Context) {
     // that triggered this check fired at a T5-converted REAL instant.
     val now = nowInstant()
     val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return
+    // P3: this check guards a NUDGE only. The owner's own nap shares the nudge's slot and record, so a check left
+    // over from a nudge he has since traded for a nap must never clear that nap (PostAlarmFollowUp.kt cancels the
+    // check on every such trade; this is the second line of defence).
+    if (withContext(Dispatchers.IO) { readPendingFollowUp(context) }?.kind != FollowUpKind.NUDGE) return
     val plannedWakeAt = state.lastPlan?.wakeAt
     if (!shouldCancelNudgeForPreCheck(now, plannedWakeAt, state.phoneAlarmFiredFor)) {
         appendNightLog(

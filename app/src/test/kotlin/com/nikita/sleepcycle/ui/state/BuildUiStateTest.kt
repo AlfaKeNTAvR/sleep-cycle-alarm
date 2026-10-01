@@ -44,7 +44,7 @@ private fun state(
     morningReportEndedAt = morningReportEndedAt?.let(::instant),
     debugOptions = debugOptions,
     endingNight = endingNight,
-    pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt?.let(::instant),
+    pendingFollowUp = pendingNudge(pendingOutOfBedNudgeAt),
     errorMessage = null,
 )
 

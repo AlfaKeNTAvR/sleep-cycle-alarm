@@ -107,4 +107,11 @@ data class NightUiState(
      * Gadgetbridge). Derived from [lastSyncOk], no new persisted field. Always false on the morning report.
      */
     val bandNotSyncingWarning: Boolean = false,
+    /**
+     * P3 (owner spec, 2026-09-30): the "Nap N min" button's minutes when the screen offers it, null when it does
+     * not. Offered exactly while the out-of-bed nudge is pending and still ahead - pressing it trades that nudge
+     * for a nap alarm N minutes out (night/PostAlarmCycle.kt). Never while a nap is already armed, nothing is
+     * pending, or the night has ended.
+     */
+    val napButtonMinutes: Int? = null,
 )

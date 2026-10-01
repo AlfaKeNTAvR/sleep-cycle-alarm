@@ -13,6 +13,15 @@ import org.junit.jupiter.api.Test
  * below arms nothing (`wakeAt == null`) once the wake alarm has fired, whatever the cap says. Separate from
  * rule 7's own pre-wake nap (ChooseModeTest, ExtraNightScenariosTest's "survives a second awakening" case),
  * which this does not touch.
+ *
+ * P3 (owner spec, 2026-09-30) REWROTE the alarm half of this file. After the morning alarm the engine arms
+ * nothing at all any more (WakeAlarm.kt's `morningAlarmHasRung`): every "nap armed / nap held" step below used
+ * to assert a 07:30 or 07:55 alarm and now asserts none, and F4's deadline case no longer re-arms the 08:30
+ * deadline. The MODE sequence is unchanged and still pinned - NAP, then FINISHED (or DEADLINE_ONLY) once the
+ * counted nap alarms reach [MAX_NAP_ALARMS] - because chooseMode still runs the cap; under P3 that counter can
+ * only be advanced by PRE-wake rule 7 naps (the owner's own manual naps never touch it), so these hand-fed
+ * counts stand for those. FINISHED there no longer silences anything: L2.1 defers the bookkeeping while the
+ * nudge (or the owner's own nap) is pending.
  */
 class PostWakeNapTest {
     private val config = EngineConfig()
@@ -26,7 +35,7 @@ class PostWakeNapTest {
         phoneAlarmFiredFor
     )
 
-    @Test fun `a first nap, a second nap, and a genuinely new third return to sleep FINISHES the night`() {
+    @Test fun `a first, second and genuinely new third return to sleep after the morning alarm arm nothing - P3 - and the cap still FINISHES the mode`() {
         // The main wake alarm already fired at 07:00 (mode FULL_CYCLES, the picked total all used).
         val wakeAlarmFired = AlarmPlan(AlarmMode.FULL_CYCLES, instant("2026-09-17T07:00"), 3, instant("2026-09-17T02:30"), false, "r")
 
@@ -54,7 +63,7 @@ class PostWakeNapTest {
             "2026-09-17T07:11", stillAwake, wakeAlarmFiredAt = instant("2026-09-17T07:00"), napAlarmsUsed = 0
         )
         assertEquals(AlarmMode.NAP, firstNapArmed.mode)
-        assertEquals("07:30", formatTime(firstNapArmed.wakeAt!!, testZone))
+        assertEquals(null, firstNapArmed.wakeAt) // P3: was 07:30
 
         // 07:15: still the SAME pending nap, still hasn't fired - napAlarmsUsed is still 0, and the alarm holds.
         val firstNapHeld = plan(
@@ -66,7 +75,7 @@ class PostWakeNapTest {
             "2026-09-17T07:15", firstNapArmed, wakeAlarmFiredAt = instant("2026-09-17T07:00"), napAlarmsUsed = 0
         )
         assertEquals(AlarmMode.NAP, firstNapHeld.mode)
-        assertEquals("07:30", formatTime(firstNapHeld.wakeAt!!, testZone))
+        assertEquals(null, firstNapHeld.wakeAt) // P3: was 07:30
 
         // 07:30: the first nap alarm FIRES - PhoneAlarmReceiver records it and napAlarmsUsed becomes 1 from
         // here on. Owner still unconfirmed, briefly awake again; F5 again arms nothing.
@@ -95,7 +104,7 @@ class PostWakeNapTest {
             "2026-09-17T07:36", secondAwake, wakeAlarmFiredAt = instant("2026-09-17T07:00"), napAlarmsUsed = 1
         )
         assertEquals(AlarmMode.NAP, secondNapArmed.mode)
-        assertEquals("07:55", formatTime(secondNapArmed.wakeAt!!, testZone))
+        assertEquals(null, secondNapArmed.wakeAt) // P3: was 07:55
 
         // 07:40: still the SAME second nap, still pending - napAlarmsUsed is still 1, and the alarm holds.
         val secondNapHeld = plan(
@@ -109,7 +118,7 @@ class PostWakeNapTest {
             "2026-09-17T07:40", secondNapArmed, wakeAlarmFiredAt = instant("2026-09-17T07:00"), napAlarmsUsed = 1
         )
         assertEquals(AlarmMode.NAP, secondNapHeld.mode)
-        assertEquals("07:55", formatTime(secondNapHeld.wakeAt!!, testZone))
+        assertEquals(null, secondNapHeld.wakeAt) // P3: was 07:55
 
         // 07:55: the second nap alarm FIRES - napAlarmsUsed becomes MAX_NAP_ALARMS (2) from here on. Owner
         // still unconfirmed, awake again - F5 still arms nothing, whether or not the cap is spent.
@@ -145,7 +154,7 @@ class PostWakeNapTest {
         assertEquals(null, thirdReturnToSleep.wakeAt)
     }
 
-    @Test fun `F4 the same third return to sleep keeps a deadline alarm instead of finishing when one is still ahead`() {
+    @Test fun `F4 the same third return to sleep is DEADLINE_ONLY instead of finishing when a deadline is still ahead - P3 arms no alarm for it`() {
         val deadlineSetting = settings(deadline = "2026-09-17T08:30", cycles = 3)
         fun planWithDeadline(segments: List<SleepSegment>, now: String, previous: AlarmPlan?, wakeAlarmFiredAt: Instant?, napAlarmsUsed: Int) =
             computeAlarmPlan(
@@ -181,6 +190,6 @@ class PostWakeNapTest {
             "2026-09-17T08:01", thirdAwake, wakeAlarmFiredAt = instant("2026-09-17T07:00"), napAlarmsUsed = MAX_NAP_ALARMS
         )
         assertEquals(AlarmMode.DEADLINE_ONLY, thirdReturnToSleep.mode)
-        assertEquals(instant("2026-09-17T08:30"), thirdReturnToSleep.wakeAt)
+        assertEquals(null, thirdReturnToSleep.wakeAt) // P3: was the 08:30 deadline
     }
 }

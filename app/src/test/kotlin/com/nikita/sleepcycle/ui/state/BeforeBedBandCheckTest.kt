@@ -24,7 +24,7 @@ private fun beforeBedWith(connectionTest: ConnectionTestState): BeforeBedUiState
     confirmingEndNight = false,
     showingMorningReport = false,
     morningReportEndedAt = null,
-    pendingOutOfBedNudgeAt = null,
+    pendingFollowUp = null,
     errorMessage = null,
 ).beforeBed
 

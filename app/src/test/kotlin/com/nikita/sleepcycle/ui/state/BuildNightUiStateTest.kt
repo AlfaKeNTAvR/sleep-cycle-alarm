@@ -215,7 +215,7 @@ class FinishedNightWithPendingNudgeTest {
                 showingMorningReport = true,
                 morningReportEndedAt = instant("2026-09-17T07:35"),
                 confirmingEndNight = false,
-                pendingOutOfBedNudgeAt = instant("2026-09-17T07:45"),
+                pendingFollowUp = pendingNudge("2026-09-17T07:45"),
             )
         )
 
@@ -237,7 +237,7 @@ private fun uiStateFor(
         showingMorningReport = false,
         morningReportEndedAt = null,
         confirmingEndNight = false,
-        pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt?.let(::instant),
+        pendingFollowUp = pendingNudge(pendingOutOfBedNudgeAt),
     )
 )
 

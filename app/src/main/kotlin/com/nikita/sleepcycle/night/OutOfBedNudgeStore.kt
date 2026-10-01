@@ -18,6 +18,11 @@ package com.nikita.sleepcycle.night
 // so a reader does not conclude from "cleared when the nudge fires" that a fired nudge leaves the file empty.
 // It does, for the moment between the clear and the re-arm, and an arming that FAILS leaves it empty for
 // good, which is correct: there is then no nudge left to restore.
+//
+// P3 (owner spec, 2026-09-30): the same record now also holds the owner's own "Nap for 20 min" alarm, which
+// shares the nudge's slot - one follow-up at a time, with its kind ([PendingFollowUp]). A nap is written as
+// `NAP <instant>`; a nudge stays the bare instant it always was, so a record from an older build still reads
+// back as the nudge it is.
 
 import android.content.Context
 import android.util.Log
@@ -39,10 +44,17 @@ private const val LOG_TAG = "OutOfBedNudgeStore"
  * disappear instead of merely tolerating it.
  */
 fun saveOutOfBedNudgePendingAt(context: Context, at: Instant): Boolean =
+    savePendingFollowUp(context, PendingFollowUp(FollowUpKind.NUDGE, at))
+
+/**
+ * P3: persists [followUp] - the nudge or the owner's own nap, whichever is pending in the out-of-bed slot - in
+ * this file's one record. Same temp-file-and-rename write as before; see [saveOutOfBedNudgePendingAt]'s own doc.
+ */
+fun savePendingFollowUp(context: Context, followUp: PendingFollowUp): Boolean =
     try {
         val target = outOfBedNudgePendingFile(context)
         val temp = File(target.parentFile, "$OUT_OF_BED_NUDGE_PENDING_FILE_NAME.tmp")
-        temp.writeText(at.toString())
+        temp.writeText(formatPendingFollowUp(followUp))
         if (!temp.renameTo(target)) throw java.io.IOException("renameTo failed for $temp -> $target")
         true
     } catch (error: Exception) {
@@ -50,16 +62,46 @@ fun saveOutOfBedNudgePendingAt(context: Context, at: Instant): Boolean =
         false
     }
 
-/** The nudge's own pending fire instant, or null if none is armed, or the file is absent/unparsable (never throws). */
-fun readOutOfBedNudgePendingAt(context: Context): Instant? {
+/**
+ * The pending follow-up's own fire instant - the nudge's, or (P3) the owner's own nap's - or null if none is
+ * armed, or the file is absent/unparsable (never throws). Every reader that only needs "is something still
+ * coming, and when" (L2.1's deferral, the stale-nudge bounds) uses this; one that must tell the two apart reads
+ * [readPendingFollowUp].
+ */
+fun readOutOfBedNudgePendingAt(context: Context): Instant? = readPendingFollowUp(context)?.at
+
+/** P3: the pending follow-up with its kind, or null if none is armed, or the file is absent/unparsable (never throws). */
+fun readPendingFollowUp(context: Context): PendingFollowUp? {
     val file = outOfBedNudgePendingFile(context)
     if (!file.exists()) return null
-    return try {
-        Instant.parse(file.readText().trim())
+    val text = try {
+        file.readText()
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to read the pending out-of-bed nudge instant, treating as absent", error)
+        return null
+    }
+    return parsePendingFollowUp(text) ?: run {
+        Log.e(LOG_TAG, "unparsable pending out-of-bed record '$text', treating as absent")
         null
     }
+}
+
+/** P3: the record's marker for the owner's own nap. A nudge is written as the bare instant, exactly as before P3. */
+private const val NAP_RECORD_PREFIX = "NAP "
+
+/** P3: the record's text - `NAP <instant>` for a nap, the bare instant for a nudge (the pre-P3 format, unchanged). */
+internal fun formatPendingFollowUp(followUp: PendingFollowUp): String = when (followUp.kind) {
+    FollowUpKind.NAP -> NAP_RECORD_PREFIX + followUp.at
+    FollowUpKind.NUDGE -> followUp.at.toString()
+}
+
+/** P3: reads [formatPendingFollowUp]'s text back; a bare instant (every record before P3) is a nudge. Null when unparsable. */
+internal fun parsePendingFollowUp(text: String): PendingFollowUp? {
+    val trimmed = text.trim()
+    val isNap = trimmed.startsWith(NAP_RECORD_PREFIX)
+    val instantText = if (isNap) trimmed.removePrefix(NAP_RECORD_PREFIX) else trimmed
+    val at = runCatching { Instant.parse(instantText) }.getOrNull() ?: return null
+    return PendingFollowUp(if (isNap) FollowUpKind.NAP else FollowUpKind.NUDGE, at)
 }
 
 /**

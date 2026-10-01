@@ -454,7 +454,10 @@ private fun cancelNudgeIfSupersededByNap(
     napAlarmArmed: Boolean,
     now: Instant
 ) {
-    val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
+    // P3 (owner spec, 2026-09-30): only a pending NUDGE can be superseded - never the owner's own nap, which
+    // shares the same slot and record. In practice this only ever runs before the morning alarm: after it, no
+    // plan carries a nap target (WakeAlarm.kt's morningAlarmHasRung), so napSupersedesPendingNudge is false.
+    val pendingNudgeAt = readPendingFollowUp(context)?.takeIf { it.kind == FollowUpKind.NUDGE }?.at
     val sleepState = detectSleepState(normalizeSegments(segments, now, config))
     if (!napSupersedesPendingNudge(plan, pendingNudgeAt, sleepState, napAlarmArmed)) return
     cancelOutOfBedAlarm(context)

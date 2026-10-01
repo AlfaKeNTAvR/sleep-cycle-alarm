@@ -255,13 +255,20 @@ internal fun shouldRearmPendingNudge(pendingNudgeAt: Instant?, now: Instant): Bo
  */
 suspend fun rearmAfterSpeedChange(context: Context) {
     val now = nowInstant()
-    val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
-    if (shouldRearmPendingNudge(pendingNudgeAt, now)) {
-        val at = requireNotNull(pendingNudgeAt)
-        scheduleOutOfBedAlarm(context, at)
-        // resolveEngineConfig always returns the real EngineConfig regardless of debug options (T7), so reading
-        // it plain here is equivalent and avoids a night-state load just for one duration.
-        schedulePreNudgeCheck(context, at.minus(EngineConfig().preNudgeCheckLead))
+    val pending = readPendingFollowUp(context)
+    if (shouldRearmPendingNudge(pending?.at, now)) {
+        val followUp = requireNotNull(pending)
+        // P3: the record may hold the owner's own nap - re-armed under its own label - and the pre-nudge check
+        // is re-armed only where PostAlarmFollowUp.kt arms it at all (a nudge before the morning alarm).
+        scheduleOutOfBedAlarm(context, followUp.at, alarmLabelForFollowUp(followUp.kind))
+        val state = loadNightState(context)
+        if (state != null && followUpNeedsPreNudgeCheck(followUp, state)) {
+            // resolveEngineConfig always returns the real EngineConfig regardless of debug options (T7), so
+            // reading it plain here is equivalent.
+            schedulePreNudgeCheck(context, followUp.at.minus(EngineConfig().preNudgeCheckLead))
+        } else {
+            cancelPreNudgeCheck(context)
+        }
     }
     cancelTick(context)
     requestImmediateTick(context)

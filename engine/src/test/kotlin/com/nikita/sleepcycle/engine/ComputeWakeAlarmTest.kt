@@ -56,12 +56,20 @@ class ComputeWakeAlarmTest {
         assertEquals(instant("2026-09-17T01:30"), result)
     }
 
-    @Test fun `F5 rule 7 NAP once asleep still arms even after the wake alarm has fired - only the AWAKE branch is affected`() {
-        val result = computeWakeAlarm(
+    @Test fun `P3 rule 7 NAP once asleep arms nothing after the wake alarm has fired, but still arms before it`() {
+        // P3 (owner spec, 2026-09-30) REVERSES this test's old F5-era expectation (07:30): after the morning
+        // alarm a band-detected return to sleep no longer arms a nap - the owner's own Nap button does. The
+        // same ASLEEP nap with no wake alarm fired yet (a pre-wake rule 7 nap) is untouched.
+        val afterWakeAlarm = computeWakeAlarm(
             PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
             instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = instant("2026-09-17T07:00"), morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
         )
-        assertEquals(instant("2026-09-17T07:30"), result)
+        val beforeWakeAlarm = computeWakeAlarm(
+            PlanRule.NAP, SleepState.ASLEEP, instant("2026-09-17T07:10"), null, 0,
+            instant("2026-09-17T07:11"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
+        )
+        assertNull(afterWakeAlarm)
+        assertEquals(instant("2026-09-17T07:30"), beforeWakeAlarm)
     }
 
     @Test fun `F5 rule 7's AWAKE safety net arms nothing once the wake alarm has already fired`() {
@@ -344,15 +352,20 @@ class ComputeWakeAlarmTest {
     }
 
     @Test fun `M3 a morning target one minute after an earlier fired marker is a genuinely new target, not swallowed by the tolerance`() {
-        // raw (02:05, this tick's own computed target) sits a full minute after wakeAlarmFiredAt (02:04, an
+        // raw (02:05, this tick's own computed target) sits a full minute after phoneAlarmFiredFor (02:04, an
         // earlier, unrelated firing) - sixty times the one-second tolerance. now is still ahead of raw, so
         // pullForwardIfTooSoon leaves it untouched: the result must be raw itself, proving the tolerance did
         // NOT treat this as the same already-rung alarm. This is the J1.2 regression shape, pinned again here
         // at the computeWakeAlarm level (AlarmInstantToleranceTest pins it at the bare helper level).
+        // P3 (2026-09-30): the earlier firing used to be passed as wakeAlarmFiredAt (with morningAlarmAt at the
+        // same 02:04). P3's morningAlarmHasRung now ends ALL planning once the morning alarm has rung, which
+        // short-circuits before the tolerance check this test exists for - so the earlier firing is passed as
+        // the generic fired marker instead (a pre-wake nap, say), with no morning alarm rung, which still
+        // reaches morningAlarmAlreadyRang's tolerance exactly as before.
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:35"), null, 1,
-            instant("2026-09-17T02:00"), config, wakeAlarmFiredAt = instant("2026-09-17T02:04"),
-            morningAlarmAt = instant("2026-09-17T02:04"), lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
+            instant("2026-09-17T02:00"), config, wakeAlarmFiredAt = null,
+            morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = instant("2026-09-17T02:04")
         )
         assertEquals(instant("2026-09-17T02:05"), result)
     }

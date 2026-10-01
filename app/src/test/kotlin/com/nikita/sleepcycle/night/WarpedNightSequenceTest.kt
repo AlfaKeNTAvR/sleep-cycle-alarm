@@ -27,6 +27,11 @@ package com.nikita.sleepcycle.night
 // all must reach the IDENTICAL trace of decisions. The mid-sequence change and the late tick after FINISHED
 // (both asserted inside [driveMorning] itself, so every replay exercises them) are exactly what the file this
 // replaces never covered.
+//
+// P3 (owner spec, 2026-09-30) REPLACED the scenario after the wake alarm (see [driveMorning]'s own doc): the
+// two band-detected naps, the supersession, the pre-nudge check and the cap are gone from the post-alarm path,
+// and the owner's own Nap button and the ring-end nudge (PostAlarmCycle.kt's nextFollowUp) take their place.
+// The warp-invariance contract is unchanged, and now also covers the follow-up timing (TickTrace.followUp).
 
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
@@ -38,7 +43,6 @@ import com.nikita.sleepcycle.engine.detectSleepState
 import com.nikita.sleepcycle.engine.normalizeSegments
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
@@ -54,6 +58,7 @@ class WarpedNightSequenceTest {
     /** Bedtime, whole-minute aligned so every offset from it (and every EngineConfig duration, all whole minutes - see engine.Model.kt) stays whole-minute too, which is what keeps virtualNow/realInstantFor's round trip exact at every offered speed (SimulatedClock.kt), never off by the sub-millisecond slack integer division could otherwise introduce. */
     private val bedtime: Instant = Instant.parse("2026-09-17T22:00:00Z")
 
+
     /** One tick's full decision trace - not just the [AlarmPlan], so the reference and reconstructed runs can be compared on everything the app-layer pure functions decide, not only what the engine itself returns. */
     private data class TickTrace(
         val plan: AlarmPlan,
@@ -61,15 +66,23 @@ class WarpedNightSequenceTest {
         val napAlarmsUsed: Int,
         val morningAlarmAt: Instant?,
         val phoneAlarmShouldArm: Boolean,
-        val nudgeSupersededByNap: Boolean
+        val nudgeSupersededByNap: Boolean,
+        /** P3: the nudge or manual nap pending in the out-of-bed slot as of this tick. */
+        val followUp: PendingFollowUp?,
     )
 
     /**
-     * Drives one whole simulated morning: asleep, the wake alarm, an out-of-bed nudge armed then cancelled by a
-     * confirmed-asleep pre-nudge check, two naps (reaching [MAX_NAP_ALARMS]), FINISHED, and a late tick well
-     * after that. [nowAt] recovers "now" for a given virtual tick instant - direct passthrough for the
-     * reference run, or through a (possibly-changing) [ClockWarp] for a reconstructed one, exactly how a real
-     * tick's own `nowInstant()` does (`AppClock.now() = virtualNow(warp, Instant.now())`).
+     * Drives one whole simulated morning: asleep, the wake alarm, and then - P3 (owner spec, 2026-09-30) - the
+     * post-alarm cycle: the nudge armed by the firing and moved by the Stop, a band-detected return to sleep that
+     * arms nothing, three manual naps in a row (no cap), each followed by its own nudge, and a late tick well
+     * after that. [nowAt] recovers "now" for a given virtual tick instant - direct passthrough for the reference
+     * run, or through a (possibly-changing) [ClockWarp] for a reconstructed one, exactly how a real tick's own
+     * `nowInstant()` does (`AppClock.now() = virtualNow(warp, Instant.now())`).
+     *
+     * P3 REWROTE the part after the wake alarm. It used to drive two band-detected naps (H7.2 superseding the
+     * nudge, the D5/G8 cap) to FINISHED, with an M1 pre-nudge check in between. After the morning alarm none of
+     * that exists any more: no band nap, no supersession, no pre-check armed, no cap. Every instant below is
+     * virtual and hand-worked from bedtime 22:00: the morning alarm at 02:30.
      */
     private fun driveMorning(nowAt: (Instant) -> Instant): List<TickTrace> {
         var events = emptyList<SimulatedSleepEvent>()
@@ -77,7 +90,8 @@ class WarpedNightSequenceTest {
         var napAlarmsUsed = 0
         var lastNapAlarmFiredAt: Instant? = null
         var morningAlarmAt: Instant? = null
-        var pendingNudgeAt: Instant? = null
+        var phoneAlarmFiredFor: Instant? = null
+        var followUp: PendingFollowUp? = null
         val trace = mutableListOf<TickTrace>()
 
         fun tick(virtualNow: Instant): TickTrace {
@@ -85,104 +99,88 @@ class WarpedNightSequenceTest {
             val segments = buildSimulatedSegments(events, now)
             val plan = computeAlarmPlan(
                 segments, settings, now, morningAlarmAt, zone, config,
-                wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt,
-                // J1.3: this harness never models phoneAlarmFiredFor at all (see shouldArmPhoneAlarm's own
-                // hardcoded null a few lines below) - untouched here for the same reason.
-                phoneAlarmFiredFor = null
+                wakeAlarmFiredAt, napAlarmsUsed, lastNapAlarmFiredAt, phoneAlarmFiredFor
             )
-            val phoneAlarmShouldArm = shouldArmPhoneAlarm(plan.wakeAt, now, phoneAlarmFiredFor = null)
-            // FIX4: mirrors NightOrchestrator.cancelNudgeIfSupersededByNap's own two extra guards - a confirmed
-            // ASLEEP reading (recomputed here exactly like the app's own detectSleepState(normalizeSegments(...))
-            // pair does from the SAME segments the plan above was just built from) and a successfully armed
-            // replacement nap. This test has no Android `schedulePhoneAlarm` to call, so [phoneAlarmShouldArm] -
-            // already this scenario's own stand-in for "armPhoneAlarmIfNeeded would succeed" - doubles as the
-            // armed signal too.
+            val phoneAlarmShouldArm = shouldArmPhoneAlarm(plan.wakeAt, now, phoneAlarmFiredFor)
+            // FIX4: mirrors NightOrchestrator.cancelNudgeIfSupersededByNap's own guards. P3 narrows it to a
+            // pending NUDGE (never the owner's own nap), and after the morning alarm it can never fire anyway,
+            // since no plan carries a nap target there.
             val sleepState = detectSleepState(normalizeSegments(segments, now, config))
+            val pendingNudgeAt = followUp?.takeIf { it.kind == FollowUpKind.NUDGE }?.at
             val supersedes = napSupersedesPendingNudge(plan, pendingNudgeAt, sleepState, napAlarmArmed = phoneAlarmShouldArm)
-            if (supersedes) pendingNudgeAt = null
+            if (supersedes) followUp = null
             morningAlarmAt = latchMorningAlarmAt(morningAlarmAt, plan)
-            val entry = TickTrace(plan, wakeAlarmFiredAt, napAlarmsUsed, morningAlarmAt, phoneAlarmShouldArm, supersedes)
+            val entry = TickTrace(plan, wakeAlarmFiredAt, napAlarmsUsed, morningAlarmAt, phoneAlarmShouldArm, supersedes, followUp)
             trace += entry
             return entry
         }
 
-        /** Simulates the wake/nap alarm at [plan]'s own wakeAt actually firing: PhoneAlarmReceiver's own bookkeeping (F2/F6/H2/D4), through [firedAlarmIsWakeAlarm]. Also arms the out-of-bed nudge, H7.1's own +15 min. */
-        fun fireAlarm(plan: AlarmPlan) {
+        /** P3: one post-alarm event, through the same [nextFollowUp] PhoneAlarmReceiver, AlarmRingService and the Nap button call. */
+        fun apply(event: PostAlarmEvent) {
+            followUp = nextFollowUp(event, followUp, settings.deadline, config)
+        }
+
+        /** The wake alarm firing: PhoneAlarmReceiver's own bookkeeping (F2/F6/H2), through [firedAlarmIsWakeAlarm], then the P3 safety-net nudge. */
+        fun fireWakeAlarm(plan: AlarmPlan) {
             val firedFor = requireNotNull(plan.wakeAt)
+            phoneAlarmFiredFor = firedFor
             if (firedAlarmIsWakeAlarm(plan.mode, firedFor, morningAlarmAt)) {
                 wakeAlarmFiredAt = firedFor
             } else {
                 napAlarmsUsed = (napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
                 lastNapAlarmFiredAt = firedFor
             }
-            pendingNudgeAt = firedFor.plus(config.outOfBedDelay)
+            apply(PostAlarmEvent.AlarmFired(nowAt(firedFor)))
         }
 
-        /** Simulates the pre-nudge check (M1): cancels the nudge only when the night's own current plan still has a live target ahead of [virtualNow], per [shouldCancelNudgeForPreCheck] - this harness never models `phoneAlarmFiredFor` (see [tick]'s own note), so `null` throughout, matching production's own freshest-marker read whenever nothing has fired since. Returns whether it cancelled. */
-        fun preNudgeCheck(virtualNow: Instant, plannedWakeAt: Instant?): Boolean {
-            val now = nowAt(virtualNow)
-            val cancels = shouldCancelNudgeForPreCheck(now, plannedWakeAt, phoneAlarmFiredFor = null)
-            if (cancels) pendingNudgeAt = null
-            return cancels
-        }
+        fun at(time: String): Instant = Instant.parse("2026-09-18T$time:00Z")
 
         // ---- Before sleep, then asleep - the picked total (3 cycles) is owed the whole time this stretch runs. ----
         tick(bedtime.minus(Duration.ofMinutes(1)))
         events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, bedtime)
         tick(bedtime.plus(Duration.ofMinutes(1)))
 
-        // ---- Wake alarm: onset + 3*90 min = +4:30. Checked 30 min early so EngineConfig.minAlarmLead's own
+        // ---- Wake alarm: onset + 3*90 min = 02:30. Checked 30 min early so EngineConfig.minAlarmLead's own
         // pull-forward (D8) cannot kick in and move the target - this must read the raw, unpulled instant. ----
-        val wakeCheckAt = bedtime.plus(Duration.ofHours(4))
-        val wakePlan = tick(wakeCheckAt).plan
+        val wakePlan = tick(at("02:00")).plan
         assertEquals(AlarmMode.FULL_CYCLES, wakePlan.mode)
-        val wakeAt = requireNotNull(wakePlan.wakeAt)
-        assertEquals(bedtime.plus(Duration.ofHours(4)).plusMinutes(30), wakeAt)
-        fireAlarm(wakePlan)
+        assertEquals(at("02:30"), wakePlan.wakeAt)
+        fireWakeAlarm(wakePlan)
+        assertEquals(PendingFollowUp(FollowUpKind.NUDGE, at("02:49")), followUp, "safety net: 9 min ring, then 10 min")
 
-        // ---- Owner reports awake right after the wake alarm - closes the first stretch, so sleptSoFar reaches the full picked total and owedCycles drops to 0. ----
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, wakeAt.plusMinutes(1))
+        // ---- Stop pressed at 02:31, awake: the nudge moves to 02:41. ----
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, at("02:31"))
+        apply(PostAlarmEvent.RingEnded(nowAt(at("02:31"))))
+        assertEquals(PendingFollowUp(FollowUpKind.NUDGE, at("02:41")), followUp)
 
-        // ---- The pre-nudge check fires first (H7.3, 2 min before the nudge). M1: it finds no live target still
-        // ahead of it (the wake alarm's own wakeAt has already fired and passed, and nothing else is armed yet)
-        // - it must NOT cancel the nudge. ----
-        val preCheck1At = requireNotNull(pendingNudgeAt).minus(config.preNudgeCheckLead)
-        assertFalse(preNudgeCheck(preCheck1At, wakePlan.wakeAt))
+        // ---- Dozes off at 02:35. The band sees it; nothing is armed for it and the nudge is left alone. ----
+        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, at("02:35"))
+        val dozedTick = tick(at("02:36"))
+        assertEquals(null, dozedTick.plan.wakeAt, "P3: no band-detected nap after the morning alarm")
+        assertFalse(dozedTick.nudgeSupersededByNap)
+        assertEquals(PendingFollowUp(FollowUpKind.NUDGE, at("02:41")), dozedTick.followUp)
 
-        // ---- One minute after the pre-nudge check (still chronologically before the nudge's own due instant,
-        // +15 min), the owner falls back asleep: rule 7's nap. ----
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, wakeAt.plusMinutes(14))
-        val napTick1 = tick(wakeAt.plusMinutes(15))
-        assertEquals(AlarmMode.NAP, napTick1.plan.mode, "owedCycles is 0 and this is a return to sleep after an awakening - rule 7 must arm a nap")
-        assertTrue(napTick1.nudgeSupersededByNap, "H7.2: a nap must supersede a still-pending nudge")
+        // ---- Three manual naps in a row: pressed, rings 20 min later, stopped a minute after, next press. ----
+        val rounds = listOf(
+            Triple("02:37", "02:57", "02:58"),
+            Triple("02:59", "03:19", "03:20"),
+            Triple("03:21", "03:41", "03:42"),
+        )
+        for ((pressed, rings, stopped) in rounds) {
+            apply(PostAlarmEvent.NapPressed(nowAt(at(pressed))))
+            assertEquals(PendingFollowUp(FollowUpKind.NAP, at(rings)), followUp)
+            assertEquals(null, tick(at(pressed)).plan.wakeAt, "the engine arms nothing alongside the owner's own nap")
+            apply(PostAlarmEvent.AlarmFired(nowAt(at(rings))))
+            apply(PostAlarmEvent.RingEnded(nowAt(at(stopped))))
+        }
+        assertEquals(PendingFollowUp(FollowUpKind.NUDGE, at("03:52")), followUp)
+        assertEquals(0, napAlarmsUsed, "the owner's own naps never count against MAX_NAP_ALARMS")
 
-        // ---- First nap fires. ----
-        val nap1WakeAt = requireNotNull(napTick1.plan.wakeAt)
-        fireAlarm(napTick1.plan)
-        assertEquals(1, napAlarmsUsed)
-
-        // ---- Owner briefly reported awake, then asleep again for a second nap. ----
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, nap1WakeAt.plusMinutes(1))
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, nap1WakeAt.plusMinutes(3))
-        val napTick2 = tick(nap1WakeAt.plusMinutes(4))
-        assertEquals(AlarmMode.NAP, napTick2.plan.mode, "napAlarmsUsed (1) is still under the cap - a second nap is still offered")
-        val nap2WakeAt = requireNotNull(napTick2.plan.wakeAt)
-        fireAlarm(napTick2.plan)
-        assertEquals(2, napAlarmsUsed)
-
-        // ---- A THIRD return to sleep after the cap is spent must FINISH the night outright (D5/G8), not arm a third nap. ----
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.AWAKE, nap2WakeAt.plusMinutes(1))
-        events = appendSimulatedSleepEvent(events, SimulatedSleepEventKind.ASLEEP, nap2WakeAt.plusMinutes(3))
-        val finishedTick = tick(nap2WakeAt.plusMinutes(4))
-        assertEquals(AlarmMode.FINISHED, finishedTick.plan.mode)
-        assertEquals(null, finishedTick.plan.wakeAt)
-        assertFalse(finishedTick.phoneAlarmShouldArm, "a FINISHED plan has no alarm left to arm")
-
-        // ---- A LATE tick, well after FINISHED - must stay inert (V10's own named gap: "never runs a tick arriving after the night ended"). ----
-        val lateTick = tick(nap2WakeAt.plus(Duration.ofHours(3)))
-        assertEquals(AlarmMode.FINISHED, lateTick.plan.mode)
+        // ---- A LATE tick, hours later - must stay inert (V10's own named gap: "never runs a tick arriving after the night ended"). ----
+        val lateTick = tick(at("06:42"))
+        assertEquals(null, lateTick.plan.wakeAt)
         assertFalse(lateTick.phoneAlarmShouldArm)
-        assertEquals(finishedTick.morningAlarmAt, lateTick.morningAlarmAt, "FINISHED never overwrites the latched morning alarm time")
+        assertEquals(at("02:30"), lateTick.morningAlarmAt, "nothing after the morning alarm overwrites its latched time")
 
         return trace
     }
@@ -190,8 +188,7 @@ class WarpedNightSequenceTest {
     @Test
     fun `driven directly (as if at 1x), the whole morning reaches every assertion inside driveMorning`() {
         val trace = driveMorning { virtualNow -> virtualNow }
-        assertEquals(AlarmMode.FINISHED, trace.last().plan.mode)
-        assertEquals(MAX_NAP_ALARMS, trace.last().napAlarmsUsed)
+        assertEquals(PendingFollowUp(FollowUpKind.NUDGE, Instant.parse("2026-09-18T03:52:00Z")), trace.last().followUp)
     }
 
     @Test

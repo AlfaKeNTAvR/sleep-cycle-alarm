@@ -9,6 +9,8 @@ import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.night.NightEngineView
+import com.nikita.sleepcycle.night.PendingFollowUp
+import com.nikita.sleepcycle.night.FollowUpKind
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import com.nikita.sleepcycle.ui.format.formatCycles
 import com.nikita.sleepcycle.ui.format.formatDuration
@@ -141,13 +143,15 @@ internal fun alarmModeLabel(plan: AlarmPlan, morningAlarmAt: Instant?): AlarmLab
  * report and [NightScreenContent.Loading] are never overridden: the report is shown after the night has
  * genuinely ended, which cancels the nudge, and Loading has no alarm to talk about yet.
  */
-internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingOutOfBedNudgeAt: Instant?, planWakeAt: Instant?, now: Instant, zone: ZoneId): NightScreenContent {
+internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingFollowUp: PendingFollowUp?, planWakeAt: Instant?, now: Instant, zone: ZoneId): NightScreenContent {
     if (content !is NightScreenContent.NextAlarm && content !is NightScreenContent.NightFinished) return content
+    val pendingOutOfBedNudgeAt = pendingFollowUp?.at
     if (pendingOutOfBedNudgeAt == null || !pendingOutOfBedNudgeAt.isAfter(now)) return content
     val nudgeRingsFirst = planWakeAt == null || planWakeAt.isAfter(pendingOutOfBedNudgeAt)
     if (!nudgeRingsFirst) return content
     return NightScreenContent.NextAlarm(
-        modeLabel = AlarmLabel.OUT_OF_BED,
+        // P3: the owner's own nap shares the nudge's slot and record, and is named as the nap it is.
+        modeLabel = if (pendingFollowUp.kind == FollowUpKind.NAP) AlarmLabel.NAP else AlarmLabel.OUT_OF_BED,
         alarmTimeLabel = formatClockTime(pendingOutOfBedNudgeAt, zone),
         countdownLabel = formatTimeUntil(pendingOutOfBedNudgeAt, now),
         rangAtTimeLabel = null,

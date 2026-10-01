@@ -54,9 +54,14 @@ fun schedulePhoneAlarm(context: Context, at: Instant, label: AlarmLabel): Boolea
  * by PhoneAlarmReceiver the moment the real wake/nap alarm fires. Its own request code, entirely separate
  * PendingIntent identity from [schedulePhoneAlarm] and [scheduleTestPhoneAlarm], so arming it can never
  * replace either one.
+ *
+ * P3 (owner spec, 2026-09-30): the same slot also carries the owner's own "Nap 20 min" alarm, so a nap
+ * replaces the pending nudge (and the nudge the nap) atomically, by request code. [label] is wording only
+ * (AlarmLabel.kt): [AlarmLabel.NAP] for the owner's nap, so it rings as "Nap alarm"; the firing is still an
+ * out-of-bed-slot firing, so it never touches the plan alarm's own bookkeeping or the nap cap.
  */
-fun scheduleOutOfBedAlarm(context: Context, at: Instant): Boolean =
-    scheduleAlarmClockAlarm(context, at, PHONE_ALARM_OUT_OF_BED_REQUEST_CODE, isOutOfBed = true, label = AlarmLabel.OUT_OF_BED)
+fun scheduleOutOfBedAlarm(context: Context, at: Instant, label: AlarmLabel = AlarmLabel.OUT_OF_BED): Boolean =
+    scheduleAlarmClockAlarm(context, at, PHONE_ALARM_OUT_OF_BED_REQUEST_CODE, isOutOfBed = true, label = label)
 
 /**
  * T8: arms the Debug screen's daylight test alarm for the REAL instant [at] (D1) - a caller-computed

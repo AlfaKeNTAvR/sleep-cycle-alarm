@@ -16,6 +16,8 @@ import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
+import com.nikita.sleepcycle.night.FollowUpKind
+import com.nikita.sleepcycle.night.PendingFollowUp
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
@@ -84,6 +86,12 @@ internal fun testNightState(
     debugOptions = debugOptions,
     morningAlarmAt = morningAlarmAt?.let(::instant),
 )
+
+/** P3: a pending out-of-bed NUDGE at [text] (local test time), or nothing pending when [text] is null. */
+internal fun pendingNudge(text: String?): PendingFollowUp? = text?.let { PendingFollowUp(FollowUpKind.NUDGE, instant(it)) }
+
+/** P3: the owner's own pending NAP at [text] (local test time). */
+internal fun pendingNap(text: String): PendingFollowUp = PendingFollowUp(FollowUpKind.NAP, instant(text))
 
 internal fun testEngineView(
     sleepState: SleepState,

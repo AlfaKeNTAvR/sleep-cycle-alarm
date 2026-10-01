@@ -73,11 +73,11 @@ class EngineConfigResolutionTest {
         assertEquals(resolveEngineConfig(DebugOptions()).ringAutoStopAfter, AUTO_STOP_AFTER)
     }
 
-    // ---- H7.1: the out-of-bed nudge is 15 min --------------------------------------------------------------
+    // ---- P3 (owner spec, 2026-09-30) SUPERSEDES H7.1's 15 min: the out-of-bed nudge is 10 min after the ring ends -
 
     @Test
-    fun `H7_1 the real out-of-bed delay is 15 minutes`() {
-        assertEquals(Duration.ofMinutes(15), EngineConfig().outOfBedDelay)
+    fun `P3 the real out-of-bed delay is 10 minutes`() {
+        assertEquals(Duration.ofMinutes(10), EngineConfig().outOfBedDelay)
     }
 
     // ---- H7.3: preNudgeCheckLead must land strictly between the nudge being armed and it firing -------------

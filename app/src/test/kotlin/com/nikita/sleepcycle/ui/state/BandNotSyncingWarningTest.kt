@@ -27,7 +27,7 @@ class BandNotSyncingWarningTest {
             showingMorningReport = false,
             morningReportEndedAt = null,
             confirmingEndNight = false,
-            pendingOutOfBedNudgeAt = null,
+            pendingFollowUp = null,
         )
     ).bandNotSyncingWarning
 
@@ -65,7 +65,7 @@ class BandNotSyncingWarningTest {
                 showingMorningReport = true,
                 morningReportEndedAt = instant("2026-09-17T08:38"),
                 confirmingEndNight = false,
-                pendingOutOfBedNudgeAt = null,
+                pendingFollowUp = null,
             )
         )
 

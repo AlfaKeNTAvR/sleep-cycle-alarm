@@ -86,6 +86,9 @@
     <string name="night_stop_night">Stop night</string>
     <string name="night_im_up_end_night">I\'m up, end night</string>
     <string name="night_end_night">End night</string>
+    <!-- P3 (owner spec, 2026-09-30): shown while the out-of-bed nudge is pending; trades it for a nap alarm
+         this many minutes out. Exact wording set by the owner. -->
+    <string name="night_nap_for_minutes">Nap for %1$d min</string>
     <string name="night_ending">Ending night…</string>
     <string name="night_confirm_stop_title">Stop night?</string>
     <string name="night_confirm_stop_message">This ends tracking and shows tonight\'s report.</string>

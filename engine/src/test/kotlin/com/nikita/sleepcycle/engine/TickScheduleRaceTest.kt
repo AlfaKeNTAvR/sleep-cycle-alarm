@@ -169,45 +169,35 @@ class TickScheduleRaceTest {
         // "J1_1 replay, the nap equivalent": deadline 01:30, 3 cycles, falling back asleep at 00:46:30
         // establishes an ASLEEP rule 7 nap target of 01:06:30 (onset + napLength), correctly armed by the 00:50
         // tick, re-confirmed unchanged by the 01:05 tick (J1.1).
+        //
+        // P3 (owner spec, 2026-09-30) REWROTE this case. Its old night rang the 00:30 morning alarm first and
+        // napped AFTER it (01:06:30) - after the morning alarm the engine now arms nothing at all, so that nap no
+        // longer exists. Moved to a genuinely PRE-morning nap instead, which P3 leaves as it was: same deadline
+        // and cycles, but the owner wakes at 23:58 and dozes off again at 00:00:30, before the 00:30 morning
+        // alarm - no whole cycle fits before 01:30 from there, so rule 7 rings a nap at 00:20:30, in the morning
+        // alarm's place. LOST in the move: the exact "fired during its own tick's 2-minute sync" race shape,
+        // which needed the old night's tick lattice. What is still pinned here is the outcome J4 protects - the
+        // nap's own fresh nudge survives - on an ordinary schedule; J4's exact-match return and J5's ordering
+        // keep their direct unit tests (PhoneAlarmArmingTest.kt, OutOfBedNudgeSupersessionTest.kt).
         val replay = NightReplay(settings(deadline = "2026-09-21T01:30:00", cycles = 3))
         replay.startNight("2026-09-20T23:00:00")
         replay.markAsleep("2026-09-20T23:00:00")
-        replay.markAwake("2026-09-21T00:31:00")
-        replay.advanceTo("2026-09-21T00:45:01")
-        replay.markAsleep("2026-09-21T00:46:30")
+        replay.markAwake("2026-09-20T23:58:00")
+        replay.advanceTo("2026-09-20T23:59:30")
+        replay.markAsleep("2026-09-21T00:00:30")
+        // The nap wakes him at 00:20:30 (sleeping straight through it would, by H2/H7.2, arm a second nap
+        // that supersedes this nudge - a different, pre-existing behaviour this test is not about).
+        replay.advanceTo("2026-09-21T00:20:45")
+        replay.markAwake("2026-09-21T00:21:00")
+        replay.advanceTo("2026-09-21T00:25:00")
 
-        // Stop just short of the 01:05 tick (the 00:50 tick already ran and committed normally, correctly
-        // arming 01:06:30) - the 2-minute sync duration must apply to the 01:05 tick ITSELF, landing its own
-        // commit at 01:07:00, strictly AFTER the nap fires at 01:06:30 in between (mirrors the owner's own
-        // traced 03:18:30-tick/2-minute-sync sequence, on this file's own nap lattice instead of the morning
-        // one).
-        replay.advanceTo("2026-09-21T01:04:31")
-        // Target lands just past the 01:05 tick's own 01:07:00 commit, and strictly before the NEXT scheduled
-        // tick (01:10) - so the 2-minute sync duration applies to exactly that one tick, like "J2 must-fix 4
-        // replay" above does for its own single 06:28:30 tick (target 06:33:00, strictly before its own next
-        // tick at 06:33:30).
-        replay.advanceTo("2026-09-21T01:07:01", syncDuration = Duration.ofMinutes(2))
-
-        // The nap fired once (after the wake alarm's own earlier 00:30 firing, part of this setup - use
-        // firingsAfter to isolate it, like "J1_1 replay, the nap equivalent" above does), correctly, and D4
-        // armed its own fresh nudge 15 min later.
-        val napFirings = replay.firingsAfter("2026-09-21T00:46:30")
-        assertEquals(listOf(instant("2026-09-21T01:06:30")), napFirings.map { it.firedFor }, replay.trace())
+        val napFirings = replay.firingsAfter("2026-09-21T00:00:30")
+        assertEquals(listOf(instant("2026-09-21T00:20:30")), napFirings.map { it.firedFor }, replay.trace())
         assertEquals(AlarmMode.NAP, napFirings.single().mode, replay.trace())
 
-        // The assertion that failed without the J4 fix: pre-J4, the 01:05 tick's own commit (01:07:00) re-read
-        // the LIVE fired marker, found it already equal to its own unchanged 01:06:30 target, and returned true
-        // from armPhoneAlarmIfNeeded - read by napSupersedesPendingNudge as "a fresh nap was armed this tick",
-        // cancelling that SAME nap's own just-armed 01:21:30 nudge (pendingNudgeAt null). Post-J4 the
-        // exact-match branch returns false, so nothing supersedes it.
-        //
-        // SCOPE NOTE, checked by hand rather than left implied: since J5's own must-fix this assertion no
-        // longer pins J4 ALONE. J5 added a second, independent reason the same cancellation cannot happen here
-        // (the 01:21:30 nudge is due AFTER the 01:06:30 nap target, so it is never a candidate for
-        // supersession), so reverting J4's exact-match return by itself now leaves this test passing. Both
-        // guards are still pinned, just not both by this one test - the J5 ordering has its own direct unit
-        // tests in `OutOfBedNudgeSupersessionTest.kt`, which is where a reverted J5 shows up as a failure.
-        assertEquals(instant("2026-09-21T01:21:30"), replay.pendingNudgeAt, replay.trace())
+        // Its own nudge: rung out to the 9 min auto-stop (00:29:30), then 10 min - 00:39:30. Not superseded by
+        // the very nap that armed it.
+        assertEquals(instant("2026-09-21T00:39:30"), replay.pendingNudgeAt, replay.trace())
     }
 
     @Test fun `J5 replay - a nap cancelled while awake leaves a nudge behind, not a silent night`() {
@@ -217,34 +207,30 @@ class TickScheduleRaceTest {
         // next tick's AWAKE branch cancels the nap. Pre-J5 the night was left with no alarm, no nudge and no
         // pre-check, and nothing re-arms a nudge except a firing, a boot restore or a speed change - so nothing
         // ever rang again.
+        //
+        // P3 (owner spec, 2026-09-30) REWROTE this case: the hole it pinned can no longer open after the
+        // morning alarm, because nothing there arms a nap to supersede the nudge in the first place. Same night,
+        // new expectation: the nudge is simply never touched by dozing off and stirring again. (J5's predicate,
+        // awakeNapCancellationNeedsNudge, keeps its unit tests in OutOfBedNudgeSupersessionTest.kt for the
+        // pre-morning case, where a band-detected nap can still supersede a nudge.)
         val replay = NightReplay(settings(cycles = 5))
         replay.startNight("2026-09-20T23:00:00")
         replay.markAsleep("2026-09-20T23:00:00")
 
-        // The wake alarm rings at 06:30 and arms its own nudge for 06:45; the owner is awake briefly, then
-        // dozes off again at 06:33.
+        // The wake alarm rings at 06:30; nobody stops it, so its nudge is 06:30 + 9 + 10 = 06:49. The owner is
+        // awake briefly, then dozes off again at 06:33.
         replay.markAwake("2026-09-21T06:30:30")
         replay.markAsleep("2026-09-21T06:33:00")
 
-        // A tick in here sees the confirmed ASLEEP after an awakening, arms the rule 7 nap, and supersedes the
-        // 06:45 nudge - the correct H7.2 behaviour this test is NOT challenging.
+        // Used to: a band-detected nap armed here, and the nudge cancelled (pendingNudgeAt null).
         replay.advanceTo("2026-09-21T06:46:00")
-        assertNull(replay.pendingNudgeAt, replay.trace())
+        assertEquals(instant("2026-09-21T06:49:00"), replay.pendingNudgeAt, replay.trace())
 
-        // The owner stirs. The next tick's AWAKE branch has nothing to arm (the wake alarm already fired), so
-        // it cancels the nap it just armed.
+        // The owner stirs; the nudge rings at 06:49 regardless, and the next is pending for 07:08.
         replay.markAwake("2026-09-21T06:47:00")
-        replay.advanceTo("2026-09-21T07:10:00")
-
-        // The assertion that fails without the fix: something is still coming. No alarm is armed at this point
-        // by design (rule 7 is finished with this night), so the nudge is the whole safety net.
-        //
-        // L1 NOTE (owner decision, 2026-09-21), checked by hand rather than left implied: until L1 this
-        // assertion was only true because the harness never DISPATCHED a nudge. The nudge J5 re-arms here is
-        // due at 07:03:30, inside the advance above, so in pre-L1 production it rang and left nothing behind -
-        // this test claimed a safety net the real app did not have three and a half minutes later. L1 makes
-        // the claim true: the re-armed nudge rings and arms the next one, so something really is still coming.
-        assertNotNull(replay.pendingNudgeAt, replay.trace())
+        replay.advanceTo("2026-09-21T07:00:00")
+        assertEquals(listOf(instant("2026-09-21T06:49:00")), replay.nudgeFirings, replay.trace())
+        assertEquals(instant("2026-09-21T07:08:00"), replay.pendingNudgeAt, replay.trace())
     }
 
     @Test fun `J5 delivery replay - a late-delivered alarm arms its nudge from when it was delivered, not from what it was armed for`() {
@@ -268,8 +254,10 @@ class TickScheduleRaceTest {
         assertEquals(listOf(instant("2026-09-21T06:30:00")), replay.firings.map { it.firedFor }, replay.trace())
         assertEquals(instant("2026-09-21T06:30:00"), replay.wakeAlarmFiredAt, replay.trace())
 
-        // The assertion that fails without the fix: 06:47, not 06:45. Delivered 06:32 plus outOfBedDelay.
-        assertEquals(instant("2026-09-21T06:47:00"), replay.pendingNudgeAt, replay.trace())
+        // The assertion that fails without the fix: measured from the 06:32 delivery, not the 06:30 arming.
+        // P3 (2026-09-30): delivered 06:32, rung out to its 9 min auto-stop (06:41), then 10 min - 06:51 (it was
+        // 06:47 when the nudge was 15 min from the firing). Still well after this advance's own 06:46 stop.
+        assertEquals(instant("2026-09-21T06:51:00"), replay.pendingNudgeAt, replay.trace())
     }
 
     @Test fun `L1 replay - the out-of-bed nudge repeats every outOfBedDelay while the owner never confirms being awake`() {
@@ -288,15 +276,19 @@ class TickScheduleRaceTest {
 
         // The assertion that fails without the change: pre-L1, PhoneAlarmReceiver.recordRealAlarmFired
         // returned at `if (isOutOfBed) return` before it could arm anything, so this list was exactly
-        // [06:45] and the night went silent from there. A whole 15-minute lattice, with no cap and no
-        // deadline stop, is the point.
+        // [06:45] and the night went silent from there. A whole lattice, with no cap and no deadline stop, is
+        // the point.
+        //
+        // P3 (owner spec, 2026-09-30): the lattice is now 19 min, not 15 - in this harness nobody presses Stop,
+        // so each ring runs to its 9 min auto-stop and the next nudge lands 10 min after that (on the phone, a
+        // Stop pressed at once gives 10 min). 06:30 -> 06:49 -> 07:08 -> 07:27 -> 07:46 -> 08:05.
         assertEquals(
-            listOf("06:45", "07:00", "07:15", "07:30", "07:45").map { instant("2026-09-21T$it:00") },
+            listOf("06:49", "07:08", "07:27", "07:46").map { instant("2026-09-21T$it:00") },
             replay.nudgeFirings,
             replay.trace()
         )
         // Still one link pending when the test stops - the chain does not end on its own.
-        assertEquals(instant("2026-09-21T08:00:00"), replay.pendingNudgeAt, replay.trace())
+        assertEquals(instant("2026-09-21T08:05:00"), replay.pendingNudgeAt, replay.trace())
 
         // The nudge's own firings never touch the phone alarm slot's own bookkeeping
         // (PhoneAlarmReceiver.firedAlarmRecordsPlanBookkeeping): exactly one plan alarm rang this night, the
@@ -305,10 +297,10 @@ class TickScheduleRaceTest {
         assertEquals(0, replay.napAlarmsUsed, replay.trace())
 
         // And the repeat never fights J5's own re-arm (awakeNapCancellationNeedsNudge): every instant above
-        // sits on the 15-minute lattice measured from the 06:30 firing, so no tick ever added a nudge of its
+        // sits on the 19-minute lattice measured from the 06:30 firing, so no tick ever added a nudge of its
         // own measured from its own `now`. It cannot: a nudge is always pending while the chain is alive, and
         // that predicate requires none to be.
-        assertTrue(replay.nudgeFirings.zipWithNext().all { (first, second) -> Duration.between(first, second) == Duration.ofMinutes(15) }, replay.trace())
+        assertTrue(replay.nudgeFirings.zipWithNext().all { (first, second) -> Duration.between(first, second) == Duration.ofMinutes(19) }, replay.trace())
     }
 
     @Test fun `J1_1 replay - waking 4 minutes before the alarm and opening the app 90 s before it still rings correctly, once, attributed to the wake alarm`() {
@@ -360,32 +352,28 @@ class TickScheduleRaceTest {
         // touching J1.1's own effect on the morning alarm itself, so a broken pullForwardIfTooSoon cannot also
         // perturb the morning alarm's own ring time and cascade into a different NAP grid phase than the one
         // this test's own numbers were worked out against.
+        //
+        // P3 (owner spec, 2026-09-30) REWROTE this case. Its old night napped AFTER the 00:30 morning alarm,
+        // where the engine now arms nothing at all. Moved to the genuinely PRE-morning nap of "J4 nudge replay"
+        // above (woke 23:58, asleep again 00:00:30, rule 7 rings 00:20:30 in the 00:30 morning alarm's place).
+        // LOST in the move: the old night's tick lattice, which put a tick exactly 90 s before the target.
+        // What is still pinned is the outcome J1.1 protects for a nap target - armed once and never moved later,
+        // rung exactly at its own instant; J1.1's lead-window case itself keeps its morning-alarm replay at the
+        // top of this file and its unit tests in ComputeWakeAlarmTest.kt (pullForwardIfTooSoon is one function
+        // for every rule).
         val replay = NightReplay(settings(deadline = "2026-09-21T01:30:00", cycles = 3))
         replay.startNight("2026-09-20T23:00:00")
         replay.markAsleep("2026-09-20T23:00:00")
+        replay.markAwake("2026-09-20T23:58:00")
+        replay.advanceTo("2026-09-20T23:59:30")
+        replay.markAsleep("2026-09-21T00:00:30")
 
-        // The wake alarm rings cleanly at 00:30, the picked total fully used up.
-        replay.markAwake("2026-09-21T00:31:00")
-        replay.advanceTo("2026-09-21T00:45:01")
+        replay.advanceTo("2026-09-21T00:20:00")
+        assertEquals(listOf(instant("2026-09-21T00:20:30")), replay.armedTargetsAfter("2026-09-21T00:00:30"), replay.trace())
 
-        // Falls back asleep at 00:46:30 - NOT the instant the next tick first sees it (J1.4's own point): the
-        // tick that establishes rule 7's ASLEEP nap (asleepNapTarget, onset + napLength = 00:46:30 + 20 min =
-        // 01:06:30) lands at 00:50 (nextSyncDelay from the 00:45 tick's own NAP-mode frequentSyncDelay), not at
-        // 00:46:30 itself - offsetting the ensuing 5-minute NAP grid so a later tick lands at 01:05, ninety
-        // seconds before the target, inside minAlarmLead.
-        replay.markAsleep("2026-09-21T00:46:30")
-
-        // Advance past the 01:05 near-miss tick, but not yet to 01:06:30 itself.
-        replay.advanceTo("2026-09-21T01:05:30")
-
-        // Pre-J1.1 the 01:05 tick pulled 01:06:30 forward to 01:07 (now + minAlarmLead, rounded up), replacing
-        // the correct nap alarm with a late one. Post-J1.1, 01:06:30 is still ahead of 01:05's own `now`, so it
-        // holds.
-        assertEquals(listOf(instant("2026-09-21T01:06:30")), replay.armedTargetsAfter("2026-09-21T00:46:30"), replay.trace())
-
-        replay.advanceTo("2026-09-21T01:15:00")
-        val napFirings = replay.firingsAfter("2026-09-21T00:31:00")
-        assertEquals(listOf(instant("2026-09-21T01:06:30")), napFirings.map { it.firedFor }, replay.trace())
+        replay.advanceTo("2026-09-21T00:25:00")
+        val napFirings = replay.firingsAfter("2026-09-20T23:58:00")
+        assertEquals(listOf(instant("2026-09-21T00:20:30")), napFirings.map { it.firedFor }, replay.trace())
         assertEquals(AlarmMode.NAP, napFirings.single().mode, replay.trace())
         assertTrue(replay.napAlarmsUsed >= 1, replay.trace())
     }

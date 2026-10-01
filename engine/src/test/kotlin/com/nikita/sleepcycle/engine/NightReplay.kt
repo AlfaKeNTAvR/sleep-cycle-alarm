@@ -412,7 +412,7 @@ internal class NightReplay(
     private fun fireAlarm(firedFor: Instant, deliveredAt: Instant) {
         armedAlarmAt = null
         phoneAlarmFiredFor = firedFor
-        pendingNudgeAt = deliveredAt.plus(config.outOfBedDelay)
+        pendingNudgeAt = nudgeAfterUnstoppedRing(deliveredAt)
         val firedPlan = lastPlan?.takeIf { it.wakeAt == firedFor }
         firings.add(Firing(firedFor, firedPlan?.mode))
         if (firedPlan == null) return
@@ -440,8 +440,17 @@ internal class NightReplay(
      */
     private fun fireNudge(firedFor: Instant, deliveredAt: Instant) {
         nudgeFirings.add(firedFor)
-        pendingNudgeAt = deliveredAt.plus(config.outOfBedDelay)
+        pendingNudgeAt = nudgeAfterUnstoppedRing(deliveredAt)
     }
+
+    /**
+     * P3 (owner spec, 2026-09-30): the app now measures the nudge from when the ring ENDS, and arms a
+     * safety-net nudge at the firing for a ring that runs to its own auto-stop - app/night/PostAlarmCycle.kt's
+     * `nextFollowUp`. This harness has no Stop button: every ring here runs to its auto-stop, so every nudge
+     * lands at `deliveredAt + ringAutoStopAfter + outOfBedDelay`, exactly the safety-net instant.
+     */
+    private fun nudgeAfterUnstoppedRing(deliveredAt: Instant): Instant =
+        deliveredAt.plus(config.ringAutoStopAfter).plus(config.outOfBedDelay)
 
     /**
      * NightOrchestrator.firedAlarmIsWakeAlarm - J2 must-fix 2 REVERTS this mirror back to H8's original exact
