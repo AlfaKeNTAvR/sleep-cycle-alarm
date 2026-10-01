@@ -36,6 +36,15 @@ import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.runSetupCheck
+import com.nikita.sleepcycle.night.CONNECTION_TEST_DEADLINE
+import com.nikita.sleepcycle.night.NightLogEvent
+import com.nikita.sleepcycle.night.appendSetupLog
+import com.nikita.sleepcycle.night.runConnectionTestWithin
+import com.nikita.sleepcycle.night.runWithOneRetry
+import com.nikita.sleepcycle.night.AUTO_CONNECTION_TEST_RETRY_PAUSE
+import com.nikita.sleepcycle.ui.state.connectionTestIsDue
+import com.nikita.sleepcycle.ui.state.debugOptionsRelaxSetup
+import com.nikita.sleepcycle.ui.state.lastPassedAtAfterAttempt
 import com.nikita.sleepcycle.night.SetupCheckLine
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.SetupCheckReport
@@ -79,6 +88,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -138,6 +148,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val permissionStatus = MutableStateFlow(PermissionStatus.unknown())
     private val gadgetbridgeInstalled = MutableStateFlow(false)
     private val connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
+    /** P2: REAL start time of the last connection test, automatic or tapped - feeds [connectionTestIsDue]'s cooldown. In memory only: a fresh process may test again at once, which is fine. */
+    private var lastConnectionTestAttemptAt: Instant? = null
     private val nightLogFiles = MutableStateFlow<List<File>>(emptyList())
     private val openedPastNight = MutableStateFlow<PastNightUiState?>(null)
     private val confirmingEndNight = MutableStateFlow(false)
@@ -252,6 +264,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             val setupState = buildSetupUiState(effective, permissionStatus.value, gadgetbridgeInstalled.value, connectionTest.value)
             setupWizardPageState.value = firstUnsatisfiedSetupWizardPage(setupState)
         }
+        // P2: the first onResumed usually runs before settings have loaded, so the first launch checks here too.
+        maybeRunAutomaticConnectionTest()
     }
 
     /**
@@ -355,6 +369,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         debug.resetIfIdle(Instant.now())
         if (screen.value == Screen.Night) requestImmediateTick(context)
         if (screen.value == Screen.Logs) nightLogFiles.value = listNightLogs(context)
+        maybeRunAutomaticConnectionTest()
     }
 
     fun setScreenVisible(visible: Boolean) {
@@ -451,30 +466,85 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Runs the full setup check and, per its result, sets or clears [AppSettings.lastSetupCheckPassedAt] and the usable-slot count it found (see SetupCompleteness.kt for how the two gate "Start night"). */
-    fun runSetupCheckAction() {
+    /** The Setup screen's and Before bed's "Test connection" / "Test again" tap. See [runConnectionTest]. */
+    fun runSetupCheckAction() = runConnectionTest(automatic = false)
+
+    /**
+     * P2: runs "Test connection" on its own when [connectionTestIsDue] - called on every app open (resume and
+     * first launch), the moment the owner opens the app at bedtime. Skipped during a night (its ticks own the
+     * band sync), on a simulated-band-data debug night (nothing real to test), and before the band is set up.
+     * Chosen over a background schedule (WorkManager/periodic alarm): the test only matters when he is about to
+     * start a night, which always begins by opening the app.
+     */
+    private fun maybeRunAutomaticConnectionTest() {
+        val settings = appSettings.value ?: return
+        if (observedNightState.value != null) return
+        if (debugOptionsRelaxSetup(debug.effectiveOptions())) return
+        if (!gadgetbridgeInstalled.value) return
+        // P2: REAL time, like lastSetupCheckPassedAt itself (see runConnectionTest's own T4 note).
+        if (!connectionTestIsDue(settings.lastSetupCheckPassedAt, lastConnectionTestAttemptAt, Instant.now())) return
+        runConnectionTest(automatic = true)
+    }
+
+    /**
+     * Runs the full setup check and, per its result, sets or keeps [AppSettings.lastSetupCheckPassedAt]
+     * (see [lastPassedAtAfterAttempt]; SetupCompleteness.kt for how it gates "Start night"). P2: every attempt
+     * is bounded by [CONNECTION_TEST_DEADLINE], so "Testing..." always ends and the button comes back for a retry;
+     * a second start while one is running is ignored. An [automatic] test quietly retries once
+     * ([runWithOneRetry]) before it shows a failure; a tapped one runs once. Each attempt is logged on its own.
+     */
+    private fun runConnectionTest(automatic: Boolean) {
         val settings = appSettings.value ?: return
         val mac = settings.deviceMac
         val uri = settings.exportUri
         if (mac.isNullOrBlank() || uri == null) return
+        if (connectionTest.value == ConnectionTestState.Running) return
+        connectionTest.value = ConnectionTestState.Running
+        // U4 SUPERSEDES the part 1 sweep: this feeds checkDataFreshness against a REAL band sample
+        // timestamp (Gadgetbridge's own export), so it must stay real - added to T4's exception list
+        // alongside BandDataSync/DebugSettingsStore's own idle guard/NightState's quarantine name/
+        // DebugTestAlarm. Also feeds lastSetupCheckPassedAt, but that is safe too: startNightGate skips its
+        // own recency comparison entirely whenever simulatedBandData is on (SetupCompleteness.kt), and U1
+        // guarantees the clock can only be warped when simulatedBandData is on - so this real timestamp is
+        // never compared against a virtual `now` anywhere it would matter. P2: the deadline is real time too.
+        val now = Instant.now()
+        lastConnectionTestAttemptAt = now
         viewModelScope.launch {
-            connectionTest.value = ConnectionTestState.Running
-            // U4 SUPERSEDES the part 1 sweep: this feeds checkDataFreshness against a REAL band sample
-            // timestamp (Gadgetbridge's own export), so it must stay real - added to T4's exception list
-            // alongside BandDataSync/DebugSettingsStore's own idle guard/NightState's quarantine name/
-            // DebugTestAlarm. Also feeds lastSetupCheckPassedAt, but that is safe too: startNightGate skips its
-            // own recency comparison entirely whenever simulatedBandData is on (SetupCompleteness.kt), and U1
-            // guarantees the clock can only be warped when simulatedBandData is on - so this real timestamp is
-            // never compared against a virtual `now` anywhere it would matter.
-            val now = Instant.now()
-            val report = try {
-                runSetupCheck(context, mac, uri, now)
-            } catch (error: Exception) {
-                setupCheckFailureReport(error)
-            }
+            val attemptOnce: suspend (Int) -> SetupCheckReport = { attemptNumber -> runOneConnectionTestAttempt(mac, uri, automatic, attemptNumber) }
+            val report = if (automatic) runWithOneRetry(AUTO_CONNECTION_TEST_RETRY_PAUSE, attemptOnce) else attemptOnce(1)
             connectionTest.value = ConnectionTestState.Done(report)
-            persistSettings { it.copy(lastSetupCheckPassedAt = if (report.isReady) now else null) }
+            // P2: a pass records when the whole test started (real time, see the T4/U4 note above).
+            persistSettings { it.copy(lastSetupCheckPassedAt = lastPassedAtAfterAttempt(it.lastSetupCheckPassedAt, report.isReady, now)) }
         }
+    }
+
+    /** P2: one bounded attempt, never throwing, written to setup.jsonl as its own `connection_test` line. */
+    private suspend fun runOneConnectionTestAttempt(mac: String, uri: Uri, automatic: Boolean, attemptNumber: Int): SetupCheckReport {
+        // Real time: feeds checkDataFreshness and the attempt's duration (see runConnectionTest's T4/U4 note).
+        val startedAt = Instant.now()
+        val report = try {
+            runConnectionTestWithin(CONNECTION_TEST_DEADLINE) { runSetupCheck(context, mac, uri, startedAt) }
+        } catch (error: Exception) {
+            setupCheckFailureReport(error)
+        }
+        val durationMs = Duration.between(startedAt, Instant.now()).toMillis()
+        withContext(Dispatchers.IO) {
+            appendSetupLog(
+                context,
+                // T4: the event's own `at` is virtual like every log line; startedAt/durationMs above are real.
+                NightLogEvent(
+                    nowInstant(),
+                    "connection_test",
+                    mapOf(
+                        "automatic" to automatic.toString(),
+                        "attempt" to attemptNumber.toString(),
+                        "isReady" to report.isReady.toString(),
+                        "durationMs" to durationMs.toString(),
+                    )
+                )
+            )
+        }
+        return report
     }
 
     // Before-bed screen actions.

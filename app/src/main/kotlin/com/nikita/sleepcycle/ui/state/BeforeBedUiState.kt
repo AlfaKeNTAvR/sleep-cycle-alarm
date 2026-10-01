@@ -11,6 +11,18 @@ data class SleepLengthOption(
     val available: Boolean,
 )
 
+/** P2: the latest connection test (automatic or tapped) as the Before-bed screen shows it - a quiet line above "Start night", never a dialog. */
+sealed interface BandCheckStatus {
+    /** No test this session, or the last one passed: nothing extra is shown. */
+    data object None : BandCheckStatus
+
+    /** A test is running right now (bounded by CONNECTION_TEST_DEADLINE). */
+    data object Checking : BandCheckStatus
+
+    /** The last test failed; [reason] is its first action-needed line, shown in amber with a "Test again" button. */
+    data class Failed(val reason: String) : BandCheckStatus
+}
+
 /** Everything the "Before bed" screen shows. */
 data class BeforeBedUiState(
     val bandReady: Boolean,
@@ -27,4 +39,6 @@ data class BeforeBedUiState(
     val simulatedTimeValue: String? = null,
     /** True while "Start night" is asking the owner to confirm a simulated night (any debug option on) before it actually starts. */
     val confirmingDebugNightStart: Boolean = false,
+    /** P2: the latest connection test's state. Shown alongside, never instead of, the Start-night gating above: a failure here does not itself disable "Start night". */
+    val bandCheck: BandCheckStatus = BandCheckStatus.None,
 )
