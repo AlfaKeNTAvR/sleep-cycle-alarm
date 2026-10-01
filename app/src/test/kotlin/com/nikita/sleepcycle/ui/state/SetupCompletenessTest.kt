@@ -37,6 +37,15 @@ class SetupCheckRecencyTest {
         val passedAt = now.plus(Duration.ofMinutes(5))
         assertFalse(setupCheckIsRecent(passedAt, now))
     }
+
+    // Owner-reported on the phone, 2026-09-30: a test that had just passed showed "Run Test connection in Setup"
+    // and a disabled Start night until it "later disappeared". The pass is stamped with the real time the test
+    // started; the screen's own clock is re-read only every 30 s, so it can sit up to 30 s behind that stamp.
+    @Test
+    fun `a pass stamped a few seconds after the screen last read the clock is recent`() {
+        val passedAt = now.plus(Duration.ofSeconds(20))
+        assertTrue(setupCheckIsRecent(passedAt, now))
+    }
 }
 
 class StartNightSetupCheckGatingTest {

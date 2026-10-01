@@ -5,17 +5,29 @@ package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
+import com.nikita.sleepcycle.night.UI_TICKER_INTERVAL_MS
 import java.time.Duration
 import java.time.Instant
 
 /** How long a passing "Test connection" result stays good enough to start a night on. Band slots, permissions and the export file can all drift after the check, so a stale pass is not trusted forever. */
 val SETUP_CHECK_VALIDITY_WINDOW: Duration = Duration.ofHours(24)
 
-/** True when [lastSetupCheckPassedAt] is set and still within [SETUP_CHECK_VALIDITY_WINDOW] of [now]. A timestamp in the future (clock skew) is never trusted. */
+/**
+ * P2: how far ahead of [now] a pass may be stamped and still count. The pass is stamped with the real time the
+ * test started, while the screen's `now` is re-read only every [UI_TICKER_INTERVAL_MS], so a pass that just
+ * landed can sit up to that far "in the future" of the screen. Without this the owner saw a test that had just
+ * passed read as missing ("Run Test connection in Setup", Start night disabled) until the next clock tick.
+ */
+val SETUP_CHECK_FUTURE_TOLERANCE: Duration = Duration.ofMillis(UI_TICKER_INTERVAL_MS)
+
+/**
+ * True when [lastSetupCheckPassedAt] is set and still within [SETUP_CHECK_VALIDITY_WINDOW] of [now]. A timestamp
+ * further in the future than [SETUP_CHECK_FUTURE_TOLERANCE] (clock skew) is never trusted.
+ */
 fun setupCheckIsRecent(lastSetupCheckPassedAt: Instant?, now: Instant): Boolean {
     if (lastSetupCheckPassedAt == null) return false
     val elapsed = Duration.between(lastSetupCheckPassedAt, now)
-    return !elapsed.isNegative && elapsed <= SETUP_CHECK_VALIDITY_WINDOW
+    return elapsed >= SETUP_CHECK_FUTURE_TOLERANCE.negated() && elapsed <= SETUP_CHECK_VALIDITY_WINDOW
 }
 
 /** Whether "Start night" is enabled, and, if not, whether that is specifically because the setup check is missing or stale rather than the checklist itself being incomplete (the two reasons are mutually exclusive and shown differently on the Before-bed screen). */
