@@ -105,5 +105,6 @@ private fun bandCheckStatusFor(connectionTest: ConnectionTestState): BandCheckSt
 internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus): BandStatus = when {
     !bandSetUp -> BandStatus.SETUP_INCOMPLETE
     bandCheck is BandCheckStatus.Failed -> BandStatus.NOT_RESPONDING
+    bandCheck is BandCheckStatus.Checking -> BandStatus.CHECKING
     else -> BandStatus.CONNECTED
 }

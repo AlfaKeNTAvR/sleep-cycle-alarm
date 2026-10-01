@@ -72,8 +72,10 @@ class BeforeBedBandCheckTest {
         assertEquals(BandStatus.CONNECTED, bandStatusFor(bandSetUp = true, bandCheck = BandCheckStatus.None))
     }
 
-    @Test fun `a running test keeps the band shown as connected`() {
-        assertEquals(BandStatus.CONNECTED, bandStatusFor(bandSetUp = true, bandCheck = BandCheckStatus.Checking))
+    // Owner-reported on the phone, 2026-09-30: "Band connected" above "Checking the band connection..." claims
+    // the answer before the check has given it.
+    @Test fun `a running test shows the band as being checked, not connected`() {
+        assertEquals(BandStatus.CHECKING, bandStatusFor(bandSetUp = true, bandCheck = BandCheckStatus.Checking))
     }
 
     @Test fun `a band not set up says so even when a test failed`() {

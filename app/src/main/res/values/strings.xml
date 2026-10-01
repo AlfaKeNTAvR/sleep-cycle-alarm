@@ -70,6 +70,8 @@
     <string name="before_bed_band_not_ready">Band setup incomplete</string>
     <!-- P2: the latest connection test failed; see BandStatus.NOT_RESPONDING. -->
     <string name="before_bed_band_not_responding">Band not responding</string>
+    <!-- P2: a connection test is running; see BandStatus.CHECKING. -->
+    <string name="before_bed_band_checking">Checking band…</string>
     <string name="before_bed_wake_me_by">Wake me by</string>
     <string name="content_description_deadline_switch">Use a deadline</string>
     <string name="before_bed_sleep_up_to">Sleep up to</string>

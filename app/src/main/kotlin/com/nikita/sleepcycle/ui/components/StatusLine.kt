@@ -17,14 +17,22 @@ import com.nikita.sleepcycle.ui.theme.ErrorRed
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import com.nikita.sleepcycle.ui.theme.StatusDotSize
 
-/** A coloured dot plus a short status sentence, e.g. "Band connected" or "Sync failed at 03:15". */
+/**
+ * A coloured dot plus a short status sentence, e.g. "Band connected" or "Sync failed at 03:15". [ok]: true green,
+ * false red, null a muted grey for "not known yet" (P2: the band check still running).
+ */
 @Composable
-fun StatusLine(text: String, ok: Boolean, modifier: Modifier = Modifier) {
+fun StatusLine(text: String, ok: Boolean?, modifier: Modifier = Modifier) {
+    val dotColor = when (ok) {
+        true -> ConnectedDot
+        false -> ErrorRed
+        null -> NightOnSurfaceMuted
+    }
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.foundation.layout.Box(
             modifier = Modifier
                 .size(StatusDotSize)
-                .background(if (ok) ConnectedDot else ErrorRed, CircleShape),
+                .background(dotColor, CircleShape),
         )
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
         Text(text = text, style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)

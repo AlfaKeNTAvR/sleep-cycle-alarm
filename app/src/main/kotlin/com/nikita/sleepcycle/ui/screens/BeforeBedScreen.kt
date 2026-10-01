@@ -64,11 +64,16 @@ fun BeforeBedScreen(
                 text = stringResource(
                     when (state.bandStatus) {
                         BandStatus.CONNECTED -> R.string.before_bed_band_connected
+                        BandStatus.CHECKING -> R.string.before_bed_band_checking
                         BandStatus.NOT_RESPONDING -> R.string.before_bed_band_not_responding
                         BandStatus.SETUP_INCOMPLETE -> R.string.before_bed_band_not_ready
                     }
                 ),
-                ok = state.bandStatus == BandStatus.CONNECTED,
+                ok = when (state.bandStatus) {
+                    BandStatus.CONNECTED -> true
+                    BandStatus.CHECKING -> null
+                    BandStatus.NOT_RESPONDING, BandStatus.SETUP_INCOMPLETE -> false
+                },
             )
             Row {
                 MenuLinesButton(stringResource(R.string.content_description_open_logs), onOpenLogs)
