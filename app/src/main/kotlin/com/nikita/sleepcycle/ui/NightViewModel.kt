@@ -485,7 +485,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         if (debugOptionsRelaxSetup(debug.effectiveOptions())) return
         if (!gadgetbridgeInstalled.value) return
         // P2: REAL time, like lastSetupCheckPassedAt itself (see runConnectionTest's own T4 note).
-        if (!connectionTestIsDue(settings.lastSetupCheckPassedAt, lastConnectionTestAttemptAt, Instant.now())) return
+        if (!connectionTestIsDue(lastConnectionTestAttemptAt, Instant.now())) return
         runConnectionTest(automatic = true)
     }
 

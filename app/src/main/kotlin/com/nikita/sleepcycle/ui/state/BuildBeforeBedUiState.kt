@@ -120,5 +120,5 @@ internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus, lastP
 private fun passedRecently(lastPassedAt: Instant?, now: Instant): Boolean {
     if (lastPassedAt == null) return false
     val elapsed = Duration.between(lastPassedAt, now)
-    return elapsed >= SETUP_CHECK_FUTURE_TOLERANCE.negated() && elapsed <= AUTO_CONNECTION_TEST_RECHECK_AFTER
+    return elapsed >= SETUP_CHECK_FUTURE_TOLERANCE.negated() && elapsed <= CONNECTED_STATUS_MAX_AGE
 }

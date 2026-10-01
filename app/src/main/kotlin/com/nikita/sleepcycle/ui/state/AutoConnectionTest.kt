@@ -7,26 +7,25 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * P2: a pass older than this is re-checked automatically on app open. Deliberately much shorter than
- * [SETUP_CHECK_VALIDITY_WINDOW]: the night of 2026-09-30 started on a still-valid pass from the previous evening
- * while the band had already stopped syncing with Gadgetbridge, and every sync that night timed out. Re-checking
- * at bedtime is what catches that; a healthy check costs about 3-5 s (setup.jsonl, 11 passes 2.5-4.8 s).
+ * P2: how long a pass is shown as "Band connected (HH:mm)" in Before bed's corner (see BandStatus); older reads
+ * "Not synced yet". It used to also be the age at which an app open re-checked; since the owner's decision on
+ * 2026-09-30 every open re-checks (see [connectionTestIsDue]), so this now only bounds a screen left open.
+ * Deliberately much shorter than [SETUP_CHECK_VALIDITY_WINDOW]: the night of 2026-09-30 started on a still-valid
+ * pass from the previous evening while the band had already stopped syncing with Gadgetbridge.
  */
-val AUTO_CONNECTION_TEST_RECHECK_AFTER: Duration = Duration.ofHours(1)
+val CONNECTED_STATUS_MAX_AGE: Duration = Duration.ofHours(1)
 
 /** P2: after any attempt (automatic or tapped), no automatic one starts again until this has passed, so bouncing in and out of the app does not fire a sync each time. A tap on "Test connection" ignores it. */
 val AUTO_CONNECTION_TEST_COOLDOWN: Duration = Duration.ofMinutes(2)
 
 /**
- * P2: true when the app should run the connection test by itself now. Due when there is no pass within
- * [AUTO_CONNECTION_TEST_RECHECK_AFTER] (a pass in the future - clock skew - is not trusted) and no attempt
- * started within [AUTO_CONNECTION_TEST_COOLDOWN]. All three instants are REAL time (T4 exception, same as
- * lastSetupCheckPassedAt itself - see NightViewModel.runSetupCheckAction).
+ * P2: true when the app should run the connection test by itself now - on every app open outside a night, unless
+ * an attempt started within [AUTO_CONNECTION_TEST_COOLDOWN]. Owner decision, 2026-09-30: he reopened the app 25 min
+ * after a pass and expected a fresh answer; a healthy check costs about 3-5 s (setup.jsonl, 11 passes 2.5-4.8 s).
+ * Both instants are REAL time (T4 exception, same as lastSetupCheckPassedAt - see NightViewModel.runSetupCheckAction).
  */
-fun connectionTestIsDue(lastPassedAt: Instant?, lastAttemptAt: Instant?, now: Instant): Boolean {
-    if (lastAttemptAt != null && isWithin(lastAttemptAt, now, AUTO_CONNECTION_TEST_COOLDOWN)) return false
-    return lastPassedAt == null || !isWithin(lastPassedAt, now, AUTO_CONNECTION_TEST_RECHECK_AFTER)
-}
+fun connectionTestIsDue(lastAttemptAt: Instant?, now: Instant): Boolean =
+    lastAttemptAt == null || !isWithin(lastAttemptAt, now, AUTO_CONNECTION_TEST_COOLDOWN)
 
 /**
  * P2: the new [com.nikita.sleepcycle.night.AppSettings.lastSetupCheckPassedAt] after one attempt. A pass records

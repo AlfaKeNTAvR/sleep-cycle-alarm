@@ -14,38 +14,25 @@ class AutoConnectionTestDueTest {
     private val now: Instant = Instant.parse("2026-09-30T22:00:00Z")
 
     @Test
-    fun `never passed and never tried is due`() {
-        assertTrue(connectionTestIsDue(lastPassedAt = null, lastAttemptAt = null, now = now))
+    fun `never tried is due`() {
+        assertTrue(connectionTestIsDue(lastAttemptAt = null, now = now))
     }
 
+    // Owner decision on the phone, 2026-09-30: he closed and reopened the app 25 min after a pass and it did not
+    // re-check. Every open re-checks now, however recent the last pass; only the 2 min cooldown holds one off.
     @Test
-    fun `passed 25 hours ago is due`() {
-        assertTrue(connectionTestIsDue(lastPassedAt = Instant.parse("2026-09-29T21:00:00Z"), lastAttemptAt = null, now = now))
-    }
-
-    @Test
-    fun `passed 2 hours ago is due even though Start night would still accept it - the band may have gone silent since`() {
-        assertTrue(connectionTestIsDue(lastPassedAt = Instant.parse("2026-09-30T20:00:00Z"), lastAttemptAt = null, now = now))
-    }
-
-    @Test
-    fun `passed 30 minutes ago is not due`() {
-        assertFalse(connectionTestIsDue(lastPassedAt = Instant.parse("2026-09-30T21:30:00Z"), lastAttemptAt = null, now = now))
+    fun `an attempt 25 minutes ago is due on the next open`() {
+        assertTrue(connectionTestIsDue(lastAttemptAt = Instant.parse("2026-09-30T21:35:00Z"), now = now))
     }
 
     @Test
     fun `an attempt started 30 seconds ago holds off another automatic one`() {
-        assertFalse(connectionTestIsDue(lastPassedAt = null, lastAttemptAt = Instant.parse("2026-09-30T21:59:30Z"), now = now))
+        assertFalse(connectionTestIsDue(lastAttemptAt = Instant.parse("2026-09-30T21:59:30Z"), now = now))
     }
 
     @Test
     fun `an attempt started 3 minutes ago no longer holds off a retry`() {
-        assertTrue(connectionTestIsDue(lastPassedAt = null, lastAttemptAt = Instant.parse("2026-09-30T21:57:00Z"), now = now))
-    }
-
-    @Test
-    fun `a pass timestamp in the future (clock skew) is not trusted, so a test is due`() {
-        assertTrue(connectionTestIsDue(lastPassedAt = Instant.parse("2026-09-30T22:05:00Z"), lastAttemptAt = null, now = now))
+        assertTrue(connectionTestIsDue(lastAttemptAt = Instant.parse("2026-09-30T21:57:00Z"), now = now))
     }
 }
 

@@ -29,11 +29,11 @@ sealed interface BandCheckStatus {
  * report only whether the band was set up, which is not what "connected" means to someone reading it.
  */
 enum class BandStatus {
-    /** Set up, and a connection test passed within [AUTO_CONNECTION_TEST_RECHECK_AFTER]; shown with that pass's time. */
+    /** Set up, and a connection test passed within [CONNECTED_STATUS_MAX_AGE]; shown with that pass's time. */
     CONNECTED,
 
     /**
-     * Set up, but no pass within [AUTO_CONNECTION_TEST_RECHECK_AFTER] (or none at all). Owner-reported on the phone,
+     * Set up, but no pass within [CONNECTED_STATUS_MAX_AGE] (or none at all). Owner-reported on the phone,
      * 2026-09-30: the band was disconnected while the corner still said "Band connected" from an old pass - the app
      * only knows what its last check found, so an old pass reads "Not synced yet", never "connected".
      */
