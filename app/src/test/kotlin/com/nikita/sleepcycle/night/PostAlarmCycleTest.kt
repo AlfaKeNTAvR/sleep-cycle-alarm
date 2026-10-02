@@ -51,6 +51,22 @@ class PostAlarmCycleTest {
         assertEquals(nap("07:21"), afterStop)
     }
 
+    @Test fun `pressing I'm up at 08_04 before the 08_19 alarm arms the nudge for 08_14, and Nap then works at once`() {
+        // The 2026-10-02 morning: awake at 08:00, wanting a nap without waiting for the 08:19 alarm to ring.
+        val afterImUp = nextFollowUp(PostAlarmEvent.ImUpPressed(at("08:04")), pending = null, deadline = null, config = config)
+        assertEquals(nudge("08:14"), afterImUp)
+
+        val afterNap = nextFollowUp(PostAlarmEvent.NapPressed(at("08:05")), pending = afterImUp, deadline = null, config = config)
+        assertEquals(nap("08:25"), afterNap)
+    }
+
+    @Test fun `pressing I'm up replaces a nudge left over from an earlier nap alarm`() {
+        // A pre-wake nap rang at 05:00 and its nudge is set for 05:19; I'm up at 05:02 starts a fresh cycle.
+        val afterImUp = nextFollowUp(PostAlarmEvent.ImUpPressed(at("05:02")), pending = nudge("05:19"), deadline = null, config = config)
+
+        assertEquals(nudge("05:12"), afterImUp)
+    }
+
     @Test fun `a second Nap press while a nap is already armed does not push it later`() {
         val afterPress = nextFollowUp(PostAlarmEvent.NapPressed(at("07:10")), pending = nap("07:25"), deadline = null, config = config)
 

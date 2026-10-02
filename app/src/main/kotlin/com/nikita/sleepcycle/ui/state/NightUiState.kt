@@ -114,4 +114,12 @@ data class NightUiState(
      * pending, or the night has ended.
      */
     val napButtonMinutes: Int? = null,
+    /**
+     * Owner spec, 2026-10-02: whether the "I'm up" button is offered - a live night whose morning alarm has not
+     * rung yet. Pressing it (after [confirmingImUp]'s dialog) stands in for that alarm being stopped now, so
+     * [napButtonMinutes] is offered at once instead of after the alarm rings.
+     */
+    val showImUpButton: Boolean = false,
+    /** Whether the "I'm up" confirmation dialog is open: a mis-tap would cancel the smart alarm for the rest of the night. */
+    val confirmingImUp: Boolean = false,
 )

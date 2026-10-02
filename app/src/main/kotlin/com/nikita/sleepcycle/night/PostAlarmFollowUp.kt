@@ -2,9 +2,9 @@ package com.nikita.sleepcycle.night
 
 // File purpose: P3 (owner spec, 2026-09-30) - the Android side of the post-alarm cycle. Every decision is
 // PostAlarmCycle.kt's pure `nextFollowUp`; this file only reads the current record, asks it, and arms what it
-// says in the one out-of-bed slot (request code 2003), persisting the record and logging it. Three callers, one
+// says in the one out-of-bed slot (request code 2003), persisting the record and logging it. Four callers, one
 // per event: PhoneAlarmReceiver (an alarm fired), AlarmRingService (a ring ended by Stop or auto-stop), and the
-// Night screen's "Nap 20 min" button (NightViewModel).
+// Night screen's "Nap 20 min" and "I'm up" buttons (NightViewModel).
 //
 // The H7.3/M1 pre-nudge check is armed ONLY for a nudge pending before the morning alarm has rung (a pre-wake
 // rule 7 nap's own nudge, which a still-pending morning alarm can legitimately take over - M1). After the
@@ -20,6 +20,7 @@ package com.nikita.sleepcycle.night
 
 import android.content.Context
 import com.nikita.sleepcycle.alarm.AlarmLabel
+import com.nikita.sleepcycle.alarm.cancelPhoneAlarm
 import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import java.time.Instant
@@ -72,6 +73,40 @@ fun startManualNap(context: Context, now: Instant): Boolean {
         return false
     }
     return armFollowUp(context, state, next, now, "nap_pressed")
+}
+
+/**
+ * Owner spec, 2026-10-02: the Night screen's "I'm up", pressed before the morning alarm rang. Stands in for
+ * that alarm being stopped right now: records [now] as the morning alarm's firing (so the engine arms nothing
+ * more, WakeAlarm.kt's `morningAlarmHasRung`), cancels the pending phone alarm, and arms the out-of-bed nudge
+ * 10 min out - which is what offers the Nap button. Under the night lock so a tick in flight cannot re-arm the
+ * alarm just cancelled from a state read before the press. Returns whether it took effect; a press after the
+ * morning alarm already rang (a stale screen) changes nothing and is logged.
+ */
+suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransactionLock {
+    val state = loadNightState(context) ?: return@withNightTransactionLock false
+    val debugNight = state.debugOptions.isAnyEnabled
+    if (morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)) {
+        appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang")), debugNight)
+        return@withNightTransactionLock false
+    }
+    if (!saveWakeAlarmFiredAt(context, now)) {
+        appendNightLog(
+            context, state.startedAt,
+            NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist wakeAlarmFiredAt for I'm up")),
+            debugNight
+        )
+        return@withNightTransactionLock false
+    }
+    cancelPhoneAlarm(context)
+    appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledAlarmAt" to state.lastPlan?.wakeAt.toString())), debugNight)
+    val upState = state.copy(wakeAlarmFiredAt = now)
+    // Seen on the phone 2026-10-02: without this the screen kept offering "I'm up" next to Nap until the
+    // follow-up tick committed, which waits on a band sync of up to 20 s.
+    publishNightState(upState)
+    val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), readPendingFollowUp(context), upState.settings.deadline, resolveEngineConfig(upState.debugOptions))
+        ?: return@withNightTransactionLock false
+    armFollowUp(context, upState, next, now, "im_up_pressed")
 }
 
 /**

@@ -34,6 +34,7 @@ import com.nikita.sleepcycle.night.readAppSettings
 import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.readPendingFollowUp
 import com.nikita.sleepcycle.night.startManualNap
+import com.nikita.sleepcycle.night.pressImUp
 import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
@@ -155,6 +156,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val nightLogFiles = MutableStateFlow<List<File>>(emptyList())
     private val openedPastNight = MutableStateFlow<PastNightUiState?>(null)
     private val confirmingEndNight = MutableStateFlow(false)
+    /** Owner spec, 2026-10-02: the "I'm up" confirmation dialog is open - see NightUiState.confirmingImUp. */
+    private val confirmingImUp = MutableStateFlow(false)
     /** Item 1: true from the moment "confirm" is tapped until endNight's result is rendered - see ui/state/EndNightFlowState.kt. */
     private val endingNight = MutableStateFlow(false)
     private val showingMorningReport = MutableStateFlow(false)
@@ -192,9 +195,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
         // Bundled with errorMessage rather than added as a 6th top-level flow: kotlinx.coroutines' combine has
         // fixed-arity overloads only up to 5 flows.
-        combine(errorMessage, pendingFollowUp, ::Pair),
-    ) { core, extra, report, debugInputs, errorAndNudge ->
-        toUiState(core, extra, report, debugInputs, errorAndNudge.first, errorAndNudge.second)
+        combine(errorMessage, pendingFollowUp, confirmingImUp, ::Triple),
+    ) { core, extra, report, debugInputs, errorNudgeImUp ->
+        toUiState(core, extra, report, debugInputs, errorNudgeImUp.first, errorNudgeImUp.second, errorNudgeImUp.third)
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(TICKER_INTERVAL_MS), UiState.initial())
 
@@ -212,6 +215,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         debugInputs: DebugInputs,
         error: String?,
         pendingFollowUp: PendingFollowUp?,
+        confirmingImUp: Boolean,
     ): UiState {
         val settings = core.appSettings ?: return UiState.initial()
         val engineView = when {
@@ -239,6 +243,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             confirmingDebugNightStart = debugInputs.confirmingDebugNightStart,
             pendingFollowUp = pendingFollowUp,
             errorMessage = error,
+            confirmingImUp = confirmingImUp,
         )
     }
 
@@ -606,6 +611,25 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { startManualNap(context, nowInstant()) }
             refreshPendingOutOfBedNudge()
+        }
+    }
+
+    /** Owner spec, 2026-10-02: "I'm up" asks first - a mis-tap at 3am would cancel the smart alarm for the rest of the night. */
+    fun requestImUp() { confirmingImUp.value = true }
+    fun cancelImUp() { confirmingImUp.value = false }
+
+    /**
+     * Owner spec, 2026-10-02: confirmed "I'm up" - cancels the morning alarm and starts the out-of-bed cycle as if
+     * it had just been stopped (night/PostAlarmFollowUp.kt's pressImUp), so the Nap button shows at once. Then
+     * re-reads the pending record and asks for a tick, so the screen drops the cancelled alarm right away instead
+     * of on the next 15-min tick.
+     */
+    fun confirmImUp() {
+        confirmingImUp.value = false
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { pressImUp(context, nowInstant()) }
+            refreshPendingOutOfBedNudge()
+            requestImmediateTick(context)
         }
     }
 

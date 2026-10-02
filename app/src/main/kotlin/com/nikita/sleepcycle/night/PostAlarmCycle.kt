@@ -41,6 +41,13 @@ sealed interface PostAlarmEvent {
 
     /** The owner pressed the Night screen's "Nap 20 min" button. */
     data class NapPressed(val at: Instant) : PostAlarmEvent
+
+    /**
+     * The owner pressed the Night screen's "I'm up" before the morning alarm rang (owner spec, 2026-10-02:
+     * awake at 08:00, he had to wait for the 08:19 alarm to ring before Nap was offered). Stands in for the
+     * morning alarm being stopped right now.
+     */
+    data class ImUpPressed(val at: Instant) : PostAlarmEvent
 }
 
 /**
@@ -57,6 +64,8 @@ sealed interface PostAlarmEvent {
  *   later than a wake-by deadline still ahead (the deadline is the hardest promise this app makes). A deadline
  *   already past caps nothing: capping at a past instant would ring at once, and L2 keeps the cycle running past
  *   the deadline anyway. A press with a nap already pending, or nothing pending, changes nothing.
+ * - [PostAlarmEvent.ImUpPressed]: the nudge at `press + outOfBedDelay`, exactly as if the morning alarm had
+ *   just been stopped, replacing whatever was pending - so the Nap button is offered at once.
  */
 fun nextFollowUp(event: PostAlarmEvent, pending: PendingFollowUp?, deadline: Instant?, config: EngineConfig): PendingFollowUp? =
     when (event) {
@@ -66,6 +75,8 @@ fun nextFollowUp(event: PostAlarmEvent, pending: PendingFollowUp?, deadline: Ins
             if (pending?.kind == FollowUpKind.NAP) pending else PendingFollowUp(FollowUpKind.NUDGE, event.at.plus(config.outOfBedDelay))
         is PostAlarmEvent.NapPressed ->
             if (pending?.kind != FollowUpKind.NUDGE) pending else PendingFollowUp(FollowUpKind.NAP, napEndsAt(event.at, deadline, config))
+        is PostAlarmEvent.ImUpPressed ->
+            PendingFollowUp(FollowUpKind.NUDGE, event.at.plus(config.outOfBedDelay))
     }
 
 /** P3: `press + napLength`, capped by a deadline that is still ahead of [pressedAt] - see [nextFollowUp]. */

@@ -43,6 +43,7 @@ fun buildUiState(
     endingNight: Boolean = false,
     pendingFollowUp: PendingFollowUp?,
     errorMessage: String?,
+    confirmingImUp: Boolean = false,
 ): UiState {
     val nightActive = nightState != null
     return UiState(
@@ -51,7 +52,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart, connectionTest
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp),
         logs = buildLogsUiState(nightLogFiles, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
         errorMessage = errorMessage,

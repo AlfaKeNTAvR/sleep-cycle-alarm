@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.FollowUpKind
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.engine.EngineConfig
+import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.formatSimulatedTimeValue
@@ -40,6 +41,7 @@ fun buildNightUiState(
     confirmingEndNight: Boolean,
     endingNight: Boolean = false,
     pendingFollowUp: PendingFollowUp?,
+    confirmingImUp: Boolean = false,
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
@@ -98,10 +100,14 @@ fun buildNightUiState(
     // owner's own words on what the finished screen offered him while a nudge was still armed: "it didn't say
     // that I'm awake and the night. It's just like end night." With an alarm still coming this is an ordinary
     // live night to him, so it gets the live night's own wording.
-    val endAction = if (rawContent is NightScreenContent.NightFinished && content is NightScreenContent.NextAlarm) {
-        EndNightAction.IM_UP
-    } else {
-        rawEndAction
+    // Owner spec, 2026-10-02: once the morning alarm has rung - or "I'm up" stood in for it - he is up, whatever
+    // the plan's mode still says (it stays FULL_CYCLES until the band reports him awake), so the mid-night
+    // "Stop night" wording no longer fits.
+    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    val endAction = when {
+        rawContent is NightScreenContent.NightFinished && content is NightScreenContent.NextAlarm -> EndNightAction.IM_UP
+        rawEndAction == EndNightAction.STOP && morningAlarmRang -> EndNightAction.IM_UP
+        else -> rawEndAction
     }
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
@@ -109,6 +115,8 @@ fun buildNightUiState(
         simulatedTimeValue = simulatedTimeValue,
         bandNotSyncingWarning = bandNotSyncingWarning,
         napButtonMinutes = napButtonMinutes(pendingFollowUp, now, resolveEngineConfig(state.debugOptions)),
+        showImUpButton = plan.mode != AlarmMode.FINISHED && !morningAlarmRang,
+        confirmingImUp = confirmingImUp,
     )
 }
 
