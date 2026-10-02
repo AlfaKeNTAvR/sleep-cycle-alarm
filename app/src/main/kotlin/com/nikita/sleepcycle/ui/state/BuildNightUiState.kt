@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.FollowUpKind
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.engine.EngineConfig
+import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.formatSimulatedTimeValue
@@ -40,6 +41,7 @@ fun buildNightUiState(
     confirmingEndNight: Boolean,
     endingNight: Boolean = false,
     pendingFollowUp: PendingFollowUp?,
+    confirmingImUp: Boolean = false,
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
@@ -109,6 +111,9 @@ fun buildNightUiState(
         simulatedTimeValue = simulatedTimeValue,
         bandNotSyncingWarning = bandNotSyncingWarning,
         napButtonMinutes = napButtonMinutes(pendingFollowUp, now, resolveEngineConfig(state.debugOptions)),
+        showImUpButton = plan.mode != AlarmMode.FINISHED &&
+            !morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
+        confirmingImUp = confirmingImUp,
     )
 }
 

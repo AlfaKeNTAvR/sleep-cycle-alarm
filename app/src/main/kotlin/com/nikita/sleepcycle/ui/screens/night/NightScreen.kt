@@ -50,6 +50,9 @@ fun NightScreen(
     onConfirmEndNight: () -> Unit,
     onCancelEndNight: () -> Unit,
     onStartNap: () -> Unit,
+    onRequestImUp: () -> Unit,
+    onConfirmImUp: () -> Unit,
+    onCancelImUp: () -> Unit,
     onDone: () -> Unit,
     onSpeedChange: (Int) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
@@ -106,6 +109,11 @@ fun NightScreen(
             if (napMinutes != null && !state.endingNight && content !is NightScreenContent.MorningReport) {
                 PrimaryActionButton(text = stringResource(R.string.night_nap_for_minutes, napMinutes), onClick = onStartNap)
             }
+            // Owner spec, 2026-10-02: "I'm up", split out of "I'm up, end night" - offered until the morning
+            // alarm rings, it starts the out-of-bed cycle early so Nap is available without waiting for the alarm.
+            if (state.showImUpButton && !state.endingNight && content !is NightScreenContent.MorningReport) {
+                PrimaryActionButton(text = stringResource(R.string.night_im_up), onClick = onRequestImUp)
+            }
 
             when (content) {
                 is NightScreenContent.MorningReport ->
@@ -140,6 +148,16 @@ fun NightScreen(
 
     // Item 1: never shown while ending, even if a stray onRequestEndNight slipped through - the confirmation
     // dialog must not be re-openable while ending.
+    if (state.confirmingImUp && !state.endingNight) {
+        ConfirmDialog(
+            title = stringResource(R.string.night_confirm_im_up_early_title),
+            message = stringResource(R.string.night_confirm_im_up_early_message),
+            confirmText = stringResource(R.string.night_im_up),
+            dismissText = stringResource(R.string.action_cancel),
+            onConfirm = onConfirmImUp,
+            onDismiss = onCancelImUp,
+        )
+    }
     if (state.confirmingEndNight && !state.endingNight) {
         val (titleRes, messageRes) = confirmDialogTextResources(state.endAction)
         ConfirmDialog(
