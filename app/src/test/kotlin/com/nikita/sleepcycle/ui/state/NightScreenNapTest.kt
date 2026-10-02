@@ -8,6 +8,8 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.night.PendingFollowUp
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class NightScreenNapTest {
@@ -72,10 +74,10 @@ class NightScreenNapTest {
         val screen = screenAt("2026-09-17T07:35", pendingNudge("2026-09-17T07:45"), state = finished)
 
         assertEquals(20, screen.napButtonMinutes)
-        assertEquals(EndNightAction.IM_UP, screen.endAction)
+        assertTrue(screen.showEndNightButton)
     }
 
-    @Test fun `a nap pending past FINISHED is drawn as the live nap, with I'm up, end night`() {
+    @Test fun `a nap pending past FINISHED is drawn as the live nap, with I'm up and no End night`() {
         val finished = testNightState(lastPlan = testAlarmPlan(mode = AlarmMode.FINISHED, reason = "Night finished, deadline was 07:30."))
 
         val screen = screenAt("2026-09-17T07:35", pendingNap("2026-09-17T07:55"), state = finished)
@@ -84,7 +86,8 @@ class NightScreenNapTest {
         check(content is NightScreenContent.NextAlarm) { "expected the live layout, got $content" }
         assertEquals(com.nikita.sleepcycle.alarm.AlarmLabel.NAP, content.modeLabel)
         assertEquals("07:55", content.alarmTimeLabel)
-        assertEquals(EndNightAction.IM_UP, screen.endAction)
+        assertTrue(screen.showImUpButton)
+        assertFalse(screen.showEndNightButton)
     }
 
     @Test fun `the morning report never offers the Nap button`() {

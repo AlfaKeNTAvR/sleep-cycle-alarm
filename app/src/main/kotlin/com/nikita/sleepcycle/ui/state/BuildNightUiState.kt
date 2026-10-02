@@ -50,7 +50,7 @@ fun buildNightUiState(
             lastSyncOk = null,
             syncFailureCause = null,
             content = buildMorningReportContent(view, morningReportEndedAt ?: now, zone),
-            endAction = EndNightAction.END,
+            showEndNightButton = false,
             confirmingEndNight = false,
         )
     }
@@ -75,49 +75,48 @@ fun buildNightUiState(
     if (plan == null || engineView == null) {
         return NightUiState(
             syncLabel, state.lastSyncOk, state.lastSyncFailureCause,
-            NightScreenContent.Loading, EndNightAction.STOP, confirmingEndNight, endingNight,
+            NightScreenContent.Loading, showEndNightButton = false, confirmingEndNight = confirmingEndNight, endingNight = endingNight,
             activeDebugSwitches = debugSwitches,
             simulatedTimeValue = simulatedTimeValue,
             bandNotSyncingWarning = bandNotSyncingWarning,
         )
     }
 
-    val (rawContent, rawEndAction) = when (plan.mode) {
-        AlarmMode.FINISHED -> buildFinishedContent(plan) to EndNightAction.END
-        // N1: every live night renders the same way now (see NightScreenContent.NextAlarm), so the band's own
-        // sleep state no longer picks a content variant at all - it picked between wordings that no longer
-        // differ. The mode still picks the end-night button's wording: NAP is the one mode reached only after
-        // the owner has already been woken once, which is what "I'm up, end night" says and "Stop night"
-        // does not.
-        AlarmMode.NAP -> buildNextAlarmContent(plan, zone, state.morningAlarmAt, now) to EndNightAction.IM_UP
-        AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> buildNextAlarmContent(plan, zone, state.morningAlarmAt, now) to EndNightAction.STOP
+    // N1: every live night renders the same way now (see NightScreenContent.NextAlarm), so the band's own sleep
+    // state no longer picks a content variant at all.
+    val rawContent = when (plan.mode) {
+        AlarmMode.FINISHED -> buildFinishedContent(plan)
+        AlarmMode.NAP, AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> buildNextAlarmContent(plan, zone, state.morningAlarmAt, now)
     }
     // Round 2 of the 09/21 review, must-fix 1, extended by round 3's should-fix 1: see
     // applyPendingOutOfBedNudge's own doc for why the plan's own wakeAt (plan.wakeAt, not the FINISHED case's
     // null) is passed alongside the nudge - it can also override a NON-null modeLabel now, not just a null one.
     val content = applyPendingOutOfBedNudge(rawContent, pendingFollowUp, plan.wakeAt, now, zone)
-    // N2: when that override turns a finished night back into a live one, the button follows the screen. The
-    // owner's own words on what the finished screen offered him while a nudge was still armed: "it didn't say
-    // that I'm awake and the night. It's just like end night." With an alarm still coming this is an ordinary
-    // live night to him, so it gets the live night's own wording.
-    // Owner spec, 2026-10-02: once the morning alarm has rung - or "I'm up" stood in for it - he is up, whatever
-    // the plan's mode still says (it stays FULL_CYCLES until the band reports him awake), so the mid-night
-    // "Stop night" wording no longer fits.
-    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
-    val endAction = when {
-        rawContent is NightScreenContent.NightFinished && content is NightScreenContent.NextAlarm -> EndNightAction.IM_UP
-        rawEndAction == EndNightAction.STOP && morningAlarmRang -> EndNightAction.IM_UP
-        else -> rawEndAction
-    }
+    val showImUp = imUpOffered(state, plan.mode, pendingFollowUp, now)
     return NightUiState(
-        syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content, endAction, confirmingEndNight, endingNight,
+        syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content,
+        // Owner spec, 2026-10-02: one choice at a time - End night only once he is up (see imUpOffered).
+        showEndNightButton = !showImUp, confirmingEndNight = confirmingEndNight, endingNight = endingNight,
         activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
         bandNotSyncingWarning = bandNotSyncingWarning,
         napButtonMinutes = napButtonMinutes(pendingFollowUp, now, resolveEngineConfig(state.debugOptions)),
-        showImUpButton = plan.mode != AlarmMode.FINISHED && !morningAlarmRang,
+        showImUpButton = showImUp,
         confirmingImUp = confirmingImUp,
     )
+}
+
+/**
+ * Owner spec, 2026-10-02: one choice at a time. "I'm up" is offered while he is asleep as far as the app knows -
+ * the morning alarm still ahead on a live night, or his own nap still ahead (even past a FINISHED deadline,
+ * which L2 keeps running). Otherwise he is up: the nudge is ahead or the night is over, and the screen offers
+ * Nap and End night instead.
+ */
+private fun imUpOffered(state: NightState, mode: AlarmMode, pendingFollowUp: PendingFollowUp?, now: Instant): Boolean {
+    val ownNapAhead = pendingFollowUp?.kind == FollowUpKind.NAP && pendingFollowUp.at.isAfter(now)
+    val morningAlarmAhead = mode != AlarmMode.FINISHED &&
+        !morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    return ownNapAhead || morningAlarmAhead
 }
 
 /**

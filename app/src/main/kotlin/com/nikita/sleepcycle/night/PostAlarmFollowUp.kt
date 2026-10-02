@@ -80,15 +80,25 @@ fun startManualNap(context: Context, now: Instant): Boolean {
  * that alarm being stopped right now: records [now] as the morning alarm's firing (so the engine arms nothing
  * more, WakeAlarm.kt's `morningAlarmHasRung`), cancels the pending phone alarm, and arms the out-of-bed nudge
  * 10 min out - which is what offers the Nap button. Under the night lock so a tick in flight cannot re-arm the
- * alarm just cancelled from a state read before the press. Returns whether it took effect; a press after the
- * morning alarm already rang (a stale screen) changes nothing and is logged.
+ * alarm just cancelled from a state read before the press. Returns whether it took effect.
+ *
+ * Owner spec, 2026-10-02 (one choice at a time): also pressed during his own nap, after the morning alarm. Then
+ * the nudge simply replaces the nap in the shared out-of-bed slot; the morning alarm's own record is left as it
+ * rang. A press with neither ahead (a stale screen) changes nothing and is logged.
  */
 suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransactionLock {
     val state = loadNightState(context) ?: return@withNightTransactionLock false
     val debugNight = state.debugOptions.isAnyEnabled
+    val pending = readPendingFollowUp(context)
     if (morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)) {
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang")), debugNight)
-        return@withNightTransactionLock false
+        if (pending?.kind != FollowUpKind.NAP || !pending.at.isAfter(now)) {
+            appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang and no nap is ahead")), debugNight)
+            return@withNightTransactionLock false
+        }
+        appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledNapAt" to pending.at.toString())), debugNight)
+        val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, state.settings.deadline, resolveEngineConfig(state.debugOptions))
+            ?: return@withNightTransactionLock false
+        return@withNightTransactionLock armFollowUp(context, state, next, now, "im_up_pressed")
     }
     if (!saveWakeAlarmFiredAt(context, now)) {
         appendNightLog(
@@ -104,7 +114,7 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
     // Seen on the phone 2026-10-02: without this the screen kept offering "I'm up" next to Nap until the
     // follow-up tick committed, which waits on a band sync of up to 20 s.
     publishNightState(upState)
-    val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), readPendingFollowUp(context), upState.settings.deadline, resolveEngineConfig(upState.debugOptions))
+    val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, upState.settings.deadline, resolveEngineConfig(upState.debugOptions))
         ?: return@withNightTransactionLock false
     armFollowUp(context, upState, next, now, "im_up_pressed")
 }

@@ -117,7 +117,7 @@ class NightScreenStateTest {
         assertEquals(AlarmLabel.MORNING, content.modeLabel)
         assertEquals("07:30", content.alarmTimeLabel)
         assertEquals("7 h 25", content.countdownLabel)
-        assertEquals(EndNightAction.STOP, nightUi.endAction)
+        assertFalse(nightUi.showEndNightButton)
     }
 
     @Test fun `N1 renders the same way awake as asleep, with no completed sleep on screen`() {
@@ -136,10 +136,10 @@ class NightScreenStateTest {
         val content = nightUi.content as NightScreenContent.NextAlarm
         assertEquals("07:15", content.alarmTimeLabel)
         assertEquals("4 h 40", content.countdownLabel)
-        assertEquals(EndNightAction.STOP, nightUi.endAction)
+        assertFalse(nightUi.showEndNightButton)
     }
 
-    @Test fun `a nap night offers I'm up, end night`() {
+    @Test fun `a nap night before the morning alarm offers I'm up, not End night`() {
         val plan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = "2026-09-17T06:48")
         val night = testNightState(lastPlan = plan)
         val view = testEngineView(SleepState.AWAKE, totalSleep = java.time.Duration.ofMinutes(334))
@@ -148,7 +148,8 @@ class NightScreenStateTest {
         val content = nightUi.content as NightScreenContent.NextAlarm
         assertEquals(AlarmLabel.NAP, content.modeLabel)
         assertEquals("20 min", content.countdownLabel)
-        assertEquals(EndNightAction.IM_UP, nightUi.endAction)
+        assertTrue(nightUi.showImUpButton)
+        assertFalse(nightUi.showEndNightButton)
     }
 
     @Test fun `FINISHED shows the engine's own reason and offers End night`() {
@@ -159,7 +160,7 @@ class NightScreenStateTest {
         val nightUi = requireNotNull(result.night)
         val content = nightUi.content as NightScreenContent.NightFinished
         assertEquals("Night finished, deadline was 08:30.", content.reasonText)
-        assertEquals(EndNightAction.END, nightUi.endAction)
+        assertTrue(nightUi.showEndNightButton)
     }
 
     @Test fun `no plan yet shows Loading`() {

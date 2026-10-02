@@ -67,6 +67,13 @@ class PostAlarmCycleTest {
         assertEquals(nudge("05:12"), afterImUp)
     }
 
+    @Test fun `pressing I'm up at 07_12 during his own 07_25 nap ends the nap and arms the nudge for 07_22`() {
+        // Owner spec, 2026-10-02: once napping, the screen offers I'm up rather than End night.
+        val afterImUp = nextFollowUp(PostAlarmEvent.ImUpPressed(at("07:12")), pending = nap("07:25"), deadline = null, config = config)
+
+        assertEquals(nudge("07:22"), afterImUp)
+    }
+
     @Test fun `a second Nap press while a nap is already armed does not push it later`() {
         val afterPress = nextFollowUp(PostAlarmEvent.NapPressed(at("07:10")), pending = nap("07:25"), deadline = null, config = config)
 
