@@ -1,6 +1,6 @@
 package com.nikita.sleepcycle.ui.components
 
-// File purpose: a small AlertDialog wrapper for the "Stop night" / "I'm up, end night" confirmation.
+// File purpose: a small AlertDialog wrapper for the app's yes/no confirmations (End night, I'm up, deleting a log).
 
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults

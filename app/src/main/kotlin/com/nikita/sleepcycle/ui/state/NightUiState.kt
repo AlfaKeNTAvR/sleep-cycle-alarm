@@ -12,9 +12,6 @@ data class StretchLine(
     val cyclesLabel: String,
 )
 
-/** Which button/confirmation wording the end-night action uses, per screen. */
-enum class EndNightAction { STOP, IM_UP, END }
-
 /**
  * The night screen's content: one variant for every live night ([NextAlarm], N1), plus the two dead ends a
  * night reaches ([NightFinished], [MorningReport]) and [Loading]. It used to be one variant per engine mode
@@ -91,7 +88,8 @@ data class NightUiState(
     /** Only set when the last sync itself failed (as opposed to succeeding with stale data); the plain-English cause to show alongside [lastSyncTimeLabel]. */
     val syncFailureCause: String?,
     val content: NightScreenContent,
-    val endAction: EndNightAction,
+    /** Owner spec, 2026-10-02: whether "End night" is offered - only once he is up, never alongside "I'm up" (see [showImUpButton]). The morning report shows its own Done instead. */
+    val showEndNightButton: Boolean,
     val confirmingEndNight: Boolean,
     /** True from the moment "confirm" is tapped in the end-night dialog until endNight's result is rendered - the button disables and shows an in-progress label, and the dialog cannot reopen, for the whole ~3 s endNight takes (item 1). */
     val endingNight: Boolean = false,

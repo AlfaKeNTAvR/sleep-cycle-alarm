@@ -35,7 +35,7 @@ import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
 import com.nikita.sleepcycle.ui.state.DebugUiState
-import com.nikita.sleepcycle.ui.state.EndNightAction
+
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
 import com.nikita.sleepcycle.ui.theme.ScreenBottomPadding
@@ -109,21 +109,20 @@ fun NightScreen(
             if (napMinutes != null && !state.endingNight && content !is NightScreenContent.MorningReport) {
                 PrimaryActionButton(text = stringResource(R.string.night_nap_for_minutes, napMinutes), onClick = onStartNap)
             }
-            // Owner spec, 2026-10-02: "I'm up", split out of "I'm up, end night" - offered until the morning
-            // alarm rings, it starts the out-of-bed cycle early so Nap is available without waiting for the alarm.
+            // Owner spec, 2026-10-02: one choice at a time. "I'm up" while asleep (morning alarm or his own nap
+            // ahead); it starts the out-of-bed cycle, which then offers Nap and End night.
             if (state.showImUpButton && !state.endingNight && content !is NightScreenContent.MorningReport) {
                 PrimaryActionButton(text = stringResource(R.string.night_im_up), onClick = onRequestImUp)
             }
 
-            when (content) {
-                is NightScreenContent.MorningReport ->
+            when {
+                content is NightScreenContent.MorningReport ->
                     PrimaryActionButton(text = stringResource(R.string.action_done), onClick = onDone)
-                is NightScreenContent.Loading -> Unit
                 // Item 1: disabled and relabelled the instant "confirm" is tapped, for the whole ~3 s endNight
                 // takes - the owner tapped this twice on both real nights because it stayed enabled with no
                 // indication anything was happening.
-                else -> SecondaryActionButton(
-                    text = if (state.endingNight) stringResource(R.string.night_ending) else endActionLabel(state.endAction),
+                state.showEndNightButton || state.endingNight -> SecondaryActionButton(
+                    text = if (state.endingNight) stringResource(R.string.night_ending) else stringResource(R.string.night_end_night),
                     onClick = onRequestEndNight,
                     enabled = !state.endingNight,
                 )
@@ -161,9 +160,9 @@ fun NightScreen(
     if (state.confirmingEndNight && !state.endingNight) {
         // Owner request, 2026-10-02: the title alone, centred, no explanation underneath.
         ConfirmDialog(
-            title = stringResource(confirmDialogTitleResource(state.endAction)),
+            title = stringResource(R.string.night_confirm_end_title),
             message = null,
-            confirmText = endActionLabel(state.endAction),
+            confirmText = stringResource(R.string.night_end_night),
             dismissText = stringResource(R.string.action_cancel),
             onConfirm = onConfirmEndNight,
             onDismiss = onCancelEndNight,
@@ -197,14 +196,3 @@ private fun statusLineText(state: NightUiState): String = when {
     else -> stringResource(R.string.night_status_synced_ok, state.lastSyncTimeLabel.orEmpty())
 }
 
-@Composable
-private fun endActionLabel(action: EndNightAction): String = when (action) {
-    EndNightAction.STOP -> stringResource(R.string.night_stop_night)
-    EndNightAction.IM_UP -> stringResource(R.string.night_im_up_end_night)
-    EndNightAction.END -> stringResource(R.string.night_end_night)
-}
-
-private fun confirmDialogTitleResource(action: EndNightAction): Int = when (action) {
-    EndNightAction.STOP -> R.string.night_confirm_stop_title
-    EndNightAction.IM_UP, EndNightAction.END -> R.string.night_confirm_im_up_title
-}

@@ -11,7 +11,9 @@ import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.SleepState
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class BuildNightUiStateTest {
@@ -111,17 +113,16 @@ class BuildNightUiStateTest {
         assertEquals("03:20", content.alarmTimeLabel)
     }
 
-    @Test fun `the end-night action follows the mode, not the band's sleep state`() {
-        // N1 dropped the sleep state from the content dispatch entirely, leaving the mode as the only thing
-        // that picks the button's wording. NAP is the one mode reached only after the owner has already been
-        // woken once, whether the band currently reads AWAKE or ASLEEP.
+    @Test fun `before the morning alarm there is no End night, whatever the mode or the band's sleep state`() {
+        // Owner spec, 2026-10-02: one choice at a time - before the morning alarm the only button is I'm up,
+        // which leads to Nap or End night.
         val napPlan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = "2026-09-17T03:20", referenceOnset = "2026-09-17T03:00")
         val fullPlan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T07:00", referenceOnset = "2026-09-17T00:00", cycles = 5)
 
-        assertEquals(EndNightAction.IM_UP, endAction(testNightState(lastPlan = napPlan), SleepState.ASLEEP))
-        assertEquals(EndNightAction.IM_UP, endAction(testNightState(lastPlan = napPlan), SleepState.AWAKE))
-        assertEquals(EndNightAction.STOP, endAction(testNightState(lastPlan = fullPlan), SleepState.ASLEEP))
-        assertEquals(EndNightAction.STOP, endAction(testNightState(lastPlan = fullPlan), SleepState.AWAKE))
+        assertFalse(showsEndNight(testNightState(lastPlan = napPlan), SleepState.ASLEEP))
+        assertFalse(showsEndNight(testNightState(lastPlan = napPlan), SleepState.AWAKE))
+        assertFalse(showsEndNight(testNightState(lastPlan = fullPlan), SleepState.ASLEEP))
+        assertFalse(showsEndNight(testNightState(lastPlan = fullPlan), SleepState.AWAKE))
     }
 
     @Test fun `the pending nudge overrides an armed plan alarm when the nudge rings first (should-fix 1)`() {
@@ -173,13 +174,13 @@ class FinishedNightWithPendingNudgeTest {
         assertEquals("10 min", content.countdownLabel)
     }
 
-    @Test fun `that screen offers I'm up, end night rather than the bare End night`() {
+    @Test fun `that screen offers End night alongside the nudge`() {
         // The owner's own words on what he saw: "at the bottom, it didn't say that I'm awake and the night.
         // It's just like end night." With an alarm still coming, this is an ordinary live night as far as the
         // owner is concerned, so it gets the live night's own wording.
         val state = testNightState(lastPlan = finishedPlan)
 
-        assertEquals(EndNightAction.IM_UP, endActionWith(state, pendingOutOfBedNudgeAt = "2026-09-17T07:45"))
+        assertTrue(showsEndNightWith(state, pendingOutOfBedNudgeAt = "2026-09-17T07:45"))
     }
 
     @Test fun `a finished night with nothing armed still shows the finished screen`() {
@@ -190,7 +191,7 @@ class FinishedNightWithPendingNudgeTest {
         val content = uiState.content
         check(content is NightScreenContent.NightFinished) { "expected the finished screen, got $content" }
         assertEquals("Night finished, deadline was 07:30.", content.reasonText)
-        assertEquals(EndNightAction.END, uiState.endAction)
+        assertTrue(uiState.showEndNightButton)
     }
 
     @Test fun `a finished night whose nudge has already fired still shows the finished screen`() {
@@ -200,7 +201,7 @@ class FinishedNightWithPendingNudgeTest {
         val uiState = uiStateFor(state, now = "2026-09-17T07:50", pendingOutOfBedNudgeAt = "2026-09-17T07:45")
 
         check(uiState.content is NightScreenContent.NightFinished) { "expected the finished screen, got ${uiState.content}" }
-        assertEquals(EndNightAction.END, uiState.endAction)
+        assertTrue(uiState.showEndNightButton)
     }
 
     @Test fun `the morning report is never overridden by a pending nudge`() {
@@ -253,8 +254,8 @@ private fun nightContent(
     return content
 }
 
-private fun endAction(state: com.nikita.sleepcycle.night.NightState, sleepState: SleepState): EndNightAction =
-    uiStateFor(state, now = "2026-09-17T03:05", pendingOutOfBedNudgeAt = null, sleepState = sleepState).endAction
+private fun showsEndNight(state: com.nikita.sleepcycle.night.NightState, sleepState: SleepState): Boolean =
+    uiStateFor(state, now = "2026-09-17T03:05", pendingOutOfBedNudgeAt = null, sleepState = sleepState).showEndNightButton
 
-private fun endActionWith(state: com.nikita.sleepcycle.night.NightState, pendingOutOfBedNudgeAt: String): EndNightAction =
-    uiStateFor(state, now = "2026-09-17T07:35", pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt).endAction
+private fun showsEndNightWith(state: com.nikita.sleepcycle.night.NightState, pendingOutOfBedNudgeAt: String): Boolean =
+    uiStateFor(state, now = "2026-09-17T07:35", pendingOutOfBedNudgeAt = pendingOutOfBedNudgeAt).showEndNightButton

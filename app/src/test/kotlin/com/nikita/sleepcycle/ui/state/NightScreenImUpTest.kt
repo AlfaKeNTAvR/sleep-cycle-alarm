@@ -70,20 +70,49 @@ class NightScreenImUpTest {
         assertEquals(20, screen.napButtonMinutes)
     }
 
-    @Test fun `after I'm up the end button says End night even while the plan is still full cycles`() {
-        // Seen on the phone 2026-10-02: the plan stays FULL_CYCLES until the band reports him awake, so the
-        // button kept the mid-night "Stop night" wording although he had just said he was up.
-        val afterImUp = testNightState(
-            lastPlan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, cycles = 5),
-            morningAlarmAt = "2026-09-17T17:45",
-        ).copy(wakeAlarmFiredAt = instant("2026-09-17T10:01"))
-
-        assertEquals(EndNightAction.IM_UP, screenAt("2026-09-17T10:02", afterImUp, pendingNudge("2026-09-17T10:11")).endAction)
-    }
-
     @Test fun `a finished night offers no I'm up`() {
         val finished = testNightState(lastPlan = testAlarmPlan(mode = AlarmMode.FINISHED, reason = "Night finished, deadline was 09:00."))
 
         assertFalse(screenAt("2026-09-17T09:01", finished).showImUpButton)
+    }
+
+    // Owner spec, 2026-10-02: one choice at a time. Asleep (morning alarm or his own nap ahead): only I'm up.
+    // Up (the nudge ahead): Nap and End night.
+
+    @Test fun `while his own nap is pending the screen offers I'm up and no End night`() {
+        // Morning alarm rang 08:19, Nap pressed 08:20, nap rings 08:40.
+        val napping = testNightState(
+            lastPlan = testAlarmPlan(mode = AlarmMode.NAP, wakeAt = null),
+            morningAlarmAt = "2026-09-17T08:19",
+        ).copy(wakeAlarmFiredAt = instant("2026-09-17T08:19"))
+
+        val screen = screenAt("2026-09-17T08:25", napping, pendingNap("2026-09-17T08:40"))
+
+        assertTrue(screen.showImUpButton)
+        assertFalse(screen.showEndNightButton)
+    }
+
+    @Test fun `in the middle of the night there is no End night, only I'm up`() {
+        val asleep = testNightState(
+            lastPlan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = "2026-09-17T08:19", cycles = 2),
+            morningAlarmAt = "2026-09-17T08:19",
+        )
+
+        assertFalse(screenAt("2026-09-17T03:00", asleep).showEndNightButton)
+    }
+
+    @Test fun `with the nudge ahead the screen offers End night`() {
+        val up = testNightState(
+            lastPlan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, cycles = 5),
+            morningAlarmAt = "2026-09-17T17:45",
+        ).copy(wakeAlarmFiredAt = instant("2026-09-17T10:01"))
+
+        assertTrue(screenAt("2026-09-17T10:02", up, pendingNudge("2026-09-17T10:11")).showEndNightButton)
+    }
+
+    @Test fun `a finished night with nothing ahead offers End night`() {
+        val finished = testNightState(lastPlan = testAlarmPlan(mode = AlarmMode.FINISHED, reason = "Night finished, deadline was 09:00."))
+
+        assertTrue(screenAt("2026-09-17T09:01", finished).showEndNightButton)
     }
 }

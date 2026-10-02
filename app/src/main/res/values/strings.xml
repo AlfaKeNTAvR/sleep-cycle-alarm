@@ -86,8 +86,6 @@
     <string name="night_status_sync_failed">Sync failed at %1$s</string>
     <string name="night_status_data_stale">Data may be stale as of %1$s</string>
     <string name="night_loading">Getting the first reading…</string>
-    <string name="night_stop_night">Stop night</string>
-    <string name="night_im_up_end_night">End night</string>
     <string name="night_im_up">I\'m up</string>
     <string name="night_confirm_im_up_early_title">Are you up?</string>
     <string name="night_end_night">End night</string>
@@ -95,8 +93,7 @@
          this many minutes out. Exact wording set by the owner. -->
     <string name="night_nap_for_minutes">Nap for %1$d min</string>
     <string name="night_ending">Ending night…</string>
-    <string name="night_confirm_stop_title">Stop night?</string>
-    <string name="night_confirm_im_up_title">End night?</string>
+    <string name="night_confirm_end_title">End night?</string>
 
     <!-- Night screen: the label above the hero time (owner request, 09/21 review's must-fix 1) - what the
          owner sees when the engine has nothing armed at all, instead of a wrong alarm name. -->
