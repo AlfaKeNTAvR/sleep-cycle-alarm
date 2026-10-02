@@ -100,7 +100,7 @@ fun buildNightUiState(
         activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
         bandNotSyncingWarning = bandNotSyncingWarning,
-        napButtonMinutes = napButtonMinutes(pendingFollowUp, now, resolveEngineConfig(state.debugOptions)),
+        napButtonMinutes = napButtonMinutes(pendingFollowUp, now, resolveEngineConfig(state)),
         showImUpButton = showImUp,
         confirmingImUp = confirmingImUp,
     )

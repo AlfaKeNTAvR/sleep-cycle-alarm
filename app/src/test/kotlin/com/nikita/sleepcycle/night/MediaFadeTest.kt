@@ -10,12 +10,17 @@ import java.time.Instant
 class MediaFadeTest {
     private val pixelMaxStep = 25
 
-    @Test fun `a loud starting volume is lowered to about a quarter`() {
-        assertEquals(6, fadeStartStep(currentStep = 16, maxStep = pixelMaxStep))
+    @Test fun `a loud starting volume is lowered to the default quarter`() {
+        assertEquals(6, fadeStartStep(currentStep = 16, maxStep = pixelMaxStep, startPercent = 25))
     }
 
-    @Test fun `a volume already below a quarter is never raised`() {
-        assertEquals(4, fadeStartStep(currentStep = 4, maxStep = pixelMaxStep))
+    @Test fun `a volume already below the starting volume is never raised`() {
+        assertEquals(4, fadeStartStep(currentStep = 4, maxStep = pixelMaxStep, startPercent = 25))
+    }
+
+    @Test fun `the fade starts at the starting volume chosen in Settings`() {
+        assertEquals(3, fadeStartStep(currentStep = 20, maxStep = pixelMaxStep, startPercent = 10))
+        assertEquals(13, fadeStartStep(currentStep = 20, maxStep = pixelMaxStep, startPercent = 50))
     }
 
     private val nightStart = Instant.parse("2026-10-02T23:00:00Z")

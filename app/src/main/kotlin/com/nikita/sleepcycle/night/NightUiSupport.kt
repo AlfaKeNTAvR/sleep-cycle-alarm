@@ -44,7 +44,7 @@ data class NightEngineView(
  * picked length is exactly what is owed.
  */
 fun buildNightEngineView(state: NightState, now: Instant): NightEngineView {
-    val config = resolveEngineConfig(state.debugOptions)
+    val config = resolveEngineConfig(state)
     val timeline = normalizeSegments(state.lastSegments, now, config)
     val stretches = buildSleepStretches(timeline)
     val sleepState = detectSleepState(timeline)
@@ -64,14 +64,12 @@ fun buildNightEngineView(state: NightState, now: Instant): NightEngineView {
  * starts), resolved into an EngineConfig the same way as everywhere else via [resolveEngineConfig].
  */
 fun sleepLengthIsAvailable(cycles: Int, now: Instant, deadline: Instant?, debugOptions: DebugOptions = DebugOptions()): Boolean =
-    isSleepLengthAvailable(cycles, now, deadline, resolveEngineConfig(debugOptions))
+    isSleepLengthAvailable(cycles, now, deadline, resolveEngineConfig(debugOptions, AfterAlarmSettings()))
 
 /** The "Sleep up to" picker's cycle-count options, ascending. The same set (3/4/5/6) applies fast or real - only what each one means in wall-clock minutes changes (see [sleepLengthFor]). */
 val sleepLengthCycleOptions: List<Int> = EngineConfig().allowedCycleCounts.sorted()
 
 /** The wall-clock length of [cycles] sleep cycles, for picker labels like "7.5 h" (or, in a fast debug night, "9 min"). */
 fun sleepLengthFor(cycles: Int, debugOptions: DebugOptions = DebugOptions()): Duration =
-    resolveEngineConfig(debugOptions).cycleLength.multipliedBy(cycles.toLong())
+    resolveEngineConfig(debugOptions, AfterAlarmSettings()).cycleLength.multipliedBy(cycles.toLong())
 
-/** The nap length (rule 7), for the nap card's "Nap: 20 min" label (or the fast debug night's shorter one). */
-fun napLengthFor(debugOptions: DebugOptions = DebugOptions()): Duration = resolveEngineConfig(debugOptions).napLength

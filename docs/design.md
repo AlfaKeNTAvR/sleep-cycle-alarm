@@ -24,6 +24,22 @@ One screen whose content depends on the moment you look at it. Opening it syncs 
 - **Band not syncing (P1, owner decision 2026-09-30, "warn, still arm"):** while the last sync failed or returned only stale data, a red banner under the sync line reads "Band not syncing - alarm is only an estimate. Disconnect and reconnect the band in Gadgetbridge." The night keeps running and the estimated alarm stays armed as a backup; the banner disappears with the first sync that succeeds. On 2026-09-30 every sync timed out all night and only the small status line said so; Gadgetbridge showed the band connected (with no battery level), and reconnecting it was the fix.
 - **After an alarm rings (P3, owner spec, 2026-09-30).** Once the ring is stopped (or stops itself), the screen shows the out-of-bed nudge in the N1 layout - "Out-of-bed nudge", its time big, "in 10 min" - and at the bottom two stacked buttons: a filled amber **Nap for 20 min**, then the outlined **I'm up, end night**. Pressing Nap swaps the nudge for a nap alarm 20 min from the press (never later than a wake-by deadline still ahead) and the screen then reads "Nap alarm", its time, "in 20 min", with only **I'm up, end night** underneath. When that nap rings and is stopped, the nudge and the Nap button come back - as many times as he likes, no cap. Nothing here watches the band: he says when he naps. The alarm block stays centred on the screen exactly where it sits on every other Night screen; the buttons never push it up. Pressing Nap never ends the night; only **I'm up, end night** does.
 - **D. Morning:** total slept, each stretch with from-to times, length and cycles in parentheses (one decimal), note that the night log was saved. A night with no stretch at all says "No sleep recorded tonight" - unless its syncs were failing when it ended (P1), when it says "No band data reached the app: the band's syncs were failing", because the app never saw the band's data and cannot claim there was no sleep.
+- **D. Morning, rating (owner spec, 2026-10-02):** under the stretches, a "How did you sleep?" card with three faces, Good / Okay / Bad in green #7BC89A, amber #F0B75A and red #E0806E. Optional: Done without a tap skips it; tapping another face changes it. It replaces the "night log saved" note, which comes back when the rating is switched off or the night was started before the rating existed.
+
+## Settings (owner spec, 2026-10-02, option A)
+
+Section titles, no descriptions. Every change is saved at once.
+
+- **After the alarm:** Out-of-bed nudge, 5 to 15 min (default 10), measured from the ring's end. Nap length, 10 to 30 min in 5 min steps (default 20), used by both the Nap button and the engine's naps between cycles. Both apply from the next Start night.
+- **Bedtime audio:** Fade media volume (on/off), Starting volume 10 to 50% in 5% steps (default 25%), Pause media when asleep (on/off). The fade's 10 min hold and 5 min step stay hidden.
+- **Sleep rating:** Rate the night (on/off), Ask again later (on/off), Ask at (default 15:00).
+- **More:** Setup, Debug.
+
+A row whose switch above it is off stays visible, dimmed and inert.
+
+## Later rating notification
+
+At the "Ask at" time on the day the night ended, a notification: "Still feel the same about last night?" with "This morning you said Good." - or "How do you feel about last night?" when the morning rating was skipped. Three buttons, Good / Okay / Bad, rate without opening the app. Asked once per night; not asked when the night ended after that time or the time already passed.
 
 ## Alarm ring screen
 
@@ -42,7 +58,11 @@ The night history, not just an export list. Saved nights newest first, each row 
 - **Tapping a row** reopens that night as its own screen (below).
 - **The three-dot button on the right** of each row opens a menu: Share (the system share sheet) and Delete (one confirmation, then the file is gone). Chosen over long-press and over swipe-to-delete because it is the only one of the three you can see rather than have to guess.
 
+Rating chips (owner spec, 2026-10-02): after the size, one small colored chip per rating the night has - the one after End night first, then the later one. Nights from before the rating have none.
+
 ## Past night
+
+A "Your rating" card (owner spec, 2026-10-02) between the report and the Wake by card: two rows, "After End night, 07:52" and "Later in the day, 15:02", each three pill buttons that change that rating. A night from before the rating has no card.
 
 The same retrospective view D shows, for a night that ended earlier: total slept under "You slept", each stretch with from-to times, length and cycles, and below it that night's deadline ("Wake by") and picked length.
 

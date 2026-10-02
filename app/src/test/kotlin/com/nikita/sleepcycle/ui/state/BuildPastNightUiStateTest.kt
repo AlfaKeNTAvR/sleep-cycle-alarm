@@ -1,8 +1,11 @@
 package com.nikita.sleepcycle.ui.state
 
+import com.nikita.sleepcycle.night.NightRatings
 import com.nikita.sleepcycle.night.PastNightLog
 import com.nikita.sleepcycle.night.PastNightSummary
+import com.nikita.sleepcycle.night.RecordedRating
 import com.nikita.sleepcycle.night.RecordedStretch
+import com.nikita.sleepcycle.night.SleepRating
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -157,5 +160,32 @@ class BuildPastNightUiStateTest {
         val state = buildPastNightUiState(row(displayName = "2026-09-18 00:11"), log(detailed), TEST_ZONE)
 
         assertEquals("2026-09-18 00:11", state.title)
+    }
+
+    @Test
+    fun `a night from before the rating existed has no rating section`() {
+        assertNull(buildPastNightUiState(row(), log(detailed), TEST_ZONE).ratings)
+    }
+
+    @Test
+    fun `a rated night shows both ratings, each with the time it was given`() {
+        val ratings = NightRatings(
+            afterEndNight = RecordedRating(SleepRating.GOOD, Instant.parse("2026-09-18T05:52:00Z")),
+            later = RecordedRating(SleepRating.OKAY, Instant.parse("2026-09-18T13:02:00Z")),
+            laterAsked = true,
+        )
+
+        val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
+
+        assertEquals(PastNightRatingRow(SleepRating.GOOD, "07:52"), state.ratings?.afterEndNight)
+        assertEquals(PastNightRatingRow(SleepRating.OKAY, "15:02"), state.ratings?.later)
+    }
+
+    @Test
+    fun `a rateable night not rated yet still offers both ratings, empty`() {
+        val state = buildPastNightUiState(row(), log(detailed).copy(ratings = NightRatings(null, null, false)), TEST_ZONE)
+
+        assertEquals(PastNightRatingRow(rating = null, timeLabel = null), state.ratings?.afterEndNight)
+        assertEquals(PastNightRatingRow(rating = null, timeLabel = null), state.ratings?.later)
     }
 }

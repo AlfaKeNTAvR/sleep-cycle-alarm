@@ -39,6 +39,7 @@ private fun state(
     screen = screen,
     connectionTest = ConnectionTestState.Idle,
     nightLogFiles = emptyList(),
+    nightLogRatings = emptyMap(),
     confirmingEndNight = confirmingEndNight,
     showingMorningReport = showingMorningReport,
     morningReportEndedAt = morningReportEndedAt?.let(::instant),

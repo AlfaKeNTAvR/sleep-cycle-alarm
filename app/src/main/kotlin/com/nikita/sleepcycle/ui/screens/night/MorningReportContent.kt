@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.night.SleepRating
+import com.nikita.sleepcycle.ui.components.SleepRatingFaces
+import com.nikita.sleepcycle.ui.state.MorningRatingCard
 import com.nikita.sleepcycle.ui.components.CardDivider
 import com.nikita.sleepcycle.ui.components.HeroNumeral
 import com.nikita.sleepcycle.ui.components.SettingsCard
@@ -21,18 +24,41 @@ import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import com.nikita.sleepcycle.ui.theme.ScreenContentGap
 import com.nikita.sleepcycle.ui.theme.SmallNumeralStyle
 
-/** State D itself: the shared report body under this morning's greeting, plus the note that the log was saved. */
+/**
+ * State D itself: the shared report body under this morning's greeting, then either the "How did you sleep?"
+ * card ([rating] non-null - owner spec, 2026-10-02, it takes the place of the note) or the note that the log
+ * was saved (rating switched off, or a night started before the rating existed).
+ */
 @Composable
-fun MorningReportContent(content: NightScreenContent.MorningReport) {
+fun MorningReportContent(content: NightScreenContent.MorningReport, rating: MorningRatingCard?, onRate: (SleepRating) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         MorningReportBody(content = content, caption = stringResource(R.string.night_morning_greeting))
-        Text(
-            text = stringResource(R.string.night_morning_log_saved),
-            style = MaterialTheme.typography.bodySmall,
-            color = NightOnSurfaceMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (rating != null) {
+            SettingsCard {
+                Text(
+                    text = stringResource(R.string.rating_morning_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                SleepRatingFaces(selected = rating.selected, onPick = onRate)
+                Text(
+                    text = stringResource(if (rating.selected == null) R.string.rating_morning_hint else R.string.rating_morning_saved),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NightOnSurfaceMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Text(
+                text = stringResource(R.string.night_morning_log_saved),
+                style = MaterialTheme.typography.bodySmall,
+                color = NightOnSurfaceMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

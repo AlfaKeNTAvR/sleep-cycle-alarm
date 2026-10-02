@@ -263,7 +263,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // then, so the two readings would have differed by at most that same real sync duration anyway.
     val decisionNow = nowInstant()
 
-    val config = resolveEngineConfig(state.debugOptions)
+    val config = resolveEngineConfig(state)
     val appSettings = readAppSettings(context).first()
     val simulatedEvents = if (state.debugOptions.simulatedBandData) readSimulatedSleepEvents(context).first() else emptyList()
     val outcome = readBandDataForTick(context, state.debugOptions, appSettings, state, simulatedEvents, decisionNow)
@@ -315,7 +315,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     rearmNudgeIfNapCancelledWhileAwake(context, state, plan, outcome.segments, config, decisionNow)
 
     val sleepState = detectSleepState(normalizeSegments(outcome.segments, decisionNow, config))
-    if (sleepState == SleepState.ASLEEP) {
+    // Settings: with "Pause media when asleep" off, playback carries on and the fade keeps stepping down to its floor.
+    if (sleepState == SleepState.ASLEEP && appSettings.bedtimeAudio.pauseWhenAsleep) {
         pauseMediaIfJustFellAsleep(context, state, sleepState, config, decisionNow)
     } else {
         stepMediaFade(context, state.startedAt, decisionNow, debugNight)

@@ -4,6 +4,7 @@ package com.nikita.sleepcycle.ui.state
 // files themselves is Android/disk I/O and happens in the ViewModel via night.listNightLogs.
 
 import com.nikita.sleepcycle.night.NIGHT_LOG_SIMULATED_PREFIX
+import com.nikita.sleepcycle.night.NightRatings
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -14,15 +15,16 @@ private const val BYTES_PER_KILOBYTE = 1024.0
 private const val BYTES_PER_MEGABYTE = BYTES_PER_KILOBYTE * 1024.0
 private val LOG_DISPLAY_NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.US)
 
-/** Builds the Logs screen's state, newest first. */
-fun buildLogsUiState(logFiles: List<File>, zone: ZoneId): LogsUiState =
-    LogsUiState(logFiles.map { toLogSummary(it, zone) })
+/** Builds the Logs screen's state, newest first. [ratings] is each file's night ratings, read by the caller (absent or null: none). */
+fun buildLogsUiState(logFiles: List<File>, ratings: Map<File, NightRatings?>, zone: ZoneId): LogsUiState =
+    LogsUiState(logFiles.map { toLogSummary(it, ratings[it], zone) })
 
-private fun toLogSummary(file: File, zone: ZoneId): NightLogSummary = NightLogSummary(
+private fun toLogSummary(file: File, ratings: NightRatings?, zone: ZoneId): NightLogSummary = NightLogSummary(
     file = file,
     displayName = LOG_DISPLAY_NAME_FORMAT.withZone(zone).format(Instant.ofEpochMilli(file.lastModified())),
     sizeLabel = formatFileSize(file.length()),
     isSimulated = file.name.startsWith(NIGHT_LOG_SIMULATED_PREFIX),
+    ratingChips = listOfNotNull(ratings?.afterEndNight?.rating, ratings?.later?.rating),
 )
 
 private fun formatFileSize(bytes: Long): String = when {

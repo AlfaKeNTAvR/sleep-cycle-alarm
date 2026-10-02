@@ -1,7 +1,7 @@
 package com.nikita.sleepcycle.night
 
 // File purpose: the bedtime media fade - owner request, 2026-10-02. On Start night the media volume drops to
-// about a quarter (never raised), holds for 10 minutes, then loses one volume step every 5 minutes down to a
+// the Settings screen's starting volume (default 25%, never raised; the fade can be switched off), holds for 10 minutes, then loses one volume step every 5 minutes down to a
 // floor of about 5%, where it stays until the band says the owner is asleep (MediaPauseOnSleep.kt then pauses
 // playback and the original volume is put back). Steps ride on the night's own ticks, which run every 5
 // minutes for the first hour while the owner is not yet asleep, so a late tick makes its step late too.
@@ -16,8 +16,8 @@ import kotlin.math.roundToInt
 
 private const val LOG_TAG = "MediaFade"
 
-/** Fraction of the media volume range a fade starts at, at most. */
-private const val FADE_START_FRACTION = 0.25
+/** A whole volume range, in the percent the Settings screen's starting volume is given in. */
+private const val FULL_RANGE_PERCENT = 100.0
 
 /** Fraction of the media volume range a fade never goes below (at least one step, so playback stays audible). */
 private const val FADE_FLOOR_FRACTION = 0.05
@@ -28,9 +28,9 @@ private val FADE_HOLD: Duration = Duration.ofMinutes(10)
 /** How often the volume loses one more step after the hold. */
 private val FADE_STEP_EVERY: Duration = Duration.ofMinutes(5)
 
-/** The volume step a fade starts at: about a quarter of [maxStep], or [currentStep] if that is already lower. */
-fun fadeStartStep(currentStep: Int, maxStep: Int): Int =
-    minOf(currentStep, (maxStep * FADE_START_FRACTION).roundToInt())
+/** The volume step a fade starts at: [startPercent] of [maxStep] (the Settings screen's starting volume), or [currentStep] if that is already lower. */
+fun fadeStartStep(currentStep: Int, maxStep: Int, startPercent: Int): Int =
+    minOf(currentStep, (maxStep * startPercent / FULL_RANGE_PERCENT).roundToInt())
 
 /**
  * The volume step a fade begun at [startStep] at [startedAt] should be at by [now]: [startStep] through the
@@ -59,11 +59,11 @@ private const val MEDIA_FADE_FILE_NAME = "media_fade.txt"
  * Starts the fade at Start night: lowers the media volume to [fadeStartStep] and records the original. A fade
  * left over from a night that never ended cleanly is finished first, so its original volume is not lost.
  */
-fun startMediaFade(context: Context, nightStartedAt: Instant, now: Instant, debugNight: Boolean) {
+fun startMediaFade(context: Context, nightStartedAt: Instant, now: Instant, startPercent: Int, debugNight: Boolean) {
     endMediaFade(context, nightStartedAt, now, debugNight)
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return
     val originalStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val startStep = fadeStartStep(originalStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    val startStep = fadeStartStep(originalStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), startPercent)
     if (startStep != originalStep) audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, startStep, 0)
     saveMediaFade(context, MediaFadeRecord(originalStep, startStep, now, startStep))
     appendNightLog(

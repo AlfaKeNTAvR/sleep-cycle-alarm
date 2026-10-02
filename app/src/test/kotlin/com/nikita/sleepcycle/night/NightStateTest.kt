@@ -92,6 +92,21 @@ class NightStateTest {
     }
 
     @Test
+    fun `a night keeps the after-alarm settings it was started with`() {
+        val state = baseState().copy(afterAlarm = AfterAlarmSettings(nudgeMinutes = 6, napMinutes = 30))
+
+        assertEquals(state.afterAlarm, decodeNightState(encodeNightState(state)).afterAlarm)
+    }
+
+    @Test
+    fun `a night started before Settings existed runs with the default nudge and nap`() {
+        val json = fullStateJson()
+        json.remove("afterAlarm")
+
+        assertEquals(AfterAlarmSettings(), decodeNightState(json.toString()).afterAlarm)
+    }
+
+    @Test
     fun `decodes a state saved before debugOptions existed as all-off, same as a normal night`() {
         val json = fullStateJson()
         json.remove("debugOptions")

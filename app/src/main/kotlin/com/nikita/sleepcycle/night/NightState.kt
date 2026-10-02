@@ -98,7 +98,9 @@ data class NightState(
      * of a stale two-minute reprise of the alarm that just rang. Set by PhoneAlarmReceiver at fire time, same
      * as wakeAlarmFiredAt/napAlarmsUsed - see PhoneAlarmFiredStore.kt.
      */
-    val lastNapAlarmFiredAt: Instant? = null
+    val lastNapAlarmFiredAt: Instant? = null,
+    /** Owner spec, 2026-10-02: the Settings screen's nudge and nap length, captured once at Start night like [debugOptions], so a change in Settings applies from the next night on. A state saved before Settings existed decodes as the defaults, which are exactly the timing it was started with. */
+    val afterAlarm: AfterAlarmSettings = AfterAlarmSettings()
 )
 
 /** Turns a night state into its JSON text form, the inverse of [decodeNightState]. */
@@ -119,6 +121,7 @@ fun encodeNightState(state: NightState): String {
     json.put("wakeAlarmFiredAt", state.wakeAlarmFiredAt?.toString() ?: JSONObject.NULL)
     json.put("morningAlarmAt", state.morningAlarmAt?.toString() ?: JSONObject.NULL)
     json.put("lastNapAlarmFiredAt", state.lastNapAlarmFiredAt?.toString() ?: JSONObject.NULL)
+    json.put("afterAlarm", encodeAfterAlarmSettings(state.afterAlarm))
     return json.toString()
 }
 
@@ -165,8 +168,27 @@ fun decodeNightState(text: String): NightState {
         // H2: same non-tolerant style, but this one IS re-merged fresh from PhoneAlarmFiredStore.kt on every
         // load (see loadNightState) - this blob copy is only ever a fallback for a state file saved before
         // this field existed (absent, decodes as null).
-        lastNapAlarmFiredAt = json.optStringOrNull("lastNapAlarmFiredAt")?.let(Instant::parse)
+        lastNapAlarmFiredAt = json.optStringOrNull("lastNapAlarmFiredAt")?.let(Instant::parse),
+        afterAlarm = decodeAfterAlarmSettingsTolerant(json.optJSONObject("afterAlarm"))
     )
+}
+
+private fun encodeAfterAlarmSettings(settings: AfterAlarmSettings): JSONObject = JSONObject().apply {
+    put("nudgeMinutes", settings.nudgeMinutes)
+    put("napMinutes", settings.napMinutes)
+}
+
+/** Absent (a state saved before Settings existed) or malformed decodes as the defaults, the timing every such night actually ran with; a value outside the Settings limits is held inside them. */
+private fun decodeAfterAlarmSettingsTolerant(json: JSONObject?): AfterAlarmSettings {
+    if (json == null) return AfterAlarmSettings()
+    return try {
+        AfterAlarmSettings(
+            nudgeMinutes = clampSetting(SettingStepper.NUDGE_MINUTES, json.getInt("nudgeMinutes")),
+            napMinutes = clampSetting(SettingStepper.NAP_MINUTES, json.getInt("napMinutes")),
+        )
+    } catch (error: Exception) {
+        AfterAlarmSettings()
+    }
 }
 
 /** G6: absent (a state file written before D5) decodes as 0; present but not a JSON number decodes as 0 too, rather than throwing the whole state away - napAlarmsUsed has an obvious safe default, the same reasoning [decodeDebugOptionsTolerant] uses. */

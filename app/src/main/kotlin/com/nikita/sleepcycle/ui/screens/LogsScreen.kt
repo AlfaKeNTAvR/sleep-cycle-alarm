@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.SleepRatingChip
 import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DotsButton
@@ -77,7 +78,11 @@ fun LogsScreen(
                                 )
                             }
                         }
-                        Text(text = log.sizeLabel, style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)
+                        // Owner spec, 2026-10-02: the night's ratings as chips after the size - after End night first, then the later one.
+                        Row(horizontalArrangement = Arrangement.spacedBy(LogTitleRowGap), verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = log.sizeLabel, style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)
+                            log.ratingChips.forEach { SleepRatingChip(it) }
+                        }
                     }
                     LogActionsMenu(
                         expanded = openMenuLogName == log.file.name,

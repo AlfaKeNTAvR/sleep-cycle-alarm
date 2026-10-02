@@ -24,6 +24,7 @@ private fun beforeBedWith(
     screen = Screen.BeforeBed,
     connectionTest = connectionTest,
     nightLogFiles = emptyList(),
+    nightLogRatings = emptyMap(),
     confirmingEndNight = false,
     showingMorningReport = false,
     morningReportEndedAt = null,

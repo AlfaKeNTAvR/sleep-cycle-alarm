@@ -115,7 +115,7 @@ private fun segmentLogEntry(segment: SleepSegment): JSONObject = JSONObject().ap
  * that answers "was this before or after the alarm" without any further cross-referencing.
  */
 private fun logAwakeningChanges(context: Context, state: NightState, outcome: SyncOutcome, now: Instant, debugNight: Boolean) {
-    val config = resolveEngineConfig(state.debugOptions)
+    val config = resolveEngineConfig(state)
     val delta = detectAwakeningsThisTick(state.lastSegments, outcome.segments, now, config, state.wakeAlarmFiredAt)
     delta.closed.forEach { awakening ->
         appendNightLog(context, state.startedAt, NightLogEvent(now, "awakening_ended", encodeAwakeningEndedFields(awakening)), debugNight)

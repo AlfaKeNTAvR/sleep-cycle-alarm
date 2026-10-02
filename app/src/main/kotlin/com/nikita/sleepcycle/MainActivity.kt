@@ -57,6 +57,8 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val setupWizardPage by viewModel.setupWizardPage.collectAsState()
     val pastNight by viewModel.pastNight.collectAsState()
+    val settings by viewModel.settings.collectAsState()
+    val morningRating by viewModel.morningRating.collectAsState()
 
     LifecycleResumeEffect(Unit) {
         viewModel.setScreenVisible(true)
@@ -69,11 +71,19 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
             ErrorBanner(message = uiState.errorMessage, onDismiss = viewModel::clearErrorMessage)
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when (uiState.screen) {
-                    is Screen.Settings -> SettingsScreen(
-                        onOpenSetup = viewModel::openSetup,
-                        onOpenDebug = viewModel::openDebug,
-                        onBack = viewModel::closeSettings,
-                    )
+                    is Screen.Settings -> settings?.let { saved ->
+                        SettingsScreen(
+                            afterAlarm = saved.afterAlarm,
+                            bedtimeAudio = saved.bedtimeAudio,
+                            sleepRating = saved.sleepRating,
+                            onAfterAlarmChange = viewModel::setAfterAlarmSettings,
+                            onBedtimeAudioChange = viewModel::setBedtimeAudioSettings,
+                            onSleepRatingChange = viewModel::setSleepRatingSettings,
+                            onOpenSetup = viewModel::openSetup,
+                            onOpenDebug = viewModel::openDebug,
+                            onBack = viewModel::closeSettings,
+                        )
+                    }
                     is Screen.Setup -> SetupScreen(
                         state = uiState.setup,
                         wizardPage = setupWizardPage,
@@ -111,6 +121,8 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                             onConfirmImUp = viewModel::confirmImUp,
                             onCancelImUp = viewModel::cancelImUp,
                             onDone = viewModel::finishMorningReport,
+                            morningRating = morningRating,
+                            onRateMorning = viewModel::rateMorning,
                             onSpeedChange = viewModel::setSpeed,
                             onSetSimulatedAsleep = viewModel::setSimulatedAsleep,
                             onOpenDebug = viewModel::openDebug,
@@ -124,7 +136,7 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                         onBack = viewModel::closeLogs,
                     )
                     is Screen.PastNight -> pastNight?.let { night ->
-                        PastNightScreen(state = night, onBack = viewModel::closePastNight)
+                        PastNightScreen(state = night, onBack = viewModel::closePastNight, onRate = viewModel::ratePastNight)
                     }
                     is Screen.Debug -> DebugScreen(
                         state = uiState.debug,

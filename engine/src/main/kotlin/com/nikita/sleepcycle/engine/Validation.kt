@@ -15,11 +15,9 @@ internal fun validateConfig(config: EngineConfig) {
     require(config.outOfBedDelay > Duration.ZERO) { "outOfBedDelay must be positive" }
     require(config.ringAutoStopAfter > Duration.ZERO) { "ringAutoStopAfter must be positive" }
     require(config.preNudgeCheckLead > Duration.ZERO) { "preNudgeCheckLead must be positive" }
-    // F1: enforced, not coincidental - see EngineConfig.ringAutoStopAfter's own doc for why this must hold.
-    require(config.outOfBedDelay > config.ringAutoStopAfter) {
-        "outOfBedDelay must be strictly greater than ringAutoStopAfter, or the out-of-bed nudge can fire while " +
-            "the wake alarm's own auto-stop is about to tear the still-ringing service down"
-    }
+    // F1's outOfBedDelay > ringAutoStopAfter rule is gone (owner spec, 2026-10-02): since P3 the nudge is
+    // measured from the ring's END, so it can no longer land while the ring is still sounding, and the Settings
+    // screen offers nudges from 5 min, shorter than the 9 min auto-stop.
     // H7.3: enforced, not coincidental - see EngineConfig.preNudgeCheckLead's own doc for why this must hold.
     require(config.outOfBedDelay > config.preNudgeCheckLead) {
         "outOfBedDelay must be strictly greater than preNudgeCheckLead, or the pre-nudge check would land at " +

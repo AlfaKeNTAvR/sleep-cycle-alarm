@@ -41,52 +41,59 @@ fun MediumTimeText(time: LocalTime, enabled: Boolean, onTimeChange: (LocalTime) 
             .clickable(enabled = enabled) { showPicker = true },
     )
     if (showPicker) {
-        val pickerState = rememberTimePickerState(initialHour = time.hour, initialMinute = time.minute, is24Hour = true)
-        // Explicit colors throughout: Material 3's own TimePicker/AlertDialog defaults reach for colorScheme
-        // slots (e.g. primaryContainer) this theme did not always define, which rendered as stock Material
-        // purple instead of the app's dark-amber palette (see Theme.kt for the underlying colorScheme fix).
-        // Passing everything here explicitly keeps this dialog correct even if a future colorScheme edit
-        // leaves a slot unset again.
-        val buttonColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-        AlertDialog(
-            onDismissRequest = { showPicker = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurface,
-            confirmButton = {
-                TextButton(
-                    colors = buttonColors,
-                    onClick = {
-                        onTimeChange(LocalTime.of(pickerState.hour, pickerState.minute))
-                        showPicker = false
-                    },
-                ) { Text(stringResource(R.string.action_done)) }
-            },
-            dismissButton = {
-                TextButton(colors = buttonColors, onClick = { showPicker = false }) { Text(stringResource(R.string.action_cancel)) }
-            },
-            text = {
-                TimePicker(
-                    state = pickerState,
-                    colors = TimePickerDefaults.colors(
-                        clockDialColor = MaterialTheme.colorScheme.surfaceVariant,
-                        clockDialSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
-                        clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
-                        selectorColor = MaterialTheme.colorScheme.primary,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        periodSelectorBorderColor = MaterialTheme.colorScheme.outline,
-                        periodSelectorSelectedContainerColor = MaterialTheme.colorScheme.primary,
-                        periodSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
-                        periodSelectorUnselectedContainerColor = Color.Transparent,
-                        periodSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // The selected hour/minute block: the one slot the owner saw render purple.
-                        timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        timeSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        timeSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                )
-            },
-        )
+        AppTimePickerDialog(time = time, onTimeChange = onTimeChange, onDismiss = { showPicker = false })
     }
+}
+
+/** The app's 24-hour time picker dialog: [onTimeChange] with the picked time on Done, then [onDismiss]; Cancel only dismisses. Shared by the deadline and the Settings screen's "Ask at". */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppTimePickerDialog(time: LocalTime, onTimeChange: (LocalTime) -> Unit, onDismiss: () -> Unit) {
+    val pickerState = rememberTimePickerState(initialHour = time.hour, initialMinute = time.minute, is24Hour = true)
+    // Explicit colors throughout: Material 3's own TimePicker/AlertDialog defaults reach for colorScheme
+    // slots (e.g. primaryContainer) this theme did not always define, which rendered as stock Material
+    // purple instead of the app's dark-amber palette (see Theme.kt for the underlying colorScheme fix).
+    // Passing everything here explicitly keeps this dialog correct even if a future colorScheme edit
+    // leaves a slot unset again.
+    val buttonColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        confirmButton = {
+            TextButton(
+                colors = buttonColors,
+                onClick = {
+                    onTimeChange(LocalTime.of(pickerState.hour, pickerState.minute))
+                    onDismiss()
+                },
+            ) { Text(stringResource(R.string.action_done)) }
+        },
+        dismissButton = {
+            TextButton(colors = buttonColors, onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+        text = {
+            TimePicker(
+                state = pickerState,
+                colors = TimePickerDefaults.colors(
+                    clockDialColor = MaterialTheme.colorScheme.surfaceVariant,
+                    clockDialSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
+                    selectorColor = MaterialTheme.colorScheme.primary,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    periodSelectorBorderColor = MaterialTheme.colorScheme.outline,
+                    periodSelectorSelectedContainerColor = MaterialTheme.colorScheme.primary,
+                    periodSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
+                    periodSelectorUnselectedContainerColor = Color.Transparent,
+                    periodSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // The selected hour/minute block: the one slot the owner saw render purple.
+                    timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    timeSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    timeSelectorUnselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    timeSelectorUnselectedContentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
+        },
+    )
 }

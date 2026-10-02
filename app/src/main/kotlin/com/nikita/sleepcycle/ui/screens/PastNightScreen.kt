@@ -4,6 +4,7 @@ package com.nikita.sleepcycle.ui.screens
 // under this night's own date, plus the deadline and picked length that night ran under.
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -13,6 +14,10 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.night.RatingMoment
+import com.nikita.sleepcycle.night.SleepRating
+import com.nikita.sleepcycle.ui.components.SleepRatingPills
+import com.nikita.sleepcycle.ui.state.PastNightRatingRow
 import com.nikita.sleepcycle.ui.components.CardDivider
 import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.LabeledValueRow
@@ -27,7 +32,7 @@ private val TitleRowGap = 6.dp
 
 /** One past night: its report if the log recorded one, and an honest line about what is missing if it did not. */
 @Composable
-fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit) {
+fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit, onRate: (RatingMoment, SleepRating) -> Unit) {
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TitleRowGap)) {
             BackArrowButton(
@@ -55,6 +60,24 @@ fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit) {
                 )
             }
         }
+        // Owner spec, 2026-10-02: both ratings, each changeable; a night from before the rating has no card.
+        state.ratings?.let { ratings ->
+            SettingsCard {
+                Text(text = stringResource(R.string.rating_past_title), style = MaterialTheme.typography.titleMedium)
+                PastNightRatingRowView(
+                    title = ratings.afterEndNight.timeLabel?.let { stringResource(R.string.rating_past_after_end_night_at, it) }
+                        ?: stringResource(R.string.rating_past_after_end_night),
+                    row = ratings.afterEndNight,
+                    onPick = { onRate(RatingMoment.AFTER_END_NIGHT, it) },
+                )
+                PastNightRatingRowView(
+                    title = ratings.later.timeLabel?.let { stringResource(R.string.rating_past_later_at, it) }
+                        ?: stringResource(R.string.rating_past_later),
+                    row = ratings.later,
+                    onPick = { onRate(RatingMoment.LATER, it) },
+                )
+            }
+        }
         if (state.deadlineTimeLabel != null || state.pickedLengthLabel != null) {
             SettingsCard {
                 if (state.deadlineTimeLabel != null) {
@@ -66,5 +89,14 @@ fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** One rating row on Past night: its title (when it was given) over the three pills. */
+@Composable
+private fun PastNightRatingRowView(title: String, row: PastNightRatingRow, onPick: (SleepRating) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(TitleRowGap)) {
+        Text(text = title, style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)
+        SleepRatingPills(selected = row.rating, onPick = onPick)
     }
 }

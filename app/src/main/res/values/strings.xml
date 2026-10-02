@@ -243,4 +243,39 @@
     <string name="setup_wizard_phone_permissions_title">Phone permissions</string>
 
     <string name="setup_wizard_test_connection_title">Test connection</string>
+
+    <!-- Settings screen, option A (owner spec, 2026-10-02): section titles, no descriptions. -->
+    <string name="settings_section_after_alarm">After the alarm</string>
+    <string name="settings_nudge">Out-of-bed nudge</string>
+    <string name="settings_nap_length">Nap length</string>
+    <string name="settings_section_bedtime_audio">Bedtime audio</string>
+    <string name="settings_fade">Fade media volume</string>
+    <string name="settings_fade_start">Starting volume</string>
+    <string name="settings_pause_when_asleep">Pause media when asleep</string>
+    <string name="settings_section_rating">Sleep rating</string>
+    <string name="settings_rate_night">Rate the night</string>
+    <string name="settings_ask_again_later">Ask again later</string>
+    <string name="settings_ask_at">Ask at</string>
+    <string name="settings_section_more">More</string>
+    <string name="settings_minutes_value">%1$d min</string>
+    <string name="settings_percent_value">%1$d%%</string>
+    <string name="content_description_less">Less</string>
+    <string name="content_description_more">More</string>
+
+    <!-- Sleep rating (owner spec, 2026-10-02). -->
+    <string name="rating_good">Good</string>
+    <string name="rating_okay">Okay</string>
+    <string name="rating_bad">Bad</string>
+    <string name="rating_morning_title">How did you sleep?</string>
+    <string name="rating_morning_hint">Optional. Done skips it.</string>
+    <string name="rating_morning_saved">Saved. Change it any time in Night logs.</string>
+    <string name="rating_past_title">Your rating</string>
+    <string name="rating_past_after_end_night">After End night</string>
+    <string name="rating_past_after_end_night_at">After End night, %1$s</string>
+    <string name="rating_past_later">Later in the day</string>
+    <string name="rating_past_later_at">Later in the day, %1$s</string>
+    <string name="rating_channel_name">Sleep rating</string>
+    <string name="rating_later_title_still_same">Still feel the same about last night?</string>
+    <string name="rating_later_title_how_do_you_feel">How do you feel about last night?</string>
+    <string name="rating_later_body_morning_said">This morning you said %1$s.</string>
 </resources>

@@ -4,6 +4,7 @@ package com.nikita.sleepcycle.ui.state
 // file is disk I/O and happens in the ViewModel via night.readPastNightLog.
 
 import com.nikita.sleepcycle.night.PastNightLog
+import com.nikita.sleepcycle.night.RecordedRating
 import com.nikita.sleepcycle.night.PastNightSummary
 import com.nikita.sleepcycle.night.RecordedStretch
 import com.nikita.sleepcycle.night.sleepLengthFor
@@ -27,6 +28,7 @@ fun buildPastNightUiState(row: NightLogSummary, log: PastNightLog, zone: ZoneId)
     deadlineTimeLabel = log.deadline?.let { formatClockTime(it, zone) },
     pickedLengthLabel = log.pickedCycles?.let { pickedLengthLabel(it) },
     recordedStretchCount = (log.summary as? PastNightSummary.TotalOnly)?.stretchCount,
+    ratings = log.ratings?.let { PastNightRatings(toRatingRow(it.afterEndNight, zone), toRatingRow(it.later, zone)) },
 )
 
 private fun toMorningReport(log: PastNightLog, zone: ZoneId): NightScreenContent.MorningReport? = when (val summary = log.summary) {
@@ -63,6 +65,9 @@ private fun morningReport(
     stretches = stretches,
     stretchDetailRecorded = stretchDetailRecorded,
 )
+
+private fun toRatingRow(recorded: RecordedRating?, zone: ZoneId): PastNightRatingRow =
+    PastNightRatingRow(rating = recorded?.rating, timeLabel = recorded?.let { formatClockTime(it.at, zone) })
 
 private fun toStretchLine(stretch: RecordedStretch, zone: ZoneId): StretchLine = StretchLine(
     startTimeLabel = formatClockTime(stretch.onset, zone),

@@ -38,6 +38,12 @@ import com.nikita.sleepcycle.ui.state.DebugUiState
 
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
+import com.nikita.sleepcycle.ui.state.MorningRatingCard
+import com.nikita.sleepcycle.night.SleepRating
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.nikita.sleepcycle.ui.theme.ScreenBottomPadding
 import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
 
@@ -54,6 +60,8 @@ fun NightScreen(
     onConfirmImUp: () -> Unit,
     onCancelImUp: () -> Unit,
     onDone: () -> Unit,
+    morningRating: MorningRatingCard?,
+    onRateMorning: (SleepRating) -> Unit,
     onSpeedChange: (Int) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
     onOpenDebug: () -> Unit = {},
@@ -90,8 +98,14 @@ fun NightScreen(
 
             val content = state.content
             if (content is NightScreenContent.MorningReport) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                    MorningReportContent(content)
+                // Centred while it fits; scrolls once the rating card makes a many-stretch night taller than the screen.
+                BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        MorningReportContent(content, morningRating, onRateMorning)
+                    }
                 }
             } else {
                 Spacer(modifier = Modifier.weight(1f))

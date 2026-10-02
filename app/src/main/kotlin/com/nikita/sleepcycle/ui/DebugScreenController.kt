@@ -18,6 +18,7 @@ package com.nikita.sleepcycle.ui
 
 import android.content.Context
 import com.nikita.sleepcycle.BuildConfig
+import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightLogEvent
@@ -271,7 +272,7 @@ class DebugScreenController(private val context: Context, private val scope: Cor
             updateSimulatedSleepEvents(context) { stored -> appendSimulatedSleepEvent(stored, kind, at) }
             runImmediateTick(context)
             if (kind == SimulatedSleepEventKind.AWAKE) {
-                scheduleTick(context, at + resolveEngineConfig(effectiveOptions()).minAwakening + DEBOUNCE_RETICK_MARGIN)
+                scheduleTick(context, at + resolveEngineConfig(effectiveOptions(), AfterAlarmSettings()).minAwakening + DEBOUNCE_RETICK_MARGIN)
             }
         }
     }
