@@ -8,8 +8,10 @@ import android.util.Log
 import org.json.JSONObject
 import java.io.File
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 private const val LOG_TAG = "NightLog"
 private const val NIGHT_LOGS_DIR_NAME = "nightlogs"
@@ -116,10 +118,25 @@ private const val NIGHT_LOG_REAL_PREFIX = "night-"
 
 /** Lists saved night log files, newest first, for the Logs screen. */
 fun listNightLogs(context: Context): List<File> =
-    nightLogsDir(context).listFiles()
-        ?.filter { it.isFile && it.name != SETUP_LOG_FILE_NAME }
-        ?.sortedByDescending { it.lastModified() }
-        ?: emptyList()
+    sortNightLogsNewestFirst(nightLogsDir(context).listFiles()?.filter { it.isFile && it.name != SETUP_LOG_FILE_NAME } ?: emptyList())
+
+/**
+ * [files] newest night first, by when each night STARTED (owner request, 2026-10-02) - its file name - not by
+ * when the file was last written: a rating appended to an old night (Past night, or the later question) would
+ * otherwise move it to the top. A name carrying no start sorts by its last write instead.
+ */
+fun sortNightLogsNewestFirst(files: List<File>): List<File> =
+    files.sortedByDescending { file -> nightLogStartLocalTime(file.name)?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.ofEpochMilli(file.lastModified()) }
+
+/** The local date and time a night started, read back from its log file's name ([nightLogFile]), or null when the name does not carry one. */
+fun nightLogStartLocalTime(fileName: String): LocalDateTime? {
+    val stamp = fileName.removePrefix(NIGHT_LOG_SIMULATED_PREFIX).removePrefix(NIGHT_LOG_REAL_PREFIX).removeSuffix(".jsonl")
+    return try {
+        LocalDateTime.parse(stamp, LOG_FILE_NAME_FORMAT)
+    } catch (error: DateTimeParseException) {
+        null
+    }
+}
 
 /** Deletes one saved night log, for the Logs screen's delete action. Returns false, with the cause logged, if the file is still there afterwards. */
 fun deleteNightLog(file: File): Boolean {

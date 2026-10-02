@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.NIGHT_LOG_SIMULATED_PREFIX
 import com.nikita.sleepcycle.night.NightRatings
+import com.nikita.sleepcycle.night.nightLogStartLocalTime
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -21,7 +22,9 @@ fun buildLogsUiState(logFiles: List<File>, ratings: Map<File, NightRatings?>, zo
 
 private fun toLogSummary(file: File, ratings: NightRatings?, zone: ZoneId): NightLogSummary = NightLogSummary(
     file = file,
-    displayName = LOG_DISPLAY_NAME_FORMAT.withZone(zone).format(Instant.ofEpochMilli(file.lastModified())),
+    // Owner request, 2026-10-02: when the night started (from the file name), not when its log was last written.
+    displayName = nightLogStartLocalTime(file.name)?.let(LOG_DISPLAY_NAME_FORMAT::format)
+        ?: LOG_DISPLAY_NAME_FORMAT.withZone(zone).format(Instant.ofEpochMilli(file.lastModified())),
     sizeLabel = formatFileSize(file.length()),
     isSimulated = file.name.startsWith(NIGHT_LOG_SIMULATED_PREFIX),
     ratingChips = listOfNotNull(ratings?.afterEndNight?.rating, ratings?.later?.rating),

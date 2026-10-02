@@ -53,7 +53,7 @@ The out-of-bed nudge is the same screen with different wording ("Time to get up"
 
 ## Logs
 
-The night history, not just an export list. Saved nights newest first, each row showing the night's date and time, its size, and a "simulated" tag where it applies.
+The night history, not just an export list. Saved nights newest first by when they started, each row showing the night's start date and time (owner request, 2026-10-02: not when its log was last written), its size, and a "simulated" tag where it applies.
 
 - **Tapping a row** reopens that night as its own screen (below).
 - **The three-dot button on the right** of each row opens a menu: Share (the system share sheet) and Delete (one confirmation, then the file is gone). Chosen over long-press and over swipe-to-delete because it is the only one of the three you can see rather than have to guess.
