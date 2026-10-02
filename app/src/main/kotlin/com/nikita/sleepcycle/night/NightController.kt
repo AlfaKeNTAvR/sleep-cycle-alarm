@@ -138,6 +138,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
                 debugOptions.isAnyEnabled
             )
             logAlarmReadiness(context, now, debugOptions.isAnyEnabled)
+            startMediaFade(context, now, now, debugOptions.isAnyEnabled)
         }
         startNightServiceForTick(context)
     }
@@ -200,6 +201,7 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
         appendNightLog(context, state.startedAt, NightLogEvent(now, "night_end", nightEndFields(state, now)), state.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, state, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
+        endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
     }
     cancelTick(context)
     cancelPhoneAlarm(context)

@@ -315,7 +315,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     rearmNudgeIfNapCancelledWhileAwake(context, state, plan, outcome.segments, config, decisionNow)
 
     val sleepState = detectSleepState(normalizeSegments(outcome.segments, decisionNow, config))
-    pauseMediaIfJustFellAsleep(context, state, sleepState, config, decisionNow)
+    if (sleepState == SleepState.ASLEEP) {
+        pauseMediaIfJustFellAsleep(context, state, sleepState, config, decisionNow)
+    } else {
+        stepMediaFade(context, state.startedAt, decisionNow, debugNight)
+    }
 
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are
     // PhoneAlarmReceiver's own bookkeeping (see PhoneAlarmFiredStore.kt) - a tick only ever reads them
@@ -361,6 +365,10 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
  * Owner request, 2026-10-02: pauses whatever media is playing on the tick that first sees the band say ASLEEP
  * (see MediaPauseOnSleep.kt). The previous state is rebuilt from the last tick's own segments at its own sync
  * instant, so a kept (stale) sync can never pause twice, and only a real change into ASLEEP counts.
+ *
+ * Once playback is stopped (or nothing was playing) the bedtime fade ends and the owner's volume is put back
+ * (MediaFade.kt). An app that ignored the pause keeps the faded volume instead, so restoring it can never
+ * turn up something still playing; the fade then ends with the night.
  */
 private suspend fun pauseMediaIfJustFellAsleep(context: Context, state: NightState, sleepState: SleepState, config: EngineConfig, now: Instant) {
     val previousSleepState = detectSleepState(normalizeSegments(state.lastSegments, state.lastSyncAt ?: now, config))
@@ -372,6 +380,7 @@ private suspend fun pauseMediaIfJustFellAsleep(context: Context, state: NightSta
         NightLogEvent(now, "media_pause_on_sleep", mapOf("result" to result.name.lowercase())),
         state.debugOptions.isAnyEnabled
     )
+    if (result != MediaPauseResult.STILL_PLAYING) endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
 }
 
 /**
