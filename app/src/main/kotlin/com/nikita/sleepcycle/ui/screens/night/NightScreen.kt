@@ -151,7 +151,7 @@ fun NightScreen(
     if (state.confirmingImUp && !state.endingNight) {
         ConfirmDialog(
             title = stringResource(R.string.night_confirm_im_up_early_title),
-            message = stringResource(R.string.night_confirm_im_up_early_message),
+            message = null,
             confirmText = stringResource(R.string.night_im_up),
             dismissText = stringResource(R.string.action_cancel),
             onConfirm = onConfirmImUp,

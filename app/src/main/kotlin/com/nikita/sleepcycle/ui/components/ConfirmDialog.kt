@@ -8,12 +8,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 
 /** A yes/no confirmation dialog. Colors are explicit rather than left to Material defaults - see TimePickerField.kt for why. */
 @Composable
 fun ConfirmDialog(
     title: String,
-    message: String,
+    /** Null shows the title alone, centred - the "I'm up" dialog, owner request 2026-10-02. */
+    message: String?,
     confirmText: String,
     dismissText: String,
     onConfirm: () -> Unit,
@@ -24,8 +28,10 @@ fun ConfirmDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text(title) },
-        text = { Text(message) },
+        title = {
+            if (message == null) Text(title, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) else Text(title)
+        },
+        text = message?.let { { Text(it) } },
         confirmButton = {
             TextButton(
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),

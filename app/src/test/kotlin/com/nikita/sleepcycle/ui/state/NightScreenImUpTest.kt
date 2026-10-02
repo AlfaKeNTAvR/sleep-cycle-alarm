@@ -70,6 +70,17 @@ class NightScreenImUpTest {
         assertEquals(20, screen.napButtonMinutes)
     }
 
+    @Test fun `after I'm up the end button says End night even while the plan is still full cycles`() {
+        // Seen on the phone 2026-10-02: the plan stays FULL_CYCLES until the band reports him awake, so the
+        // button kept the mid-night "Stop night" wording although he had just said he was up.
+        val afterImUp = testNightState(
+            lastPlan = testAlarmPlan(mode = AlarmMode.FULL_CYCLES, wakeAt = null, cycles = 5),
+            morningAlarmAt = "2026-09-17T17:45",
+        ).copy(wakeAlarmFiredAt = instant("2026-09-17T10:01"))
+
+        assertEquals(EndNightAction.IM_UP, screenAt("2026-09-17T10:02", afterImUp, pendingNudge("2026-09-17T10:11")).endAction)
+    }
+
     @Test fun `a finished night offers no I'm up`() {
         val finished = testNightState(lastPlan = testAlarmPlan(mode = AlarmMode.FINISHED, reason = "Night finished, deadline was 09:00."))
 

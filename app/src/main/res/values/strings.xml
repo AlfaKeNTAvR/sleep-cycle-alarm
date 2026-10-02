@@ -89,8 +89,7 @@
     <string name="night_stop_night">Stop night</string>
     <string name="night_im_up_end_night">End night</string>
     <string name="night_im_up">I\'m up</string>
-    <string name="night_confirm_im_up_early_title">You\'re up?</string>
-    <string name="night_confirm_im_up_early_message">This cancels the morning alarm and starts the out-of-bed nudges. You can nap from the next screen.</string>
+    <string name="night_confirm_im_up_early_title">Are you up?</string>
     <string name="night_end_night">End night</string>
     <!-- P3 (owner spec, 2026-09-30): shown while the out-of-bed nudge is pending; trades it for a nap alarm
          this many minutes out. Exact wording set by the owner. -->

@@ -101,6 +101,9 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
     cancelPhoneAlarm(context)
     appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledAlarmAt" to state.lastPlan?.wakeAt.toString())), debugNight)
     val upState = state.copy(wakeAlarmFiredAt = now)
+    // Seen on the phone 2026-10-02: without this the screen kept offering "I'm up" next to Nap until the
+    // follow-up tick committed, which waits on a band sync of up to 20 s.
+    publishNightState(upState)
     val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), readPendingFollowUp(context), upState.settings.deadline, resolveEngineConfig(upState.debugOptions))
         ?: return@withNightTransactionLock false
     armFollowUp(context, upState, next, now, "im_up_pressed")
