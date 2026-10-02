@@ -587,6 +587,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         // sequence (see NightController.startNight); requesting a second immediate tick here would race it
         // and could let out-of-order work overwrite the tick's own (Opus review 3.2).
         startNightTracking(context, nightSettings, startedAt, debugOptions)
+        // startNight clears any leftover nudge/nap record on disk; drop this screen's own copy of it now too,
+        // rather than showing the previous night's Nap button until the 30 s ticker re-reads the file.
+        pendingFollowUp.value = null
         showingMorningReport.value = false
         cachedMorningReport.value = null
         screen.value = Screen.Night
@@ -652,6 +655,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             // T4: virtual - endNight records this into night_end/the morning report, both virtual-time.
             val report = endNightTracking(context, nowInstant())
+            // endNight cleared the nudge/nap record on disk - see beginNight for why this copy is dropped at once.
+            pendingFollowUp.value = null
             if (report != null) {
                 cachedMorningReport.value = CachedMorningReport(buildNightEngineView(report.nightState, report.endedAt))
                 morningReportEndedAt.value = report.endedAt
