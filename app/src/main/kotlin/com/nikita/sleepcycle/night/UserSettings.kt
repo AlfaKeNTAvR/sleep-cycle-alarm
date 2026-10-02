@@ -38,7 +38,7 @@ data class SleepRatingSettings(
 
 /** Each number the Settings screen changes with a minus/plus stepper: its allowed [range] and how far one tap moves it. */
 enum class SettingStepper(val range: IntRange, val step: Int) {
-    NUDGE_MINUTES(5..15, 1),
+    NUDGE_MINUTES(5..15, 5),
     NAP_MINUTES(10..30, 5),
     FADE_START_PERCENT(10..50, 5),
 }

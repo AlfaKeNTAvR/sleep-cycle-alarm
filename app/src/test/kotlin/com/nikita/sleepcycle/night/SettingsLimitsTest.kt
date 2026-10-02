@@ -26,8 +26,9 @@ class SettingsLimitsTest {
     }
 
     @Test
-    fun `the nudge steps one minute at a time between 5 and 15`() {
-        assertEquals(11, stepSetting(SettingStepper.NUDGE_MINUTES, 10, +1))
+    fun `the nudge steps five minutes at a time between 5 and 15`() {
+        assertEquals(15, stepSetting(SettingStepper.NUDGE_MINUTES, 10, +1))
+        assertEquals(5, stepSetting(SettingStepper.NUDGE_MINUTES, 10, -1))
         assertEquals(15, stepSetting(SettingStepper.NUDGE_MINUTES, 15, +1))
         assertEquals(5, stepSetting(SettingStepper.NUDGE_MINUTES, 5, -1))
     }

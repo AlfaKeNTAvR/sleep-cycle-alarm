@@ -7,7 +7,8 @@ Settings limits and engine timing, which nights are rateable, both ratings kept,
 
 ## Decisions
 - **Nap length range**: 10 to 30 min in 5 min steps. Not in the spec, only the default (20) was.
-- **Nudge steps**: 1 min (5 to 15). **Volume steps**: 5% (10 to 50).
+- **Nudge steps**: 5 min (5, 10, 15), owner request after the first install. **Volume steps**: 5% (10 to 50).
+- **Phone back button** does what the screen's own back arrow does (owner request). Before bed and Night have no arrow, so back there still leaves the app.
 - **Nudge and nap apply from the next Start night**, not to a night already running: a night freezes them at start, like debug options. Reason: the alarm receivers and boot restore read them from the night state, with no settings read on those paths.
 - **Bedtime audio applies at once**: the fade reads its switch and start volume at Start night; the pause switch is read live on every tick.
 - **Pause switched off while a fade runs**: the fade keeps stepping down to its floor after you fall asleep (it used to end there), and the volume is put back at End night. So audio keeps going, quietly.
