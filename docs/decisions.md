@@ -130,7 +130,7 @@ Why: the old "fast night" switch shrank `EngineConfig`'s own durations (a 5-minu
 - **Speed 1 can still carry an applied jump.** "It is now 03:00, let me poke at things by hand" is a legitimate mode on its own - only "Reset to real time" discards a jump; picking speed 1 on its own just means time now runs at its true rate from wherever it was jumped to.
 - **The jump is refused while a night is active.** It would move time out from under alarms already armed at real instants, and out from under an engine that has already committed decisions against the pre-jump timeline.
 - **One "Asleep" toggle, not three buttons.** The old fell-asleep / woke-up / fell-back-asleep buttons collapsed into a single toggle, since "asleep again after waking" and "asleep for the first time" are the same fact from the engine's point of view.
-- **The ring test stays real.** "Ring phone alarm" rings 5 real seconds later regardless of any active warp - it is a daylight check of the ring path, never part of a simulated night.
+- **The ring test stays real.** "Ring phone alarm" rings at once (5 real seconds later before 2026-10-02) regardless of any active warp - it is a daylight check of the ring path, never part of a simulated night.
 - **The debug banner and the night notification show the simulated time and speed** whenever the clock is warped, e.g. "SIMULATED 03:15, 60x" (never "1x" - speed 1 with a jump applied just shows the time). Without it there would be no way to tell what time the app thinks it is.
 
 ## The same alarm is never rung twice, and a nap never displaces a pending morning alarm (H8, decided 2026-09-21)
@@ -310,8 +310,8 @@ Owner-reproduced on a simulated night (`files/nightlogs/night-sim-20260921-1729.
 
 - **The owner's words:** the Debug screen is only ever opened for the simulated band data switch; the clock speed is driven from the Night screen; "set simulated time", "reset to real time", the Asleep switch there and the simulated sleep timeline were never used. "Most of the time ... I'm just kind of trying to skip the whole time", but the nudge and the nap need finer control.
 - **Debug screen:** two rows in the Settings look, no descriptions: Simulated band data (switch) and Ring phone alarm (button). Gone: the speed row, the time jump, Reset to real time, the Simulator card (Asleep, Clear simulated sleep, the timeline).
-- **Speed chips (Night screen):** 1x, 60x, Auto. The manual 600x chip is gone; 10x is not a chip. Every simulated night starts at 1x.
-- **Auto:** 600x while the next alarm (planned, or a pending nudge or own nap) is more than 10 simulated minutes away, 10x inside that. The night tick applies it before it arms anything, and books a tick on the slow-down instant so the ordinary 5 to 15 minute sync gap cannot jump over the approach. The Auto chip shows the speed it is running at.
+- **Speed chips (Night screen):** 1x, 60x, Auto. The manual 600x chip is gone; there is no 10x. Every simulated night starts at 1x.
+- **Auto:** 600x while the next alarm (planned, or a pending nudge or own nap) is more than 10 simulated minutes away, 60x inside that (owner request: no 10x anywhere). The night tick applies it before it arms anything, and books a tick on the slow-down instant so the ordinary 5 to 15 minute sync gap cannot jump over the approach. The Auto chip shows the speed it is running at.
 - **Back to 1x:** the Asleep switch (either way), I'm up, and an alarm starting to ring all set 1x and leave Auto. The ring starts before the speed change lands, so an alarm never waits on a store write; its auto-stop is then re-timed at 1x.
 - **End night** already put the clock back on real time and turned the switches off; it now also empties the simulated sleep timeline, which nothing else clears any more. Turning simulated band data off clears Auto too.
 - **Not unit tested** (Android glue, checked on the phone): the DataStore writes, the ring service's drop, the Night screen card.

@@ -16,20 +16,20 @@ class AutoSimulationSpeedTest {
     }
 
     @Test
-    fun `from 10 simulated minutes before the next alarm Auto slows to 10x`() {
-        assertEquals(10, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:00Z"), followUpAt = null))
-        assertEquals(10, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:17:00Z"), followUpAt = null))
+    fun `from 10 simulated minutes before the next alarm Auto slows to 60x`() {
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:00Z"), followUpAt = null))
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:17:00Z"), followUpAt = null))
         assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:01Z"), followUpAt = null))
     }
 
     @Test
     fun `a pending nudge or own nap closer than the planned alarm is the one Auto slows down for`() {
-        assertEquals(10, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:20:00Z")))
-        assertEquals(10, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = Instant.parse("2026-10-02T03:20:00Z")))
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:20:00Z")))
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = Instant.parse("2026-10-02T03:20:00Z")))
     }
 
     @Test
-    fun `the next tick is pulled in to land on the slow-down, so 10x starts on time`() {
+    fun `the next tick is pulled in to land on the slow-down, so 60x starts on time`() {
         val ordinaryTick = Instant.parse("2026-10-02T07:30:00Z")
         assertEquals(
             Instant.parse("2026-10-02T07:25:00Z"),
@@ -73,9 +73,9 @@ class AutoSimulationSpeedTest {
     @Test
     fun `choosing Auto starts at the speed Auto wants right now, and the chip shows Auto`() {
         val realNow = Instant.parse("2026-10-02T14:00:00Z")
-        val chosen = chooseSimulationSpeed(SimulationSpeed(warp = null, auto = false), SpeedChoice.AUTO, realNow, autoSpeedNow = 10)
+        val chosen = chooseSimulationSpeed(SimulationSpeed(warp = null, auto = false), SpeedChoice.AUTO, realNow, autoSpeedNow = 60)
 
-        assertEquals(10, chosen.warp?.speed)
+        assertEquals(60, chosen.warp?.speed)
         assertEquals(true, chosen.auto)
         assertEquals(SpeedChoice.AUTO, speedChoiceOf(chosen))
     }

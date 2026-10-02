@@ -16,7 +16,7 @@ import androidx.compose.ui.res.stringResource
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
-import com.nikita.sleepcycle.ui.components.SettingsButtonRow
+import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsSection
 import com.nikita.sleepcycle.ui.components.SettingsSwitchRow
 import com.nikita.sleepcycle.ui.state.DebugUiState
@@ -47,13 +47,11 @@ fun DebugScreen(
             )
         }
 
-        SettingsSection(stringResource(R.string.debug_test_alarm_title)) {
-            SettingsButtonRow(
-                label = stringResource(R.string.debug_ring_test_alarm_button),
-                buttonText = stringResource(R.string.debug_ring_button),
-                onClick = onRingTestAlarm,
-                enabled = state.canRingTestAlarm,
-            )
-        }
+        // Owner request, 2026-10-02: the app's own outlined button, not a small row button.
+        SecondaryActionButton(
+            text = stringResource(R.string.debug_ring_test_alarm_button),
+            onClick = onRingTestAlarm,
+            enabled = state.canRingTestAlarm,
+        )
     }
 }

@@ -126,7 +126,7 @@ class DebugScreenController(private val context: Context, private val scope: Cor
      * while simulated band data is off - the chips are also disabled then (U1), this is the second guard.
      * Re-anchors at the CURRENT virtual instant ([chooseSimulationSpeed]), so changing speed never itself jumps
      * the clock - only the rate it moves at from here on. Auto starts at the speed it wants for where the night
-     * is now (600x, or 10x within 10 simulated minutes of the next alarm); the night tick keeps it there.
+     * is now (600x, or 60x within 10 simulated minutes of the next alarm); the night tick keeps it there.
      *
      * V5: legal mid-night, so every real instant armed under the OLD mapping is re-armed: the pending nudge or
      * own nap here, and the wake alarm and next tick by the immediate tick [rearmAfterSpeedChange] asks for.

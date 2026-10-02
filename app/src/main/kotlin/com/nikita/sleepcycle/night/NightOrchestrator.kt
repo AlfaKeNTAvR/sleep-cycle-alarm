@@ -996,7 +996,7 @@ private fun scheduleNextTick(
     autoSpeedFollowUpAt: Instant?, autoSpeedOn: Boolean,
 ) {
     val ordinaryAt = nextTickAt(plan, decisionNow, config, watchingForSleepSince)
-    // Auto: a tick must land on the slow-down instant, or the ordinary sync gap can skip the 10x approach.
+    // Auto: a tick must land on the slow-down instant, or the ordinary sync gap can skip the 60x approach.
     val at = if (autoSpeedOn) autoSpeedTickAt(ordinaryAt, decisionNow, plan.wakeAt, autoSpeedFollowUpAt) else ordinaryAt
     if (at == null) {
         cancelTick(context)

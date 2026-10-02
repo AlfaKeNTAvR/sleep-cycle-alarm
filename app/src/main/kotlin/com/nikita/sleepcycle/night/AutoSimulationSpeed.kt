@@ -11,8 +11,8 @@ import java.time.Instant
 /** Auto's speed while the next alarm is still far off - the practical ceiling, see [SIMULATION_SPEEDS]. */
 const val AUTO_FAR_SPEED = 600
 
-/** Auto's speed for the approach to an alarm: a simulated minute every 6 real seconds. */
-const val AUTO_NEAR_SPEED = 10
+/** Auto's speed for the approach to an alarm: 60x, a simulated minute per real second (owner request, 2026-10-02: no 10x anywhere). */
+const val AUTO_NEAR_SPEED = 60
 
 /** How long before the next alarm, in simulated time, Auto slows to [AUTO_NEAR_SPEED]. */
 val AUTO_SLOW_DOWN_LEAD: Duration = Duration.ofMinutes(10)

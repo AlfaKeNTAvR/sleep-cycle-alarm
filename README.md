@@ -60,7 +60,7 @@ The Debug screen (Settings, then Debug) has two rows, laid out like Settings:
   instead of a real Gadgetbridge sync. Turn this on first - the speed chips are locked until it is, since a
   warped clock against real band data makes no sense (the band's timestamps would always read hours stale
   against a virtual "now"). Locked while a night is running.
-- **Ring phone alarm**: a standalone test alarm 5 real seconds out, always real time regardless of the
+- **Ring phone alarm**: a standalone test alarm that rings straight away, always real time regardless of the
   simulated clock, for checking the ring screen in daylight with no night running.
 
 Once simulated band data is on, the Night screen shows a **Simulation** card with the speed chips and the
@@ -71,7 +71,7 @@ Once simulated band data is on, the Night screen shows a **Simulation** card wit
   the instant handed to Android's alarm system is converted back to a real one, so alarms genuinely ring,
   just sooner in real time. Changing speed never itself moves the clock, only how fast it runs from then on.
 - **Auto** runs at 600x until 10 simulated minutes before the next alarm (the planned one, or a pending
-  nudge or nap), then 10x for the approach. The chip shows the speed it is running at.
+  nudge or nap), then 60x for the approach. The chip shows the speed it is running at.
 - **Back to 1x**: switching **Asleep** either way, pressing **I'm up**, and any alarm starting to ring all
   put the clock back to 1x and leave Auto, so whatever happens next is watched at real speed. Pick 60x or
   Auto again to skip ahead.
@@ -198,7 +198,7 @@ Night screen, then tap **60x** again to carry on at that speed.
 15. Separately, any time no night is active (the button is disabled, with a reason shown underneath, while a
     night is running - it must never be able to replace the real night's own alarm): from the Debug screen,
     tap **Ring phone alarm** to check the full-screen alarm activity, the sound and the notification's Stop
-    button in daylight, 5 real seconds later regardless of any simulated clock speed. This writes to
+    button in daylight, straight away regardless of any simulated clock speed. This writes to
     `setup.jsonl`, not a night log - it is not a night.
 
 ## Known limits

@@ -40,7 +40,7 @@ suspend fun dropSimulationToRealSpeed(context: Context): Boolean {
 
 /**
  * Called by the night tick with the alarms it just planned: while Auto is on, moves the clock to the speed
- * [autoClockSpeed] wants for [now] (600x far from the next alarm, 10x on the approach). Returns whether Auto
+ * [autoClockSpeed] wants for [now] (600x far from the next alarm, 60x on the approach). Returns whether Auto
  * is on, so the tick knows to pull its next tick in to the slow-down ([autoSpeedTickAt]).
  */
 suspend fun applyAutoSpeed(context: Context, now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Boolean {

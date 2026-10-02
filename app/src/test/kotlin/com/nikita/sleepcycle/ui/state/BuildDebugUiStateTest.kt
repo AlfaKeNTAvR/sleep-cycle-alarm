@@ -22,10 +22,10 @@ class BuildDebugUiStateTest {
 
     @Test
     fun `under Auto the Auto chip is selected and shows the speed it is running at`() {
-        val options = DebugOptions(simulatedBandData = true, warp = ClockWarp(10, warpAnchor, warpAnchor), autoSpeed = true)
+        val options = DebugOptions(simulatedBandData = true, warp = ClockWarp(60, warpAnchor, warpAnchor), autoSpeed = true)
         val state = buildDebugUiState(options, emptyList(), nightActive = true)
         assertEquals(SpeedChoice.AUTO, state.selectedSpeed)
-        assertEquals(10, state.autoRunningSpeed)
+        assertEquals(60, state.autoRunningSpeed)
     }
 
     @Test

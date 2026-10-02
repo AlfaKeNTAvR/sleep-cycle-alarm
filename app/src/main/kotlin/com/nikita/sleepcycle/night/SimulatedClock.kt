@@ -41,10 +41,10 @@ data class ClockWarp(val speed: Int, val anchorReal: Instant, val anchorVirtual:
  * much faster and that floor starts binding, and the clock quietly stops keeping the speed it advertises.
  *
  * Owner spec, 2026-10-02: this is now every speed the clock can run at, not the chips. The chips are 1x, 60x
- * and Auto (AutoSimulationSpeed.kt's SpeedChoice); Auto runs at 600x, and brings 10x back for the 10 simulated
- * minutes before an alarm.
+ * and Auto (AutoSimulationSpeed.kt's SpeedChoice); Auto runs at 600x, and 60x for the 10 simulated minutes
+ * before an alarm. No 10x (owner request).
  */
-val SIMULATION_SPEEDS: List<Int> = listOf(1, AUTO_NEAR_SPEED, 60, AUTO_FAR_SPEED)
+val SIMULATION_SPEEDS: List<Int> = listOf(1, AUTO_NEAR_SPEED, AUTO_FAR_SPEED)
 
 /**
  * The current virtual instant, given the real wall-clock instant [realNow] - identity when [warp] is null.
