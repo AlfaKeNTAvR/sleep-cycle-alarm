@@ -123,6 +123,12 @@ fun SettingsScreen(
 
         SettingsSection(stringResource(R.string.settings_section_bedtime_audio)) {
             SwitchRow(
+                label = stringResource(R.string.settings_pause_when_asleep),
+                checked = bedtimeAudio.pauseWhenAsleep,
+                onCheckedChange = { onBedtimeAudioChange(bedtimeAudio.copy(pauseWhenAsleep = it)) },
+            )
+            CardDivider()
+            SwitchRow(
                 label = stringResource(R.string.settings_fade),
                 checked = bedtimeAudio.fadeEnabled,
                 onCheckedChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeEnabled = it)) },
@@ -135,12 +141,6 @@ fun SettingsScreen(
                 valueText = stringResource(R.string.settings_percent_value, bedtimeAudio.fadeStartPercent),
                 onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeStartPercent = it)) },
                 enabled = bedtimeAudio.fadeEnabled,
-            )
-            CardDivider()
-            SwitchRow(
-                label = stringResource(R.string.settings_pause_when_asleep),
-                checked = bedtimeAudio.pauseWhenAsleep,
-                onCheckedChange = { onBedtimeAudioChange(bedtimeAudio.copy(pauseWhenAsleep = it)) },
             )
         }
 
