@@ -78,6 +78,12 @@ data class EngineConfig(
     val frequentSyncDelay: Duration = Duration.ofMinutes(5),
     val normalSyncDelay: Duration = Duration.ofMinutes(15),
     /**
+     * Owner request, 2026-10-02: how long after the night starts the app keeps syncing at [frequentSyncDelay]
+     * while the band has seen no sleep yet, so falling asleep is noticed (and playing media paused) within
+     * minutes rather than up to [normalSyncDelay] late. The band's own onset lag is unaffected.
+     */
+    val fallingAsleepWatch: Duration = Duration.ofMinutes(60),
+    /**
      * D4/H7.1: how long after the wake alarm (or a D5/rule 7 nap alarm) fires before the out-of-bed nudge
      * rings. Armed by the app layer when that alarm fires, not by the engine - kept here so a fast debug
      * night can still shorten it like every other timing constant. H7.1 (owner decision, 2026-09-20): raised

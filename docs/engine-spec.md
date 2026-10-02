@@ -114,7 +114,7 @@ Worked example (from `PostWakeNapTest`, mirrored end to end against the app's ow
 - `isSleepLengthAvailable(cycles, now, deadline, config)`: true when `now + fallAsleepEstimate + cycles * cycleLength <= deadline`, always true without a deadline. Drives the hatched picker options.
 - `listWakeOptions(referenceOnset, settings, config, upToCycles = settings.pickedCycles)`: for k in 1..`upToCycles`, `referenceOnset + k * cycleLength`, dropping those after the deadline. Each option carries `k` and its sleep duration. Drives the timeline. `upToCycles` is a plain count, not a picker value, so 0 (nothing owed) is legal and lists nothing: the UI passes the current plan's `cycles`, so the timeline never offers a night the engine has already decided against - after waking at 05:30 of a 7.5 h night the screen lists the one cycle still owed, not a fresh 3 to 9 h.
 - `summarizeNight(stretches, config)`: total sleep, and per stretch its onset, end, duration and `cycles` as a decimal rounded to one place (duration / cycleLength). Drives the morning report.
-- `nextSyncDelay(plan, now, config): Duration?`: null when the mode is `FINISHED` (stop syncing). `frequentSyncDelay` in `NAP`, or when the wake alarm is within `nearAlarmSyncWindow`; else `normalSyncDelay`. Never zero, never negative.
+- `nextSyncDelay(plan, now, config, watchingForSleepSince = null): Duration?`: null when the mode is `FINISHED` (stop syncing). `frequentSyncDelay` in `NAP`, when the wake alarm is within `nearAlarmSyncWindow`, or while `now` is within `fallingAsleepWatch` (60 min) of `watchingForSleepSince` (the night's start, passed by the app only while the band has seen no sleep yet); else `normalSyncDelay`. Never zero, never negative.
 
 ## Validation
 

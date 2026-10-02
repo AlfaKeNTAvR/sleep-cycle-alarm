@@ -38,6 +38,18 @@ class NextSyncDelayTest {
         assertNull(nextSyncDelay(plan, instant("2026-09-17T08:31"), config))
     }
 
+    @Test fun `still awake in the first hour of the night uses the frequent cadence`() {
+        val plan = planOf(AlarmMode.FULL_CYCLES, "2026-09-17T07:30")
+        val delay = nextSyncDelay(plan, instant("2026-09-16T23:20"), config, watchingForSleepSince = instant("2026-09-16T23:00"))
+        assertEquals(Duration.ofMinutes(5), delay)
+    }
+
+    @Test fun `still awake an hour after the night started falls back to the normal cadence`() {
+        val plan = planOf(AlarmMode.FULL_CYCLES, "2026-09-17T07:30")
+        val delay = nextSyncDelay(plan, instant("2026-09-17T00:00"), config, watchingForSleepSince = instant("2026-09-16T23:00"))
+        assertEquals(Duration.ofMinutes(15), delay)
+    }
+
     @Test fun `the delay is never zero even exactly at the phone alarm`() {
         val plan = planOf(AlarmMode.FULL_CYCLES, "2026-09-17T08:00")
         val delay = nextSyncDelay(plan, instant("2026-09-17T08:00"), config)

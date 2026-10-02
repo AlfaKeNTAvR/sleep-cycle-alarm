@@ -53,13 +53,17 @@ fun summarizeNight(stretches: List<SleepStretch>, config: EngineConfig): NightSu
 /**
  * How long to wait before the next sync. Null (stop syncing) once the night is [AlarmMode.FINISHED]. The frequent
  * cadence applies in [AlarmMode.NAP], or whenever the phone alarm is within [EngineConfig.nearAlarmSyncWindow] of
- * `now`; the normal cadence applies otherwise. Never zero, never negative.
+ * `now`, or while the owner has not fallen asleep yet within [EngineConfig.fallingAsleepWatch] of
+ * [watchingForSleepSince] (the night's start, passed only while the band has seen no sleep yet tonight), so the
+ * first falling asleep is noticed within minutes; the normal cadence applies otherwise. Never zero, never
+ * negative.
  */
-fun nextSyncDelay(plan: AlarmPlan, now: Instant, config: EngineConfig): Duration? {
+fun nextSyncDelay(plan: AlarmPlan, now: Instant, config: EngineConfig, watchingForSleepSince: Instant? = null): Duration? {
     validateConfig(config)
     if (plan.mode == AlarmMode.FINISHED) return null
     val nearAlarm = plan.wakeAt?.let { Duration.between(now, it).abs() <= config.nearAlarmSyncWindow } ?: false
-    return if (plan.mode == AlarmMode.NAP || nearAlarm) {
+    val watchingForSleep = watchingForSleepSince?.let { now.isBefore(it.plus(config.fallingAsleepWatch)) } ?: false
+    return if (plan.mode == AlarmMode.NAP || nearAlarm || watchingForSleep) {
         config.frequentSyncDelay
     } else {
         config.normalSyncDelay
