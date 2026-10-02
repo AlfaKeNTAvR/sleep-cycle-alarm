@@ -2,20 +2,31 @@ package com.nikita.sleepcycle.night
 
 // File purpose: the Auto simulation speed (owner spec, 2026-10-02). A simulated night is mostly waiting for
 // the alarm, and the part worth watching is the alarm itself and what follows it - so Auto runs the clock as
-// fast as it can until shortly before the next alarm, then slows down for the approach. Pure: the night tick
+// fast as it can until shortly before the next alarm, then slows down in steps for the approach. Pure: the night tick
 // (NightOrchestrator.kt) applies it, the Night screen's Auto chip selects it.
 
 import java.time.Duration
 import java.time.Instant
 
-/** Auto's speed while the next alarm is still far off - the practical ceiling, see [SIMULATION_SPEEDS]. */
-const val AUTO_FAR_SPEED = 600
+/**
+ * Auto's speed while the next alarm is more than [AUTO_STAGES]' longest lead away: 3600x, a simulated hour per
+ * real second (owner request, 2026-10-02), so an 8 h night passes in about 8 real seconds.
+ */
+const val AUTO_FAR_SPEED = 3600
 
-/** Auto's speed for the approach to an alarm: 60x, a simulated minute per real second (owner request, 2026-10-02: no 10x anywhere). */
-const val AUTO_NEAR_SPEED = 60
+/** One step of Auto's slow-down: from [lead] (simulated time) before the next alarm, run at [speed]. */
+data class AutoStage(val lead: Duration, val speed: Int)
 
-/** How long before the next alarm, in simulated time, Auto slows to [AUTO_NEAR_SPEED]. */
-val AUTO_SLOW_DOWN_LEAD: Duration = Duration.ofMinutes(10)
+/**
+ * Auto's slow-down before an alarm, nearest first (owner spec, 2026-10-02): 600x from 30 simulated minutes
+ * out, 60x from 10 (no 10x anywhere). The 600x stage is also what makes the 60x one land on time: at 3600x
+ * the tick floor (TickScheduling.kt's 250 ms) is 15 simulated minutes, longer than the 10 minute lead, so a
+ * slow-down straight from 3600x could be skipped; at 600x the floor is 2.5 simulated minutes.
+ */
+val AUTO_STAGES: List<AutoStage> = listOf(
+    AutoStage(Duration.ofMinutes(10), 60),
+    AutoStage(Duration.ofMinutes(30), 600),
+)
 
 /** The Night screen's speed chips, in order: 1x, 60x, and Auto (which replaced the manual 600x). */
 enum class SpeedChoice(val fixedSpeed: Int?) {
@@ -49,18 +60,19 @@ fun dropToRealSpeed(current: SimulationSpeed, realNow: Instant): SimulationSpeed
 /** The speed Auto runs at for [now], given the plan's next alarm [plannedAlarmAt] and the out-of-bed slot's pending alarm [followUpAt] (nudge or own nap). */
 fun autoClockSpeed(now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Int {
     val nextAlarmAt = nextAlarmAhead(now, plannedAlarmAt, followUpAt) ?: return AUTO_FAR_SPEED
-    return if (nextAlarmAt.isAfter(now.plus(AUTO_SLOW_DOWN_LEAD))) AUTO_FAR_SPEED else AUTO_NEAR_SPEED
+    return AUTO_STAGES.firstOrNull { stage -> !nextAlarmAt.isAfter(now.plus(stage.lead)) }?.speed ?: AUTO_FAR_SPEED
 }
 
 /**
- * The next tick under Auto: [ordinaryTickAt] (null when the night needs no more ticks), pulled in to the
+ * The next tick under Auto: [ordinaryTickAt] (null when the night needs no more ticks), pulled in to the next
  * slow-down instant when that comes first - the tick is what applies the speed, and the ordinary 5 to 15
- * simulated minutes between syncs could otherwise jump right over the 10 minute approach.
+ * simulated minutes between syncs could otherwise jump right over a stage.
  */
 fun autoSpeedTickAt(ordinaryTickAt: Instant?, now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Instant? {
     if (ordinaryTickAt == null) return null
-    val slowDownAt = nextAlarmAhead(now, plannedAlarmAt, followUpAt)?.minus(AUTO_SLOW_DOWN_LEAD) ?: return ordinaryTickAt
-    return if (slowDownAt.isAfter(now) && slowDownAt.isBefore(ordinaryTickAt)) slowDownAt else ordinaryTickAt
+    val nextAlarmAt = nextAlarmAhead(now, plannedAlarmAt, followUpAt) ?: return ordinaryTickAt
+    val nextSlowDownAt = AUTO_STAGES.map { stage -> nextAlarmAt.minus(stage.lead) }.filter { it.isAfter(now) }.minOrNull()
+    return if (nextSlowDownAt != null && nextSlowDownAt.isBefore(ordinaryTickAt)) nextSlowDownAt else ordinaryTickAt
 }
 
 /** The earliest of the two alarms still ahead of [now], or null when neither is. */

@@ -7,7 +7,8 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 
 ## Decisions
 - **Auto slows down for the nearest alarm ahead**: the planned alarm or a pending nudge or own nap, whichever is sooner. An alarm already behind the clock is ignored. No alarm at all: 600x.
-- **Slow-down at exactly 10 simulated min before** the alarm (inclusive): 60x from that instant on (owner changed it from 10x after the first install).
+- **Stages** (owner changes after the first install): 3600x far off, 600x from 30 simulated min before the alarm, 60x from 10 (both boundaries inclusive). A tick is booked on each boundary.
+- **On-screen clock at 3600x moves in half-hour steps**: the UI refresh floor (500 ms) is kept, so the 3600x stage is exempt from the old "no jump over 5 simulated min" rule. Lowering the floor would rebuild the screen 10 times a second.
 - **A tick is booked on the slow-down instant**, because the ordinary sync gap (5 to 15 simulated min) could otherwise skip the whole 10 min approach.
 - **Auto is applied inside the night tick**, after the plan, before any alarm is armed, so the alarms and the next tick are armed under the new speed in the same tick.
 - **Choosing Auto** starts at the speed Auto wants right now (from the last plan and the pending nudge or nap).

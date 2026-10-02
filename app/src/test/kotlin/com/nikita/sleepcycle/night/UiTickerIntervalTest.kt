@@ -40,8 +40,10 @@ class UiTickerIntervalTest {
     }
 
     @Test
-    fun `no speed makes the readout jump by more than five simulated minutes`() {
-        SIMULATION_SPEEDS.filter { it > 1 }.forEach { speed ->
+    fun `no speed a night is watched at makes the readout jump by more than five simulated minutes`() {
+        // Auto's 3600x stage is exempt (owner spec, 2026-10-02): it exists to skip time, not to be read, and
+        // the readout moving in half-hour steps there is the honest picture of that.
+        SIMULATION_SPEEDS.filter { it > 1 && it != AUTO_FAR_SPEED }.forEach { speed ->
             assertTrue(
                 uiTickerIntervalMillis(speed) * speed <= 300_000L,
                 "speed ${speed}x jumps too far per sample to read"

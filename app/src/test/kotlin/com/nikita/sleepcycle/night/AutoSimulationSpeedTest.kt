@@ -11,15 +11,21 @@ class AutoSimulationSpeedTest {
     private val now = Instant.parse("2026-10-02T03:15:00Z")
 
     @Test
-    fun `far from the next alarm Auto runs at 600x`() {
-        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = null))
+    fun `far from the next alarm Auto runs at 3600x`() {
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = null))
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:45:01Z"), followUpAt = null))
+    }
+
+    @Test
+    fun `from 30 simulated minutes before the next alarm Auto slows to 600x`() {
+        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:45:00Z"), followUpAt = null))
+        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:01Z"), followUpAt = null))
     }
 
     @Test
     fun `from 10 simulated minutes before the next alarm Auto slows to 60x`() {
         assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:00Z"), followUpAt = null))
         assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:17:00Z"), followUpAt = null))
-        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:01Z"), followUpAt = null))
     }
 
     @Test
@@ -29,16 +35,14 @@ class AutoSimulationSpeedTest {
     }
 
     @Test
-    fun `the next tick is pulled in to land on the slow-down, so 60x starts on time`() {
-        val ordinaryTick = Instant.parse("2026-10-02T07:30:00Z")
-        assertEquals(
-            Instant.parse("2026-10-02T07:25:00Z"),
-            autoSpeedTickAt(ordinaryTick, Instant.parse("2026-10-02T07:20:00Z"), plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = null)
-        )
+    fun `the next tick is pulled in to land on each slow-down, so every stage starts on time`() {
+        val alarm = Instant.parse("2026-10-02T07:35:00Z")
+        assertEquals(Instant.parse("2026-10-02T07:05:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T07:10:00Z"), Instant.parse("2026-10-02T07:00:00Z"), alarm, followUpAt = null))
+        assertEquals(Instant.parse("2026-10-02T07:25:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T07:30:00Z"), Instant.parse("2026-10-02T07:20:00Z"), alarm, followUpAt = null))
     }
 
     @Test
-    fun `the next tick is left alone when it already comes first, or the slow-down has passed`() {
+    fun `the next tick is left alone when it already comes first, or both slow-downs have passed`() {
         val alarm = Instant.parse("2026-10-02T07:35:00Z")
         assertEquals(Instant.parse("2026-10-02T03:20:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T03:20:00Z"), now, alarm, followUpAt = null))
         assertEquals(Instant.parse("2026-10-02T07:31:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T07:31:00Z"), Instant.parse("2026-10-02T07:26:00Z"), alarm, followUpAt = null))
@@ -85,7 +89,7 @@ class AutoSimulationSpeedTest {
         val realNow = Instant.parse("2026-10-02T14:00:00Z")
         val auto = SimulationSpeed(ClockWarp(600, realNow, Instant.parse("2026-10-02T23:00:00Z")), auto = true)
 
-        val chosen = chooseSimulationSpeed(auto, SpeedChoice.FAST, realNow, autoSpeedNow = 600)
+        val chosen = chooseSimulationSpeed(auto, SpeedChoice.FAST, realNow, autoSpeedNow = 3600)
 
         assertEquals(SimulationSpeed(ClockWarp(60, realNow, Instant.parse("2026-10-02T23:00:00Z")), auto = false), chosen)
         assertEquals(SpeedChoice.FAST, speedChoiceOf(chosen))
@@ -100,7 +104,7 @@ class AutoSimulationSpeedTest {
 
     @Test
     fun `an alarm already behind the clock is not waited for`() {
-        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:10:00Z")))
-        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = null))
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:10:00Z")))
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = null))
     }
 }

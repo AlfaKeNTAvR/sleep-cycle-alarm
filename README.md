@@ -70,8 +70,8 @@ Once simulated band data is on, the Night screen shows a **Simulation** card wit
   Everything the app computes - the plan, the log, the alarms - is measured against that virtual time; only
   the instant handed to Android's alarm system is converted back to a real one, so alarms genuinely ring,
   just sooner in real time. Changing speed never itself moves the clock, only how fast it runs from then on.
-- **Auto** runs at 600x until 10 simulated minutes before the next alarm (the planned one, or a pending
-  nudge or nap), then 60x for the approach. The chip shows the speed it is running at.
+- **Auto** runs at 3600x, then 600x from 30 simulated minutes before the next alarm (the planned one, or a pending
+  nudge or nap), then 60x from 10 minutes before. The chip shows the speed it is running at.
 - **Back to 1x**: switching **Asleep** either way, pressing **I'm up**, and any alarm starting to ring all
   put the clock back to 1x and leave Auto, so whatever happens next is watched at real speed. Pick 60x or
   Auto again to skip ahead.
