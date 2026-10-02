@@ -1,5 +1,7 @@
 package com.nikita.sleepcycle.ui.state
 
+import com.nikita.sleepcycle.night.SleepRating
+
 /**
  * One past night reopened from the Logs screen: the same morning-report card that night ended on, plus the
  * settings it ran under. [report] is null when the log never recorded a summary at all (the night was never
@@ -13,4 +15,12 @@ data class PastNightUiState(
     val deadlineTimeLabel: String?,
     val pickedLengthLabel: String?,
     val recordedStretchCount: Int?,
+    /** The night's two ratings, each changeable here; null for a night started before the rating existed. */
+    val ratings: PastNightRatings? = null,
 )
+
+/** Past night's "Your rating" card: the rating after End night and the later one, each its own row. */
+data class PastNightRatings(val afterEndNight: PastNightRatingRow, val later: PastNightRatingRow)
+
+/** One rating row: the rating picked (null: not rated yet) and the clock time it was given, shown in the row's title. */
+data class PastNightRatingRow(val rating: SleepRating?, val timeLabel: String?)

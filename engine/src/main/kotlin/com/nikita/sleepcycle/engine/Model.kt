@@ -78,6 +78,12 @@ data class EngineConfig(
     val frequentSyncDelay: Duration = Duration.ofMinutes(5),
     val normalSyncDelay: Duration = Duration.ofMinutes(15),
     /**
+     * Owner request, 2026-10-02: how long after the night starts the app keeps syncing at [frequentSyncDelay]
+     * while the band has seen no sleep yet, so falling asleep is noticed (and playing media paused) within
+     * minutes rather than up to [normalSyncDelay] late. The band's own onset lag is unaffected.
+     */
+    val fallingAsleepWatch: Duration = Duration.ofMinutes(60),
+    /**
      * D4/H7.1: how long after the wake alarm (or a D5/rule 7 nap alarm) fires before the out-of-bed nudge
      * rings. Armed by the app layer when that alarm fires, not by the engine - kept here so a fast debug
      * night can still shorten it like every other timing constant. H7.1 (owner decision, 2026-09-20): raised
@@ -88,6 +94,8 @@ data class EngineConfig(
      * out-of-bed nudge in 10 minutes". The firing itself still arms a safety-net nudge at
      * firing + [ringAutoStopAfter] + this delay, so a ring whose end is never observed (the ring service died)
      * still has a nudge behind it. See app/night/PostAlarmCycle.kt.
+     *
+     * Owner spec, 2026-10-02: set by the owner in Settings, 5 to 15 min (default 10).
      */
     val outOfBedDelay: Duration = Duration.ofMinutes(10),
     /**
@@ -98,6 +106,9 @@ data class EngineConfig(
      * when ringing actually starts, outOfBedDelay's nudge from when the firing broadcast was received) - close
      * enough that the nudge routinely fired a moment before this auto-stop tore the still-ringing service
      * down, swallowing it. A real, enforced margin instead of a coincidence.
+     *
+     * Owner spec, 2026-10-02: no longer enforced. Since P3 the nudge is measured from the ring's end, so the
+     * race above cannot happen, and the owner's nudge setting goes down to 5 min.
      */
     val ringAutoStopAfter: Duration = Duration.ofMinutes(9),
     /**

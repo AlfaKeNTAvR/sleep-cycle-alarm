@@ -1,9 +1,11 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: user-facing settings persisted in DataStore - device MAC, export file, deadline, sleep length.
+// File purpose: user-facing settings persisted in DataStore - device MAC, export file, deadline, sleep length,
+// and the Settings screen's own choices (UserSettings.kt).
 
 import android.content.Context
 import android.net.Uri
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -27,6 +29,14 @@ private val KEY_LAST_DEADLINE = stringPreferencesKey("last_deadline")
 private val KEY_DEADLINE_ENABLED = booleanPreferencesKey("deadline_enabled")
 private val KEY_PICKED_CYCLES = intPreferencesKey("picked_cycles")
 private val KEY_LAST_SETUP_CHECK_PASSED_AT = longPreferencesKey("last_setup_check_passed_at_epoch_ms")
+private val KEY_NUDGE_MINUTES = intPreferencesKey("nudge_minutes")
+private val KEY_NAP_MINUTES = intPreferencesKey("nap_minutes")
+private val KEY_FADE_ENABLED = booleanPreferencesKey("fade_enabled")
+private val KEY_FADE_START_PERCENT = intPreferencesKey("fade_start_percent")
+private val KEY_PAUSE_WHEN_ASLEEP = booleanPreferencesKey("pause_when_asleep")
+private val KEY_RATING_ENABLED = booleanPreferencesKey("rating_enabled")
+private val KEY_RATING_ASK_AGAIN_LATER = booleanPreferencesKey("rating_ask_again_later")
+private val KEY_RATING_ASK_AT = stringPreferencesKey("rating_ask_at")
 
 /** The user's saved setup and last-used night settings. */
 data class AppSettings(
@@ -35,7 +45,11 @@ data class AppSettings(
     val lastDeadline: LocalTime?,
     val deadlineEnabled: Boolean,
     val pickedCycles: Int,
-    val lastSetupCheckPassedAt: Instant?
+    val lastSetupCheckPassedAt: Instant?,
+    /** The Settings screen's own choices (UserSettings.kt), each at its default until changed there. */
+    val afterAlarm: AfterAlarmSettings = AfterAlarmSettings(),
+    val bedtimeAudio: BedtimeAudioSettings = BedtimeAudioSettings(),
+    val sleepRating: SleepRatingSettings = SleepRatingSettings(),
 )
 
 /** Streams the saved app settings, with sensible defaults before anything has been picked. */
@@ -47,9 +61,45 @@ fun readAppSettings(context: Context): Flow<AppSettings> =
             lastDeadline = preferences[KEY_LAST_DEADLINE]?.let(LocalTime::parse),
             deadlineEnabled = preferences[KEY_DEADLINE_ENABLED] ?: DEFAULT_DEADLINE_ENABLED,
             pickedCycles = preferences[KEY_PICKED_CYCLES] ?: DEFAULT_PICKED_CYCLES,
-            lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli)
+            lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli),
+            afterAlarm = readAfterAlarmSettings(preferences),
+            bedtimeAudio = readBedtimeAudioSettings(preferences),
+            sleepRating = readSleepRatingSettings(preferences),
         )
     }
+
+/** A stored number outside its stepper's limits (an older build, a bad write) reads back inside them. */
+private fun readAfterAlarmSettings(preferences: Preferences): AfterAlarmSettings {
+    val defaults = AfterAlarmSettings()
+    return AfterAlarmSettings(
+        nudgeMinutes = clampSetting(SettingStepper.NUDGE_MINUTES, preferences[KEY_NUDGE_MINUTES] ?: defaults.nudgeMinutes),
+        napMinutes = clampSetting(SettingStepper.NAP_MINUTES, preferences[KEY_NAP_MINUTES] ?: defaults.napMinutes),
+    )
+}
+
+private fun readBedtimeAudioSettings(preferences: Preferences): BedtimeAudioSettings {
+    val defaults = BedtimeAudioSettings()
+    return BedtimeAudioSettings(
+        fadeEnabled = preferences[KEY_FADE_ENABLED] ?: defaults.fadeEnabled,
+        fadeStartPercent = clampSetting(SettingStepper.FADE_START_PERCENT, preferences[KEY_FADE_START_PERCENT] ?: defaults.fadeStartPercent),
+        pauseWhenAsleep = preferences[KEY_PAUSE_WHEN_ASLEEP] ?: defaults.pauseWhenAsleep,
+    )
+}
+
+/** An unparseable stored ask time reads back as the default rather than failing the whole settings read. */
+private fun readSleepRatingSettings(preferences: Preferences): SleepRatingSettings {
+    val defaults = SleepRatingSettings()
+    val askAt = try {
+        preferences[KEY_RATING_ASK_AT]?.let(LocalTime::parse)
+    } catch (error: Exception) {
+        null
+    }
+    return SleepRatingSettings(
+        enabled = preferences[KEY_RATING_ENABLED] ?: defaults.enabled,
+        askAgainLater = preferences[KEY_RATING_ASK_AGAIN_LATER] ?: defaults.askAgainLater,
+        askAt = askAt ?: defaults.askAt,
+    )
+}
 
 /** Saves the given app settings, overwriting whatever was there before. */
 suspend fun writeAppSettings(context: Context, settings: AppSettings) {
@@ -61,6 +111,14 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         preferences[KEY_PICKED_CYCLES] = settings.pickedCycles
         settings.lastSetupCheckPassedAt?.let { preferences[KEY_LAST_SETUP_CHECK_PASSED_AT] = it.toEpochMilli() }
             ?: preferences.remove(KEY_LAST_SETUP_CHECK_PASSED_AT)
+        preferences[KEY_NUDGE_MINUTES] = settings.afterAlarm.nudgeMinutes
+        preferences[KEY_NAP_MINUTES] = settings.afterAlarm.napMinutes
+        preferences[KEY_FADE_ENABLED] = settings.bedtimeAudio.fadeEnabled
+        preferences[KEY_FADE_START_PERCENT] = settings.bedtimeAudio.fadeStartPercent
+        preferences[KEY_PAUSE_WHEN_ASLEEP] = settings.bedtimeAudio.pauseWhenAsleep
+        preferences[KEY_RATING_ENABLED] = settings.sleepRating.enabled
+        preferences[KEY_RATING_ASK_AGAIN_LATER] = settings.sleepRating.askAgainLater
+        preferences[KEY_RATING_ASK_AT] = settings.sleepRating.askAt.toString()
     }
 }
 

@@ -4,6 +4,7 @@ package com.nikita.sleepcycle.ui.state
 // (permission reads, Gadgetbridge presence, the log file listing) is resolved by the caller into plain data
 // first, so this function only ever touches JVM types and can be unit tested without an emulator.
 
+import com.nikita.sleepcycle.night.NightRatings
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
@@ -34,6 +35,7 @@ fun buildUiState(
     screen: Screen,
     connectionTest: ConnectionTestState,
     nightLogFiles: List<File>,
+    nightLogRatings: Map<File, NightRatings?>,
     confirmingEndNight: Boolean,
     showingMorningReport: Boolean,
     morningReportEndedAt: Instant?,
@@ -53,7 +55,7 @@ fun buildUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart, connectionTest
         ),
         night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp),
-        logs = buildLogsUiState(nightLogFiles, zone),
+        logs = buildLogsUiState(nightLogFiles, nightLogRatings, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
         errorMessage = errorMessage,
     )

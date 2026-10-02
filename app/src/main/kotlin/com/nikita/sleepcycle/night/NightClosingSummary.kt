@@ -10,7 +10,7 @@ package com.nikita.sleepcycle.night
 //   In `nightEndFields` (or right next to its one call site in endNightLocked/finishNightIfNeeded), after the
 //   existing `appendNightLog(..., "night_end", ...)` call, add:
 //
-//     val config = resolveEngineConfig(state.debugOptions)
+//     val config = resolveEngineConfig(state)
 //     val closingSummary = buildNightClosingSummary(state.startedAt, state.lastSegments, now, config, state.wakeAlarmFiredAt)
 //     appendNightLog(context, state.startedAt, NightLogEvent(now, "night_summary", encodeNightClosingSummaryFields(closingSummary)), state.debugOptions.isAnyEnabled)
 //

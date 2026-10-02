@@ -71,7 +71,14 @@ fun publishNightState(state: NightState) {
  * the whole night and drives [resolveEngineConfig], so a fast debug night uses the same EngineConfig from its
  * very first plan onward.
  */
-fun startNight(context: Context, settings: NightSettings, now: Instant, debugOptions: DebugOptions = DebugOptions()) {
+fun startNight(
+    context: Context,
+    settings: NightSettings,
+    now: Instant,
+    afterAlarm: AfterAlarmSettings,
+    bedtimeAudio: BedtimeAudioSettings,
+    debugOptions: DebugOptions = DebugOptions(),
+) {
     clearMorningReport(context)
     controllerScope.launch {
         withNightTransactionLock {
@@ -90,7 +97,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
             cancelPreNudgeCheck(context)
             val zone = ZoneId.systemDefault()
             val initialPlan = computeAlarmPlan(
-                emptyList(), settings, now, morningAlarmAt = null, zone, resolveEngineConfig(debugOptions),
+                emptyList(), settings, now, morningAlarmAt = null, zone, resolveEngineConfig(debugOptions, afterAlarm),
                 wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null,
                 // J1.3: clearAlarmFiredStores just ran above, so this brand new night genuinely has no
                 // phoneAlarmFiredFor yet - not a default standing in for a caller that forgot to pass one.
@@ -106,6 +113,7 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
                 lastExportFileModifiedAt = null,
                 lastSyncFailureCause = null,
                 debugOptions = debugOptions,
+                afterAlarm = afterAlarm,
                 // H1: latched from this very first plan too, so a sliding AWAKE nap (rule 7, pre-wake) later
                 // this same night has a real morning alarm time to stop against from tick 1 onward.
                 morningAlarmAt = latchMorningAlarmAt(previous = null, initialPlan)
@@ -133,11 +141,16 @@ fun startNight(context: Context, settings: NightSettings, now: Instant, debugOpt
                         "deadline" to (settings.deadline?.toString() ?: "none"),
                         "simulatedBandData" to debugOptions.simulatedBandData.toString(),
                         "speed" to debugOptions.speed.toString()
-                    ) + nightStartTimezoneFields(now, zone)
+                    ) + nightStartTimezoneFields(now, zone) + nightStartRatingFields()
                 ),
                 debugOptions.isAnyEnabled
             )
             logAlarmReadiness(context, now, debugOptions.isAnyEnabled)
+            // Fade off in Settings (or the pause it leads into is off): still finish a fade left over from a night that never ended cleanly, so its volume comes back.
+            if (shouldFadeMedia(bedtimeAudio)) startMediaFade(context, now, now, bedtimeAudio.fadeStartPercent, debugOptions.isAnyEnabled)
+            else endMediaFade(context, now, now, debugOptions.isAnyEnabled)
+            // The new night is now the newest log and has not ended: drops a later rating question still armed for the last one.
+            syncLaterRatingAsk(context)
         }
         startNightServiceForTick(context)
     }
@@ -200,6 +213,7 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
         appendNightLog(context, state.startedAt, NightLogEvent(now, "night_end", nightEndFields(state, now)), state.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, state, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
+        endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
     }
     cancelTick(context)
     cancelPhoneAlarm(context)
@@ -393,7 +407,7 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
         // See this function's own L2.1 doc above for why a pending nudge defers ALL of the bookkeeping below
         // rather than only the parts that would touch the nudge directly.
         val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
-        if (shouldDeferFinishForPendingNudge(pendingNudgeAt, now, resolveEngineConfig(loaded.debugOptions))) {
+        if (shouldDeferFinishForPendingNudge(pendingNudgeAt, now, resolveEngineConfig(loaded))) {
             appendNightLog(
                 context, loaded.startedAt,
                 NightLogEvent(now, "night_end_deferred", mapOf("cause" to "out_of_bed_nudge_pending", "pendingNudgeAt" to pendingNudgeAt.toString())),
@@ -459,7 +473,7 @@ private suspend fun logNightClosingSummary(context: Context, state: NightState, 
         startedAt = state.startedAt,
         segments = state.lastSegments,
         endedAt = now,
-        config = resolveEngineConfig(state.debugOptions),
+        config = resolveEngineConfig(state),
         wakeAlarmFiredAt = state.wakeAlarmFiredAt
     )
     appendNightLog(

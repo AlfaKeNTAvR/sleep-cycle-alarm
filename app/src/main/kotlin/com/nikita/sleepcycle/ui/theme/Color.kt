@@ -18,3 +18,8 @@ val AmberAccentBright = Color(0xFFF7CD85)
 val OnAmberAccent = Color(0xFF1A1408)
 val ConnectedDot = Color(0xFF7BC89A)
 val ErrorRed = Color(0xFFE0806E)
+
+// Sleep rating (owner spec, 2026-10-02): the same green, amber and red the rest of the app already uses.
+val RatingGood = ConnectedDot
+val RatingOkay = AmberAccent
+val RatingBad = ErrorRed

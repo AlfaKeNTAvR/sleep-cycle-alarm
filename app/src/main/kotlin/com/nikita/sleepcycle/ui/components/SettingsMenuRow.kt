@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -23,20 +24,22 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.nikita.sleepcycle.ui.theme.ChevronArtSize
 import com.nikita.sleepcycle.ui.theme.ChevronStrokeWidth
+import com.nikita.sleepcycle.ui.theme.MinTouchTarget
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 
-/** One Settings row: [text] on the left, a disclosure chevron on the right, the whole card tappable. */
+/**
+ * One Settings row: [text] on the left, a disclosure chevron on the right, the whole row tappable. Owner spec,
+ * 2026-10-02 (Settings option A): rows sit together inside their section's card rather than one card each.
+ */
 @Composable
 fun SettingsMenuRow(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    SettingsCard(modifier = modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(text = text, style = MaterialTheme.typography.titleMedium)
-            ChevronRightMark()
-        }
+    Row(
+        modifier = modifier.fillMaxWidth().heightIn(min = MinTouchTarget).clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = text, style = MaterialTheme.typography.titleMedium)
+        ChevronRightMark()
     }
 }
 

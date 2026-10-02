@@ -24,30 +24,30 @@ class EngineConfigResolutionTest {
 
     @Test
     fun `resolves to the real EngineConfig when every debug switch is off`() {
-        assertEquals(EngineConfig(), resolveEngineConfig(DebugOptions()))
+        assertEquals(EngineConfig(), resolveEngineConfig(DebugOptions(), AfterAlarmSettings()))
     }
 
     @Test
     fun `T7 resolves to the SAME real EngineConfig regardless of speed - a fast debug night warps the clock instead`() {
         val anchor = Instant.parse("2026-09-17T20:00:00Z")
         for (speed in SIMULATION_SPEEDS) {
-            assertEquals(EngineConfig(), resolveEngineConfig(DebugOptions(warp = ClockWarp(speed, anchor, anchor))))
+            assertEquals(EngineConfig(), resolveEngineConfig(DebugOptions(warp = ClockWarp(speed, anchor, anchor)), AfterAlarmSettings()))
         }
     }
 
     @Test
     fun `T7 resolves to the same real EngineConfig regardless of simulatedBandData too`() {
         val anchor = Instant.parse("2026-09-17T20:00:00Z")
-        assertEquals(EngineConfig(), resolveEngineConfig(DebugOptions(simulatedBandData = true)))
+        assertEquals(EngineConfig(), resolveEngineConfig(DebugOptions(simulatedBandData = true), AfterAlarmSettings()))
         assertEquals(
-            resolveEngineConfig(DebugOptions(simulatedBandData = false, warp = null)),
-            resolveEngineConfig(DebugOptions(simulatedBandData = true, warp = ClockWarp(600, anchor, anchor)))
+            resolveEngineConfig(DebugOptions(simulatedBandData = false, warp = null), AfterAlarmSettings()),
+            resolveEngineConfig(DebugOptions(simulatedBandData = true, warp = ClockWarp(600, anchor, anchor)), AfterAlarmSettings())
         )
     }
 
     @Test
     fun `the real EngineConfig satisfies the engine's own validateConfig, exercised through computeAlarmPlan`() {
-        val config = resolveEngineConfig(DebugOptions())
+        val config = resolveEngineConfig(DebugOptions(), AfterAlarmSettings())
         val settings = NightSettings(deadline = null, pickedCycles = 4)
         assertDoesNotThrow {
             computeAlarmPlan(
@@ -57,20 +57,12 @@ class EngineConfigResolutionTest {
         }
     }
 
-    // ---- F1: outOfBedDelay vs AlarmRingService's own auto-stop must never coincide again ------------------
-
-    @Test
-    fun `F1 the real out-of-bed delay stays strictly longer than the real ring auto-stop`() {
-        val config = resolveEngineConfig(DebugOptions())
-        assertTrue(
-            config.outOfBedDelay > config.ringAutoStopAfter,
-            "outOfBedDelay (${config.outOfBedDelay}) must outlast ringAutoStopAfter (${config.ringAutoStopAfter}), or the nudge can fire into a service about to auto-stop"
-        )
-    }
+    // ---- F1: AlarmRingService's own auto-stop. The outOfBedDelay > ringAutoStopAfter rule is gone (owner spec,
+    // 2026-10-02): the nudge is measured from the ring's end, and Settings offers nudges from 5 min. ---------
 
     @Test
     fun `F1 AlarmRingService's real fallback AUTO_STOP_AFTER agrees with the real EngineConfig, not a second drifting constant`() {
-        assertEquals(resolveEngineConfig(DebugOptions()).ringAutoStopAfter, AUTO_STOP_AFTER)
+        assertEquals(resolveEngineConfig(DebugOptions(), AfterAlarmSettings()).ringAutoStopAfter, AUTO_STOP_AFTER)
     }
 
     // ---- P3 (owner spec, 2026-09-30) SUPERSEDES H7.1's 15 min: the out-of-bed nudge is 10 min after the ring ends -
@@ -84,7 +76,7 @@ class EngineConfigResolutionTest {
 
     @Test
     fun `H7_3 the real preNudgeCheckLead stays strictly under the real outOfBedDelay`() {
-        val config = resolveEngineConfig(DebugOptions())
+        val config = resolveEngineConfig(DebugOptions(), AfterAlarmSettings())
         assertTrue(
             config.outOfBedDelay > config.preNudgeCheckLead,
             "outOfBedDelay (${config.outOfBedDelay}) must outlast preNudgeCheckLead (${config.preNudgeCheckLead})"

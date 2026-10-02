@@ -37,6 +37,7 @@ import com.nikita.sleepcycle.engine.SleepSegment
 import com.nikita.sleepcycle.engine.SleepState
 import com.nikita.sleepcycle.engine.computeAlarmPlan
 import com.nikita.sleepcycle.engine.detectSleepState
+import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.engine.nextSyncDelay
 import com.nikita.sleepcycle.engine.normalizeSegments
 import com.nikita.sleepcycle.engine.sameAlarmInstant
@@ -262,7 +263,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // then, so the two readings would have differed by at most that same real sync duration anyway.
     val decisionNow = nowInstant()
 
-    val config = resolveEngineConfig(state.debugOptions)
+    val config = resolveEngineConfig(state)
     val appSettings = readAppSettings(context).first()
     val simulatedEvents = if (state.debugOptions.simulatedBandData) readSimulatedSleepEvents(context).first() else emptyList()
     val outcome = readBandDataForTick(context, state.debugOptions, appSettings, state, simulatedEvents, decisionNow)
@@ -313,6 +314,14 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // owner is still awake in bed with nothing armed at all. See rearmNudgeIfNapCancelledWhileAwake's own doc.
     rearmNudgeIfNapCancelledWhileAwake(context, state, plan, outcome.segments, config, decisionNow)
 
+    val sleepState = detectSleepState(normalizeSegments(outcome.segments, decisionNow, config))
+    // Settings: with "Pause media when asleep" off, playback carries on and the fade keeps stepping down to its floor.
+    if (sleepState == SleepState.ASLEEP && appSettings.bedtimeAudio.pauseWhenAsleep) {
+        pauseMediaIfJustFellAsleep(context, state, sleepState, config, decisionNow)
+    } else {
+        stepMediaFade(context, state.startedAt, decisionNow, debugNight)
+    }
+
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are
     // PhoneAlarmReceiver's own bookkeeping (see PhoneAlarmFiredStore.kt) - a tick only ever reads them
     // (already the freshest values, merged in by loadNightState above) and carries them through unchanged; it
@@ -343,7 +352,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // FIX2: booked from decisionNow - the instant this tick's own decision was actually made at - never the
     // caller's stale entry `now`. See nextTickAt's own doc for why, and TickScheduling.kt's own in-process
     // skip-arming guard for the defence-in-depth this pairs with.
-    scheduleNextTick(context, plan, decisionNow, config)
+    scheduleNextTick(context, plan, decisionNow, config, watchingForSleepSince = state.startedAt.takeIf { sleepState == SleepState.NOT_YET_ASLEEP })
     // FIX1: published from INSIDE this same lock - the one seam every committed tick's result now reaches
     // observedNightState through, whether it ran from NightService's own tick or an immediate UI-requested
     // one. NightService.handleTickResult and NightController.runImmediateTick used to each publish their own
@@ -351,6 +360,28 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // reason the segment/plan mismatch above could commit out of order.
     publishNightState(newState)
     return newState
+}
+
+/**
+ * Owner request, 2026-10-02: pauses whatever media is playing on the tick that first sees the band say ASLEEP
+ * (see MediaPauseOnSleep.kt). The previous state is rebuilt from the last tick's own segments at its own sync
+ * instant, so a kept (stale) sync can never pause twice, and only a real change into ASLEEP counts.
+ *
+ * Once playback is stopped (or nothing was playing) the bedtime fade ends and the owner's volume is put back
+ * (MediaFade.kt). An app that ignored the pause keeps the faded volume instead, so restoring it can never
+ * turn up something still playing; the fade then ends with the night.
+ */
+private suspend fun pauseMediaIfJustFellAsleep(context: Context, state: NightState, sleepState: SleepState, config: EngineConfig, now: Instant) {
+    val previousSleepState = detectSleepState(normalizeSegments(state.lastSegments, state.lastSyncAt ?: now, config))
+    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    if (!shouldPauseMediaOnSleep(previousSleepState, sleepState, morningAlarmRang)) return
+    val result = pausePlayingMedia(context)
+    appendNightLog(
+        context, state.startedAt,
+        NightLogEvent(now, "media_pause_on_sleep", mapOf("result" to result.name.lowercase())),
+        state.debugOptions.isAnyEnabled
+    )
+    if (result != MediaPauseResult.STILL_PLAYING) endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
 }
 
 /**
@@ -936,8 +967,8 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
  * arms it (disk saves, logging) - and it has been removed, because it also suppressed a tick's own terminal
  * re-arm and killed the whole warped night's tick chain. See that file's own header for the full record.
  */
-internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineConfig): Instant? {
-    val delay = nextSyncDelay(plan, decisionNow, config) ?: return null
+internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineConfig, watchingForSleepSince: Instant? = null): Instant? {
+    val delay = nextSyncDelay(plan, decisionNow, config, watchingForSleepSince) ?: return null
     val candidate = decisionNow.plus(delay)
     // Defensive floor only - unreachable today since nextSyncDelay's own duration is always strictly positive
     // (see this function's own doc) - the smallest possible strictly-after instant, not a meaningful duration
@@ -946,9 +977,12 @@ internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineCon
     return if (candidate.isAfter(decisionNow)) candidate else decisionNow.plusNanos(1)
 }
 
-/** null from [nextTickAt] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig. */
-private fun scheduleNextTick(context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig) {
-    val at = nextTickAt(plan, decisionNow, config)
+/**
+ * null from [nextTickAt] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig.
+ * [watchingForSleepSince] is the night's start while the band has seen no sleep yet tonight, null otherwise (see nextSyncDelay).
+ */
+private fun scheduleNextTick(context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig, watchingForSleepSince: Instant?) {
+    val at = nextTickAt(plan, decisionNow, config, watchingForSleepSince)
     if (at == null) {
         cancelTick(context)
     } else {

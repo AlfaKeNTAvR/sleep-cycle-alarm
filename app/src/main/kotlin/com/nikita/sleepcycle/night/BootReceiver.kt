@@ -66,6 +66,8 @@ class BootReceiver : BroadcastReceiver() {
     private suspend fun handleBoot(context: Context) {
         val state = withContext(Dispatchers.IO) { loadNightState(context) }
         restorePendingOutOfBedNudge(context, state)
+        // Owner spec, 2026-10-02: AlarmManager alarms do not survive a reboot, so the later rating question is re-armed too.
+        syncLaterRatingAsk(context)
         if (!shouldResumeNightServiceOnBoot(state)) return
         val nonNullState = requireNotNull(state)
         val plan = nonNullState.lastPlan
@@ -118,7 +120,7 @@ class BootReceiver : BroadcastReceiver() {
         // own label and kind, so a reboot mid-nap still wakes him and still names it as the nap it is.
         val pending = readPendingFollowUp(context) ?: return
         val pendingNudgeAt = pending.at
-        val config = resolveEngineConfig(state?.debugOptions ?: DebugOptions())
+        val config = resolveEngineConfig(state?.debugOptions ?: DebugOptions(), state?.afterAlarm ?: AfterAlarmSettings())
         val restoreAt = restoredOutOfBedNudgeAt(pendingNudgeAt, now, config)
         if (restoreAt == null) {
             logBootEvent(

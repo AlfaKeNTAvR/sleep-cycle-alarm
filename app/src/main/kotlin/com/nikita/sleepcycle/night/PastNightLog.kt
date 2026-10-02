@@ -17,7 +17,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Locale
 
-private const val NIGHT_START_EVENT_TYPE = "night_start"
+internal const val NIGHT_START_EVENT_TYPE = "night_start"
 private const val NIGHT_END_EVENT_TYPE = "night_end"
 
 private const val SUMMARY_TEXT_FIELD = "summary"
@@ -69,6 +69,8 @@ data class PastNightLog(
     val speed: Int,
     /** P1: night_end's `noBandData` flag - no band data reached the app that night. Absent (every log written before P1) reads as false, keeping that night's old "no sleep recorded" wording. */
     val noBandData: Boolean = false,
+    /** The night's two sleep ratings (SleepRating.kt); null for a night started before the rating existed, which cannot be rated. */
+    val ratings: NightRatings? = null,
 )
 
 /**
@@ -118,16 +120,9 @@ fun readPastNightLog(file: File): PastNightLog = parsePastNightLog(
  * event of each type wins, so a log that somehow holds two is read the way the night actually ended.
  */
 fun parsePastNightLog(lines: List<String>): PastNightLog {
-    var startEvent: NightLogEvent? = null
-    var endEvent: NightLogEvent? = null
-    lines.forEach { line ->
-        val event = parseNightLogLine(line) ?: return@forEach
-        when (event.type) {
-            NIGHT_START_EVENT_TYPE -> startEvent = event
-            NIGHT_END_EVENT_TYPE -> endEvent = event
-            else -> Unit
-        }
-    }
+    val events = lines.mapNotNull(::parseNightLogLine)
+    val startEvent = events.lastOrNull { it.type == NIGHT_START_EVENT_TYPE }
+    val endEvent = events.lastOrNull { it.type == NIGHT_END_EVENT_TYPE }
     val startFields = startEvent?.fields ?: emptyMap()
     val endFields = endEvent?.fields ?: emptyMap()
     return PastNightLog(
@@ -138,6 +133,7 @@ fun parsePastNightLog(lines: List<String>): PastNightLog {
         pickedCycles = endFields[PICKED_CYCLES_FIELD]?.toIntOrNull() ?: startFields[PICKED_CYCLES_FIELD]?.toIntOrNull(),
         speed = readSpeed(startFields),
         noBandData = endFields[NO_BAND_DATA_FIELD] == "true",
+        ratings = readNightRatings(events),
     )
 }
 

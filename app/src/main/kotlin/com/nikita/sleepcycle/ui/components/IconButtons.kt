@@ -15,6 +15,7 @@ package com.nikita.sleepcycle.ui.components
 // at 24dp and can read as a sun, while sliders stay legible at any size and share the logs mark's horizontal
 // rhythm.
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -84,9 +85,14 @@ private fun DrawScope.drawGridLine(unit: Float, stroke: Stroke, x1: Float, y1: F
     )
 }
 
-/** Back: a shaft plus a two-stroke head, pointing left. */
+/**
+ * Back: a shaft plus a two-stroke head, pointing left. Owner request, 2026-10-02: the phone's own back
+ * gesture/button does exactly what this arrow does, so it steps back a screen instead of leaving the app.
+ * Screens without this arrow (Before bed, Night) keep the system's default back.
+ */
 @Composable
 fun BackArrowButton(contentDescription: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    BackHandler(onBack = onClick)
     IconButton(contentDescription, onClick, modifier) { unit, stroke ->
         drawGridLine(unit, stroke, 19f, 12f, 5f, 12f)
         val head = Path().apply {

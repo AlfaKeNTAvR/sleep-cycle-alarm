@@ -57,6 +57,7 @@ import android.content.Context
 import android.content.Intent
 import com.nikita.sleepcycle.engine.MAX_NAP_ALARMS
 import com.nikita.sleepcycle.engine.sameAlarmInstant
+import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.NightState
@@ -96,7 +97,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         // W18: wording only, carried forward to whatever ends up showing the ring - see AlarmLabel.kt.
         val label = intent.readAlarmLabel()
         val state = if (isTest) null else loadNightState(context)
-        val ringAutoStopAfter = resolveEngineConfig(state?.debugOptions ?: DebugOptions()).ringAutoStopAfter
+        val ringAutoStopAfter = resolveEngineConfig(state?.debugOptions ?: DebugOptions(), state?.afterAlarm ?: AfterAlarmSettings()).ringAutoStopAfter
         acquireAlarmWakeLock(context, ringAutoStopAfter)
         if (isTest) {
             // T8: the test alarm is a daylight check of the ring path, never part of a simulated night - real time.

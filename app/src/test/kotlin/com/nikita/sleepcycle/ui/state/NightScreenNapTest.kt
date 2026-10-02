@@ -39,6 +39,12 @@ class NightScreenNapTest {
         assertEquals(20, screen.napButtonMinutes)
     }
 
+    @Test fun `the Nap button offers the nap length the night was started with in Settings`() {
+        val state = afterMorningAlarm.copy(afterAlarm = com.nikita.sleepcycle.night.AfterAlarmSettings(napMinutes = 30))
+
+        assertEquals(30, screenAt("2026-09-17T07:05", pendingNudge("2026-09-17T07:13"), state).napButtonMinutes)
+    }
+
     @Test fun `once Nap is pressed at 07_05 the screen names the nap alarm, its 07_25 time and the 20 min countdown`() {
         val content = screenAt("2026-09-17T07:05", pendingNap("2026-09-17T07:25")).content
 

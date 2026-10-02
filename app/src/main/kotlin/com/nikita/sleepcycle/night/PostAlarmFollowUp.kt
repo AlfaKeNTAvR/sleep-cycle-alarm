@@ -37,7 +37,7 @@ fun alarmLabelForFollowUp(kind: FollowUpKind): AlarmLabel =
  */
 fun armFollowUpAfterAlarmFired(context: Context, state: NightState, now: Instant, cause: String) {
     val fresh = loadNightState(context) ?: state
-    val next = nextFollowUp(PostAlarmEvent.AlarmFired(now), readPendingFollowUp(context), fresh.settings.deadline, resolveEngineConfig(fresh.debugOptions))
+    val next = nextFollowUp(PostAlarmEvent.AlarmFired(now), readPendingFollowUp(context), fresh.settings.deadline, resolveEngineConfig(fresh))
         ?: return
     armFollowUp(context, fresh, next, now, cause)
 }
@@ -49,7 +49,7 @@ fun armFollowUpAfterAlarmFired(context: Context, state: NightState, now: Instant
 fun rearmFollowUpAfterRingEnded(context: Context, now: Instant) {
     val state = loadNightState(context) ?: return
     val pending = readPendingFollowUp(context)
-    val next = nextFollowUp(PostAlarmEvent.RingEnded(now), pending, state.settings.deadline, resolveEngineConfig(state.debugOptions))
+    val next = nextFollowUp(PostAlarmEvent.RingEnded(now), pending, state.settings.deadline, resolveEngineConfig(state))
     if (next == null || next == pending) return
     armFollowUp(context, state, next, now, "ring_ended")
 }
@@ -63,7 +63,7 @@ fun rearmFollowUpAfterRingEnded(context: Context, now: Instant) {
 fun startManualNap(context: Context, now: Instant): Boolean {
     val state = loadNightState(context) ?: return false
     val pending = readPendingFollowUp(context)
-    val next = nextFollowUp(PostAlarmEvent.NapPressed(now), pending, state.settings.deadline, resolveEngineConfig(state.debugOptions))
+    val next = nextFollowUp(PostAlarmEvent.NapPressed(now), pending, state.settings.deadline, resolveEngineConfig(state))
     if (next == null || next == pending) {
         appendNightLog(
             context, state.startedAt,
@@ -96,7 +96,7 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
             return@withNightTransactionLock false
         }
         appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledNapAt" to pending.at.toString())), debugNight)
-        val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, state.settings.deadline, resolveEngineConfig(state.debugOptions))
+        val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, state.settings.deadline, resolveEngineConfig(state))
             ?: return@withNightTransactionLock false
         return@withNightTransactionLock armFollowUp(context, state, next, now, "im_up_pressed")
     }
@@ -114,7 +114,7 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
     // Seen on the phone 2026-10-02: without this the screen kept offering "I'm up" next to Nap until the
     // follow-up tick committed, which waits on a band sync of up to 20 s.
     publishNightState(upState)
-    val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, upState.settings.deadline, resolveEngineConfig(upState.debugOptions))
+    val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, upState.settings.deadline, resolveEngineConfig(upState))
         ?: return@withNightTransactionLock false
     armFollowUp(context, upState, next, now, "im_up_pressed")
 }
@@ -144,7 +144,7 @@ private fun armFollowUp(context: Context, state: NightState, followUp: PendingFo
         )
     }
     if (followUpNeedsPreNudgeCheck(followUp, state)) {
-        val config = resolveEngineConfig(state.debugOptions)
+        val config = resolveEngineConfig(state)
         if (!schedulePreNudgeCheck(context, followUp.at.minus(config.preNudgeCheckLead))) {
             appendNightLog(
                 context, state.startedAt,

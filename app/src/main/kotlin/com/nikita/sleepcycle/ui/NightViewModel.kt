@@ -36,6 +36,16 @@ import com.nikita.sleepcycle.night.readPendingFollowUp
 import com.nikita.sleepcycle.night.startManualNap
 import com.nikita.sleepcycle.night.pressImUp
 import com.nikita.sleepcycle.night.readPastNightLog
+import com.nikita.sleepcycle.night.AfterAlarmSettings
+import com.nikita.sleepcycle.night.BedtimeAudioSettings
+import com.nikita.sleepcycle.night.NightRatings
+import com.nikita.sleepcycle.night.RatingMoment
+import com.nikita.sleepcycle.night.SleepRating
+import com.nikita.sleepcycle.night.SleepRatingSettings
+import com.nikita.sleepcycle.night.nightLogFile
+import com.nikita.sleepcycle.night.recordSleepRating
+import com.nikita.sleepcycle.night.syncLaterRatingAsk
+import com.nikita.sleepcycle.ui.state.MorningRatingCard
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.runSetupCheck
@@ -107,10 +117,16 @@ private data class CoreInputs(
     val gadgetbridgeInstalled: Boolean,
 )
 
+/** The saved night logs, newest first, and each one's ratings (null: a night that cannot be rated), read together off the main thread. */
+private data class NightLogListing(val files: List<File>, val ratings: Map<File, NightRatings?>)
+
+/** The night the morning report shows, for its rating card: that night's log file and its ratings so far (null: it cannot be rated). */
+private data class MorningRatingTarget(val logFile: File, val ratings: NightRatings?)
+
 private data class ExtraInputs(
     val permissionStatus: PermissionStatus,
     val connectionTest: ConnectionTestState,
-    val nightLogFiles: List<File>,
+    val nightLogs: NightLogListing,
     val confirmingEndNight: Boolean,
     val endingNight: Boolean,
 )
@@ -153,8 +169,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val connectionTest = MutableStateFlow<ConnectionTestState>(ConnectionTestState.Idle)
     /** P2: REAL start time of the last connection test, automatic or tapped - feeds [connectionTestIsDue]'s cooldown. In memory only: a fresh process may test again at once, which is fine. */
     private var lastConnectionTestAttemptAt: Instant? = null
-    private val nightLogFiles = MutableStateFlow<List<File>>(emptyList())
+    private val nightLogs = MutableStateFlow(NightLogListing(emptyList(), emptyMap()))
     private val openedPastNight = MutableStateFlow<PastNightUiState?>(null)
+    /** The Logs row the open Past night screen came from - the file a rating changed there is written to. */
+    private var openedPastNightRow: NightLogSummary? = null
+    private val morningRatingTarget = MutableStateFlow<MorningRatingTarget?>(null)
     private val confirmingEndNight = MutableStateFlow(false)
     /** Owner spec, 2026-10-02: the "I'm up" confirmation dialog is open - see NightUiState.confirmingImUp. */
     private val confirmingImUp = MutableStateFlow(false)
@@ -182,6 +201,15 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private val appSettings: StateFlow<AppSettings?> =
         readAppSettings(context).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** The saved settings, for the Settings screen; null until DataStore has answered once. */
+    val settings: StateFlow<AppSettings?> = appSettings
+
+    /** Owner spec, 2026-10-02: the morning report's "How did you sleep?" card - null hides it (rating switched off, or a night started before the rating existed). */
+    val morningRating: StateFlow<MorningRatingCard?> = combine(morningRatingTarget, appSettings) { target, settings ->
+        val ratings = target?.ratings
+        if (ratings != null && settings?.sleepRating?.enabled == true) MorningRatingCard(ratings.afterEndNight?.rating) else null
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** Which Setup wizard page (if any) is showing; null means the one-page checklist. See [setupWizardPageState]. */
     val setupWizardPage: StateFlow<SetupWizardPage?> = setupWizardPageState.asStateFlow()
 
@@ -190,7 +218,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     val uiState: StateFlow<UiState> = combine(
         combine(appSettings, observedNightState, now, screen, gadgetbridgeInstalled, ::CoreInputs),
-        combine(permissionStatus, connectionTest, nightLogFiles, confirmingEndNight, endingNight, ::ExtraInputs),
+        combine(permissionStatus, connectionTest, nightLogs, confirmingEndNight, endingNight, ::ExtraInputs),
         combine(showingMorningReport, morningReportEndedAt, cachedMorningReport, ::ReportInputs),
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
         // Bundled with errorMessage rather than added as a 6th top-level flow: kotlinx.coroutines' combine has
@@ -233,7 +261,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             gadgetbridgeInstalled = core.gadgetbridgeInstalled,
             screen = core.screen,
             connectionTest = extra.connectionTest,
-            nightLogFiles = extra.nightLogFiles,
+            nightLogFiles = extra.nightLogs.files,
+            nightLogRatings = extra.nightLogs.ratings,
             confirmingEndNight = extra.confirmingEndNight,
             endingNight = extra.endingNight,
             showingMorningReport = report.showingMorningReport,
@@ -286,7 +315,27 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         val saved = withContext(Dispatchers.IO) { loadMorningReport(context) } ?: return
         cachedMorningReport.value = CachedMorningReport(buildNightEngineView(saved.nightState, saved.endedAt))
         morningReportEndedAt.value = saved.endedAt
+        loadMorningRatingTarget(saved.nightState)
         showingMorningReport.value = true
+    }
+
+    /** Points the morning report's rating card at the night that just ended: its log file and the ratings it already has. */
+    private suspend fun loadMorningRatingTarget(endedNight: NightState) {
+        morningRatingTarget.value = withContext(Dispatchers.IO) {
+            val logFile = nightLogFile(context, endedNight.startedAt, endedNight.debugOptions.isAnyEnabled)
+            MorningRatingTarget(logFile, readPastNightLog(logFile).ratings)
+        }
+    }
+
+    /** Owner spec, 2026-10-02: a face tapped on the morning report. Optional - Done without one skips it - and tapping another face changes it. */
+    fun rateMorning(rating: SleepRating) {
+        val target = morningRatingTarget.value ?: return
+        viewModelScope.launch {
+            morningRatingTarget.value = withContext(Dispatchers.IO) {
+                recordSleepRating(context, target.logFile, RatingMoment.AFTER_END_NIGHT, rating)
+                target.copy(ratings = readPastNightLog(target.logFile).ratings)
+            }
+        }
     }
 
     /**
@@ -376,7 +425,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         refreshStatuses()
         debug.resetIfIdle(Instant.now())
         if (screen.value == Screen.Night) requestImmediateTick(context)
-        if (screen.value == Screen.Logs) nightLogFiles.value = listNightLogs(context)
+        if (screen.value == Screen.Logs) viewModelScope.launch { refreshNightLogs() }
+        viewModelScope.launch(Dispatchers.IO) { syncLaterRatingAsk(context) }
         maybeRunAutomaticConnectionTest()
     }
 
@@ -396,24 +446,50 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** Settings' "Setup" row: always opens the one-page checklist, never the wizard - re-checks stay quick. */
     fun openSetup() { screen.value = Screen.Setup; setupWizardPageState.value = null }
 
-    fun openLogs() { screen.value = Screen.Logs; nightLogFiles.value = listNightLogs(context) }
+    fun openLogs() { screen.value = Screen.Logs; viewModelScope.launch { refreshNightLogs() } }
 
     /** Reopens one saved night as its own summary screen. Reading and parsing the log is disk I/O, so it happens off the main thread before the screen switches. */
     fun openNightLog(log: NightLogSummary) {
         viewModelScope.launch {
             val parsed = withContext(Dispatchers.IO) { readPastNightLog(log.file) }
+            openedPastNightRow = log
             openedPastNight.value = buildPastNightUiState(log, parsed, currentZone())
             screen.value = Screen.PastNight
         }
     }
 
-    fun closePastNight() { openedPastNight.value = null; screen.value = Screen.Logs }
+    fun closePastNight() {
+        openedPastNight.value = null
+        openedPastNightRow = null
+        screen.value = Screen.Logs
+        viewModelScope.launch { refreshNightLogs() }
+    }
+
+    /** Owner spec, 2026-10-02: Past night changes either rating. Written as one more rating line in that night's log, then the screen is redrawn from the log. */
+    fun ratePastNight(moment: RatingMoment, rating: SleepRating) {
+        val row = openedPastNightRow ?: return
+        viewModelScope.launch {
+            val parsed = withContext(Dispatchers.IO) {
+                recordSleepRating(context, row.file, moment, rating)
+                readPastNightLog(row.file)
+            }
+            if (openedPastNightRow == row) openedPastNight.value = buildPastNightUiState(row, parsed, currentZone())
+        }
+    }
+
+    /** Re-lists the saved night logs and reads each one's ratings for its chips, off the main thread. */
+    private suspend fun refreshNightLogs() {
+        nightLogs.value = withContext(Dispatchers.IO) {
+            val files = listNightLogs(context)
+            NightLogListing(files, files.associateWith { readPastNightLog(it).ratings })
+        }
+    }
 
     /** Deletes one saved night log and re-lists what is left. Called only after the Logs screen's own confirmation. */
     fun deleteNightLog(log: NightLogSummary) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { deleteNightLogFile(log.file) }
-            nightLogFiles.value = listNightLogs(context)
+            refreshNightLogs()
         }
     }
 
@@ -586,9 +662,13 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         // startNightTracking already arms the initial plan and triggers the first real tick as one ordered
         // sequence (see NightController.startNight); requesting a second immediate tick here would race it
         // and could let out-of-order work overwrite the tick's own (Opus review 3.2).
-        startNightTracking(context, nightSettings, startedAt, debugOptions)
+        startNightTracking(context, nightSettings, startedAt, settings.afterAlarm, settings.bedtimeAudio, debugOptions)
+        // startNight clears any leftover nudge/nap record on disk; drop this screen's own copy of it now too,
+        // rather than showing the previous night's Nap button until the 30 s ticker re-reads the file.
+        pendingFollowUp.value = null
         showingMorningReport.value = false
         cachedMorningReport.value = null
+        morningRatingTarget.value = null
         screen.value = Screen.Night
     }
 
@@ -652,12 +732,17 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             // T4: virtual - endNight records this into night_end/the morning report, both virtual-time.
             val report = endNightTracking(context, nowInstant())
+            // endNight cleared the nudge/nap record on disk - see beginNight for why this copy is dropped at once.
+            pendingFollowUp.value = null
             if (report != null) {
                 cachedMorningReport.value = CachedMorningReport(buildNightEngineView(report.nightState, report.endedAt))
                 morningReportEndedAt.value = report.endedAt
+                loadMorningRatingTarget(report.nightState)
             } else {
                 restoreMorningReportFromDiskIfAny(nightStateFromDisk = null)
             }
+            // The night now has its night_end, so the later rating question can be armed for it.
+            withContext(Dispatchers.IO) { syncLaterRatingAsk(context) }
             showingMorningReport.value = true
             endingNight.value = false
         }
@@ -668,6 +753,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         showingMorningReport.value = false
         cachedMorningReport.value = null
         morningReportEndedAt.value = null
+        morningRatingTarget.value = null
         endingNight.value = false
         screen.value = Screen.BeforeBed
         viewModelScope.launch(Dispatchers.IO) { clearMorningReport(context) }
@@ -676,6 +762,20 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private fun persistSettings(transform: (AppSettings) -> AppSettings) {
         val current = appSettings.value ?: return
         viewModelScope.launch { writeAppSettings(context, transform(current)) }
+    }
+
+    // Settings screen actions (owner spec, 2026-10-02). The nudge and nap length apply from the next Start night;
+    // the audio switches and the rating apply at once.
+    fun setAfterAlarmSettings(settings: AfterAlarmSettings) = persistSettings { it.copy(afterAlarm = settings) }
+    fun setBedtimeAudioSettings(settings: BedtimeAudioSettings) = persistSettings { it.copy(bedtimeAudio = settings) }
+
+    /** Also re-arms (or cancels) the later rating question, which depends on these switches and the ask time. */
+    fun setSleepRatingSettings(settings: SleepRatingSettings) {
+        val current = appSettings.value ?: return
+        viewModelScope.launch {
+            writeAppSettings(context, current.copy(sleepRating = settings))
+            withContext(Dispatchers.IO) { syncLaterRatingAsk(context) }
+        }
     }
 
     // Debug screen actions: thin delegates to DebugScreenController.kt, which owns the actual state.
