@@ -5,33 +5,34 @@ package com.nikita.sleepcycle.ui
 // one property/method per Debug screen feature. Not a ViewModel itself: constructed and driven by
 // NightViewModel, the one place with a CoroutineScope and an Android Context to hand it.
 //
-// U1/U2: every action that touches the clock warp - [setSpeed], [applyClockJump], [resetToRealTime], and
-// [setSimulatedBandData] turning the switch off - routes through [normalizedWarp] (the one rule for when a
-// warp exists at all, via computeSpeedChangeWarp/computeJumpWarp) and, for clearing it, through the single
-// private [clearClockWarp] - so U5's own instruction ("the same function, not a parallel copy") holds for
-// real, not just by convention.
+// U1/U2: every action that changes the clock's speed routes through [normalizedWarp] (the one rule for when a
+// warp exists at all, via computeSpeedChangeWarp), so U5's own instruction ("the same function, not a
+// parallel copy") holds for real, not just by convention. Owner spec, 2026-10-02: the jump to a set time, "Reset
+// to real time" and the Clear button are gone - a night's end resets the clock and empties the simulated sleep
+// (resetDebugOptionsAndClock) - and the speed chips are 1x, 60x and Auto (AutoSimulationSpeed.kt).
 //
-// V4: every warp mutation is guarded against a running night, not just the jump - see
-// [isSimulatedBandDataToggleAllowed]'s own doc for why turning simulated band data off mid-night is just as
-// unsafe as jumping mid-night, and [resetIfIdle]'s own doc for why the idle auto-reset is skipped outright
-// instead. V5: [setSpeed] is the one warp mutation that STAYS legal mid-night - see its own doc.
+// V4: every warp mutation is guarded against a running night - see [isSimulatedBandDataToggleAllowed]'s own
+// doc for why turning simulated band data off mid-night is unsafe, and [resetIfIdle]'s own doc for why the
+// idle auto-reset is skipped outright instead. V5: [setSpeedChoice] is the one warp mutation that STAYS legal
+// mid-night - see its own doc.
 
 import android.content.Context
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.DebugOptions
-import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import com.nikita.sleepcycle.night.SimulatedSleepEventKind
-import com.nikita.sleepcycle.night.appendSetupLog
+import com.nikita.sleepcycle.night.SpeedChoice
+import com.nikita.sleepcycle.night.applySimulationSpeed
+import com.nikita.sleepcycle.night.autoClockSpeed
+import com.nikita.sleepcycle.night.chooseSimulationSpeed
+import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
+import com.nikita.sleepcycle.night.readPendingFollowUp
+import com.nikita.sleepcycle.night.readSimulationSpeed
+import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.appendSimulatedSleepEvent
-import com.nikita.sleepcycle.night.clearedSimulatedSleepEvents
-import com.nikita.sleepcycle.night.computeJumpWarp
-import com.nikita.sleepcycle.night.computeSpeedChangeWarp
 import com.nikita.sleepcycle.night.isDebugTestAlarmAllowed
-import com.nikita.sleepcycle.night.isJumpToTimeAllowed
-import com.nikita.sleepcycle.night.isResetToRealTimeAllowed
 import com.nikita.sleepcycle.night.isSimulatedBandDataToggleAllowed
 import com.nikita.sleepcycle.night.isSimulatedSleepControlAllowed
 import com.nikita.sleepcycle.night.isSpeedSelectorAllowed
@@ -41,7 +42,6 @@ import com.nikita.sleepcycle.night.readDebugOptions
 import com.nikita.sleepcycle.night.readDebugOptionsLastChangedAt
 import com.nikita.sleepcycle.night.readSimulatedSleepEvents
 import com.nikita.sleepcycle.night.rearmAfterSpeedChange
-import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.runImmediateTick
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.night.scheduleTick
@@ -51,9 +51,7 @@ import com.nikita.sleepcycle.night.scheduleDebugTestAlarm
 import com.nikita.sleepcycle.night.shouldAutoResetDebugOptions
 import com.nikita.sleepcycle.night.updateDebugOptions
 import com.nikita.sleepcycle.night.updateSimulatedSleepEvents
-import com.nikita.sleepcycle.night.virtualNow
 import com.nikita.sleepcycle.night.writeClockWarp
-import com.nikita.sleepcycle.night.writeSimulatedSleepEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,8 +61,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
 
 /** W9: how far past the engine's own minimum awakening the follow-up tick is booked, so it lands once the awake mark is already longer than the floor rather than exactly on it. */
 private val DEBOUNCE_RETICK_MARGIN: Duration = Duration.ofSeconds(2)
@@ -87,9 +83,9 @@ class DebugScreenController(private val context: Context, private val scope: Cor
     fun canRingTestAlarm(): Boolean = isDebugTestAlarmAllowed(nightActive = observedNightState.value != null)
 
     /**
-     * U1: turning simulated band data off clears any active clock warp too, through the same [clearClockWarp]
-     * "Reset to real time" (U2) uses - a warp and real band data must never be live at once (see this file's
-     * own header). Turning it on is unconditional - the speed selector and jump only unlock afterwards.
+     * U1: turning simulated band data off clears any active clock warp too - a warp and real band data must
+     * never be live at once (see this file's own header). Turning it on is unconditional - the speed chips only
+     * unlock afterwards.
      *
      * V4: refused (a no-op) while a night is active, in EITHER direction - see
      * [isSimulatedBandDataToggleAllowed]'s own doc for why turning it off specifically is unsafe mid-night
@@ -120,97 +116,40 @@ class DebugScreenController(private val context: Context, private val scope: Cor
             val at = nowInstant()
             updateSimulatedSleepEvents(context) { stored -> appendSimulatedSleepEvent(stored, SimulatedSleepEventKind.AWAKE, at) }
             writeClockWarp(context, null)
-            updateDebugOptions(context, Instant.now()) { it.copy(simulatedBandData = false) }
+            updateDebugOptions(context, Instant.now()) { it.copy(simulatedBandData = false, autoSpeed = false) }
             requestImmediateTick(context)
         }
     }
 
     /**
-     * T7/U1/U2/V5: the Debug screen's speed selector. Refused (a no-op) while simulated band data is off - the
-     * Debug screen also disables the control for that case (U1), this is the second guard, same pattern as
-     * [ringTestAlarm]. Otherwise re-anchors the warp at the CURRENT virtual instant and [speed] in one call
-     * ([computeSpeedChangeWarp], the SAME function this action shares with its own test), so changing speed
-     * never itself jumps the clock - only the rate at which it moves from here on.
+     * T7/U1/U2/V5, owner spec 2026-10-02: the Night screen's speed chips (1x, 60x, Auto). Refused (a no-op)
+     * while simulated band data is off - the chips are also disabled then (U1), this is the second guard.
+     * Re-anchors at the CURRENT virtual instant ([chooseSimulationSpeed]), so changing speed never itself jumps
+     * the clock - only the rate it moves at from here on. Auto starts at the speed it wants for where the night
+     * is now (600x, or 10x within 10 simulated minutes of the next alarm); the night tick keeps it there.
      *
-     * V5: the ONE warp mutation that stays legal mid-night (U2's "drop to 1x and watch by hand" is a wanted
-     * mode) - but every real instant already armed under the OLD mapping (the out-of-bed nudge, its pre-nudge
-     * check, the wake alarm, the next tick) would otherwise keep firing at the STALE real instant. Once the new
-     * warp is written and live in [AppClock], [rearmAfterSpeedChange] re-arms every one of them from its own
-     * stored virtual instant, in the SAME coroutine, before this call returns - see its own doc for exactly
-     * what is re-armed and what self-heals on its own.
+     * V5: legal mid-night, so every real instant armed under the OLD mapping is re-armed: the pending nudge or
+     * own nap here, and the wake alarm and next tick by the immediate tick [rearmAfterSpeedChange] asks for.
      */
-    fun setSpeed(speed: Int) {
+    fun setSpeedChoice(choice: SpeedChoice) {
         if (!isSpeedSelectorAllowed(storedOptions.value.simulatedBandData)) return
         scope.launch {
-            writeClockWarp(context, computeSpeedChangeWarp(AppClock.warp(), speed, Instant.now()))
+            val now = nowInstant()
+            val autoSpeedNow = autoClockSpeed(now, observedNightState.value?.lastPlan?.wakeAt, readPendingFollowUp(context)?.at)
+            applySimulationSpeed(context, chooseSimulationSpeed(readSimulationSpeed(context), choice, Instant.now(), autoSpeedNow))
             rearmAfterSpeedChange(context)
         }
     }
 
     /**
-     * T11/U1: jumps the virtual clock to [time] on the current virtual date (system zone), keeping the current
-     * speed - moving backwards is allowed. Refused (a no-op) while simulated band data is off or a night is
-     * active (see [isJumpToTimeAllowed]); the Debug screen also disables the control for both cases, this is
-     * the second guard. Persists the new warp (survives a restart, same as [setSpeed]) and appends a
-     * `clock_jumped` event to the setup log with the old and new virtual instants and the speed.
-     */
-    fun applyClockJump(time: LocalTime) {
-        if (!isJumpToTimeAllowed(storedOptions.value.simulatedBandData, nightActive = observedNightState.value != null)) return
-        scope.launch {
-            val zone = ZoneId.systemDefault()
-            val realNow = Instant.now()
-            val currentWarp = AppClock.warp()
-            val oldVirtual = virtualNow(currentWarp, realNow)
-            val newVirtual = oldVirtual.atZone(zone).toLocalDate().atTime(time).atZone(zone).toInstant()
-            val newWarp = computeJumpWarp(currentWarp, newVirtual, realNow)
-            writeClockWarp(context, newWarp)
-            appendSetupLog(
-                context,
-                NightLogEvent(realNow, "clock_jumped", mapOf("from" to oldVirtual.toString(), "to" to newVirtual.toString(), "speed" to (newWarp?.speed ?: 1).toString()))
-            )
-        }
-    }
-
-    /**
-     * U2: the only action that discards an applied jump - sets the warp to null and speed to 1, without
-     * touching simulatedBandData. Contrast [resetDebugOptionsAndClock] (U5), which also forces every switch
-     * off, for the unrelated night-end/idle-reset case.
-     */
-    fun resetToRealTime() {
-        // W2: available whether or not simulated band data is on - this is how a leftover warp gets cleared.
-        // Still refused mid-night (see isResetToRealTimeAllowed); the button is disabled for that case too,
-        // this is the second guard.
-        if (!isResetToRealTimeAllowed(nightActive = observedNightState.value != null)) return
-        clearClockWarp()
-    }
-
-    /** U1/U2/U5/V7: the one place that clears the clock warp - [setSimulatedBandData] and [resetToRealTime] both call this rather than each writing null themselves. Speed needs no separate reset: it is derived from the warp (V7), so it reads back as 1 the instant the warp itself is null. */
-    private fun clearClockWarp() {
-        scope.launch { writeClockWarp(context, null) }
-    }
-
-    /**
      * T9: sets the simulated sleep state directly, replacing the old three-button fellAsleepNow/wokeUpNow/
      * fellBackAsleepNow with one toggle. T10: refused (a no-op) while simulated band data is off - the Debug
-     * screen also disables the toggle for that case, this is the second guard.
+     * screen also disables the toggle for that case, this is the second guard. Owner spec, 2026-10-02: either
+     * direction also drops the clock to 1x (see [dropToRealSpeed]).
      */
     fun setSimulatedAsleep(asleep: Boolean) {
         if (!isSimulatedSleepControlAllowed(storedOptions.value.simulatedBandData)) return
         recordEvent(if (asleep) SimulatedSleepEventKind.ASLEEP else SimulatedSleepEventKind.AWAKE)
-    }
-
-    /**
-     * W2 SUPERSEDES T10 for this one action: clearing the timeline is allowed whether or not simulated band
-     * data is on. T10's gate was meant to stop presses that look like they do something and do not; but a
-     * leftover timeline from an earlier session outlives the switch, and gating the clear behind the switch
-     * means the only way to empty it is to turn the switch back on first. Adding the state is gated; removing
-     * it is not.
-     */
-    fun clearSimulatedSleep() {
-        scope.launch {
-            writeSimulatedSleepEvents(context, clearedSimulatedSleepEvents())
-            requestImmediateTick(context)
-        }
     }
 
     /** "Ring phone alarm in 1 min": exercises the real alarm path in daylight, without starting or touching a night (D1). The button is also disabled per [canRingTestAlarm]; this is the second guard. */
@@ -267,6 +206,9 @@ class DebugScreenController(private val context: Context, private val scope: Cor
      */
     private fun recordEvent(kind: SimulatedSleepEventKind) {
         scope.launch {
+            // Before the event is stamped, so the debounce re-tick below is booked under the 1x mapping; the
+            // immediate tick right after re-arms the wake alarm and next tick under it too.
+            dropSimulationToRealSpeed(context)
             // T4: virtual - this becomes a SleepSegment boundary the engine plans against (BandDataSimulator.kt).
             val at = nowInstant()
             updateSimulatedSleepEvents(context) { stored -> appendSimulatedSleepEvent(stored, kind, at) }

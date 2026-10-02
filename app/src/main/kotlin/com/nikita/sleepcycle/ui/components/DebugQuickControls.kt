@@ -10,53 +10,71 @@ package com.nikita.sleepcycle.ui.components
 // that switch (U1's own gate), so rendering them without it would put two permanently dead controls on the
 // main screen of a real night. Turning the switch on stays a deliberate trip to the Debug screen, which is
 // the right weight for "I am about to simulate rather than sleep".
+//
+// Owner spec, 2026-10-02: the chips are 1x, 60x and Auto (AutoSimulationSpeed.kt), the Auto chip shows the
+// speed Auto is running at, and the card takes the Settings screen's look.
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.night.SpeedChoice
 import com.nikita.sleepcycle.ui.state.DebugUiState
 import com.nikita.sleepcycle.ui.theme.ChipGap
 
+private val ChipRowVerticalPadding = 12.dp
+
 /**
- * The speed row and the Asleep toggle, in one card, or nothing at all when [state] says simulated band data
- * is off (see this file's own header). [onSpeedChange] and [onSetSimulatedAsleep] are the same actions the
- * Debug screen's own copies of these controls call, so the two can never drift apart.
+ * The speed chips and the Asleep switch, in one Settings-style section, or nothing at all when [state] says
+ * simulated band data is off (see this file's own header).
  */
 @Composable
 fun DebugQuickControls(
     state: DebugUiState,
-    onSpeedChange: (Int) -> Unit,
+    onSpeedChoice: (SpeedChoice) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (!state.simulatedBandData) return
-    SettingsCard(modifier = modifier) {
-        Text(text = stringResource(R.string.debug_quick_controls_title), style = MaterialTheme.typography.titleMedium)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap)) {
-            state.availableSpeeds.forEach { speed ->
-                val label = stringResource(R.string.debug_speed_multiplier_label, speed)
+    SettingsSection(stringResource(R.string.debug_quick_controls_title), modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = ChipRowVerticalPadding),
+            horizontalArrangement = Arrangement.spacedBy(ChipGap),
+        ) {
+            state.speedChoices.forEach { choice ->
+                val label = speedChoiceLabel(choice, state.autoRunningSpeed)
                 SleepLengthChip(
                     label = label,
-                    selected = speed == state.speed,
+                    selected = choice == state.selectedSpeed,
                     available = state.simulatedTimeControlEnabled,
-                    onClick = { onSpeedChange(speed) },
+                    onClick = { onSpeedChoice(choice) },
                     contentDescription = label,
                     modifier = Modifier.weight(1f),
                 )
             }
         }
-        ToggleRow(
-            title = stringResource(R.string.debug_asleep_toggle_title),
+        CardDivider()
+        SettingsSwitchRow(
+            label = stringResource(R.string.debug_asleep_toggle_title),
             checked = state.simulatedAsleep,
             onCheckedChange = onSetSimulatedAsleep,
-            contentDescription = stringResource(R.string.debug_asleep_toggle_title),
             enabled = state.sleepControlEnabled,
         )
+    }
+}
+
+/** "1x", "60x", "Auto" - and under Auto, the speed it is running at on a second line under "Auto". */
+@Composable
+private fun speedChoiceLabel(choice: SpeedChoice, autoRunningSpeed: Int?): String {
+    val fixedSpeed = choice.fixedSpeed
+    return when {
+        fixedSpeed != null -> stringResource(R.string.debug_speed_multiplier_label, fixedSpeed)
+        autoRunningSpeed != null -> stringResource(R.string.debug_speed_auto_running, stringResource(R.string.debug_speed_multiplier_label, autoRunningSpeed))
+        else -> stringResource(R.string.debug_speed_auto)
     }
 }

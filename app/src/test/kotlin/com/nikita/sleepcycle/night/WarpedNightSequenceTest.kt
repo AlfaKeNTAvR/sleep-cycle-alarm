@@ -213,7 +213,7 @@ class WarpedNightSequenceTest {
         val fastWarp = ClockWarp(speed = 60, anchorReal = Instant.parse("2026-09-17T20:00:00Z"), anchorVirtual = Instant.parse("2026-09-17T21:00:00Z"))
         // Drops to 1x partway through the nap stretch - after the wake alarm and the pre-nudge check, before
         // the second nap fires - exactly the "drop to 1x and watch by hand" desk session U2 describes.
-        // computeSpeedChangeWarp is the SAME function DebugScreenController.setSpeed itself calls.
+        // computeSpeedChangeWarp is the SAME function DebugScreenController.setSpeedChoice itself calls.
         val switchVirtualInstant = bedtime.plus(Duration.ofHours(5))
         val switchRealInstant = realInstantFor(fastWarp, switchVirtualInstant)
         val slowWarp = computeSpeedChangeWarp(fastWarp, speed = 1, realNow = switchRealInstant)

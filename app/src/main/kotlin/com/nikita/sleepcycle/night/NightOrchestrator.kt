@@ -305,6 +305,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     }
     logDataAndPlan(context, state, outcome, plan, decisionNow)
 
+    // Owner spec, 2026-10-02: Auto sets the clock's speed for where the night now is BEFORE anything below arms
+    // an alarm or books the next tick, so all of them land under the new speed. Simulated nights only.
+    val followUpAt = readPendingFollowUp(context)?.at
+    val autoSpeedOn = state.debugOptions.simulatedBandData && applyAutoSpeed(context, decisionNow, plan.wakeAt, followUpAt)
+
     val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, decisionNow)
     // H7.2/FIX4: right after arming (or not) the phone alarm for this tick's own plan - a nap the tick just
     // armed supersedes any nudge still pending from an earlier alarm, but only once it is CONFIRMED - see
@@ -352,7 +357,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // FIX2: booked from decisionNow - the instant this tick's own decision was actually made at - never the
     // caller's stale entry `now`. See nextTickAt's own doc for why, and TickScheduling.kt's own in-process
     // skip-arming guard for the defence-in-depth this pairs with.
-    scheduleNextTick(context, plan, decisionNow, config, watchingForSleepSince = state.startedAt.takeIf { sleepState == SleepState.NOT_YET_ASLEEP })
+    scheduleNextTick(
+        context, plan, decisionNow, config,
+        watchingForSleepSince = state.startedAt.takeIf { sleepState == SleepState.NOT_YET_ASLEEP },
+        autoSpeedFollowUpAt = followUpAt.takeIf { autoSpeedOn }, autoSpeedOn = autoSpeedOn,
+    )
     // FIX1: published from INSIDE this same lock - the one seam every committed tick's result now reaches
     // observedNightState through, whether it ran from NightService's own tick or an immediate UI-requested
     // one. NightService.handleTickResult and NightController.runImmediateTick used to each publish their own
@@ -980,9 +989,15 @@ internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineCon
 /**
  * null from [nextTickAt] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig.
  * [watchingForSleepSince] is the night's start while the band has seen no sleep yet tonight, null otherwise (see nextSyncDelay).
+ * [autoSpeedOn] with [autoSpeedFollowUpAt]: Auto is driving the clock, and the pending nudge or own nap it also slows down for.
  */
-private fun scheduleNextTick(context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig, watchingForSleepSince: Instant?) {
-    val at = nextTickAt(plan, decisionNow, config, watchingForSleepSince)
+private fun scheduleNextTick(
+    context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig, watchingForSleepSince: Instant?,
+    autoSpeedFollowUpAt: Instant?, autoSpeedOn: Boolean,
+) {
+    val ordinaryAt = nextTickAt(plan, decisionNow, config, watchingForSleepSince)
+    // Auto: a tick must land on the slow-down instant, or the ordinary sync gap can skip the 10x approach.
+    val at = if (autoSpeedOn) autoSpeedTickAt(ordinaryAt, decisionNow, plan.wakeAt, autoSpeedFollowUpAt) else ordinaryAt
     if (at == null) {
         cancelTick(context)
     } else {

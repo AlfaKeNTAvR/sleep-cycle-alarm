@@ -56,7 +56,7 @@ fun buildUiState(
         ),
         night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp),
         logs = buildLogsUiState(nightLogFiles, nightLogRatings, zone),
-        debug = buildDebugUiState(debugOptions, simulatedSleepEvents, now, zone, nightActive),
+        debug = buildDebugUiState(debugOptions, simulatedSleepEvents, nightActive),
         errorMessage = errorMessage,
     )
 }

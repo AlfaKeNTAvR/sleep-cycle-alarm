@@ -52,8 +52,16 @@ import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendToCurrentNightLog
+import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
 import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.rearmFollowUpAfterRingEnded
+import com.nikita.sleepcycle.night.requestImmediateTick
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
 
@@ -88,6 +96,7 @@ class AlarmRingService : Service() {
     private var ringingLabel: AlarmLabel = AlarmLabel.MORNING
     private val stopHandler = Handler(Looper.getMainLooper())
     private val stopRunnable = Runnable { stopRinging(ALARM_STOP_REASON_AUTO) }
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -109,7 +118,26 @@ class AlarmRingService : Service() {
         ringingLabel = intent.readAlarmLabel()
         startForeground(NOTIFICATION_ID, buildAlarmNotification(this, isOutOfBed, ringingLabel))
         startRinging(Duration.ofMillis(autoStopAfterMillis))
+        dropSimulationSpeedForRing(Duration.ofMillis(autoStopAfterMillis))
         return START_NOT_STICKY
+    }
+
+    /**
+     * Owner spec, 2026-10-02: a simulated night's clock drops to 1x the moment an alarm starts ringing, so the
+     * ring, the nudge and the nap are watched at real speed. The ring starts first - an alarm never waits on a
+     * store write - and its auto-stop, timed under the fast clock, is re-timed at 1x once the drop lands. A
+     * real night's clock is never warped, so this does nothing there.
+     */
+    private fun dropSimulationSpeedForRing(autoStopAfter: Duration) {
+        if (AppClock.warp() == null) return
+        serviceScope.launch {
+            val dropped = withContext(Dispatchers.IO) { dropSimulationToRealSpeed(this@AlarmRingService) }
+            if (!dropped) return@launch
+            requestImmediateTick(this@AlarmRingService)
+            if (!isRinging) return@launch
+            stopHandler.removeCallbacks(stopRunnable)
+            stopHandler.postDelayed(stopRunnable, realAutoStopDelayMillis(autoStopAfter))
+        }
     }
 
     /**
@@ -205,6 +233,7 @@ class AlarmRingService : Service() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         stopHandler.removeCallbacks(stopRunnable)
         stopPlayerSafely()
         runGuarded("release the alarm wake lock on destroy") { releaseAlarmWakeLock() }

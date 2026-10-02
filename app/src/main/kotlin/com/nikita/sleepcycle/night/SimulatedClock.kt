@@ -14,7 +14,7 @@ package com.nikita.sleepcycle.night
 //
 // U2 adds [normalizedWarp]: the one place that decides whether a (speed, anchorReal, anchorVirtual) triple is
 // actually a live warp or the identity in disguise, so every writer of a [ClockWarp] (DebugScreenController's
-// setSpeed/applyClockJump) can route through it and never hand-roll the null-vs-ClockWarp choice differently.
+// setSpeedChoice, and Auto) can route through it and never hand-roll the null-vs-ClockWarp choice differently.
 // T12 adds [formatSimulatedTimeValue]: the live "HH:mm[, Nx]" reading shown on the debug banner/notification.
 
 import java.time.Duration
@@ -39,8 +39,12 @@ data class ClockWarp(val speed: Int, val anchorReal: Instant, val anchorVirtual:
  * real seconds. 600x is also the practical ceiling: TickScheduling's own [IN_PROCESS_TICK_MIN_DELAY] floor is
  * 250 ms, and the engine's shortest sync gap is 5 simulated minutes, which at 600x is exactly 500 real ms - go
  * much faster and that floor starts binding, and the clock quietly stops keeping the speed it advertises.
+ *
+ * Owner spec, 2026-10-02: this is now every speed the clock can run at, not the chips. The chips are 1x, 60x
+ * and Auto (AutoSimulationSpeed.kt's SpeedChoice); Auto runs at 600x, and brings 10x back for the 10 simulated
+ * minutes before an alarm.
  */
-val SIMULATION_SPEEDS: List<Int> = listOf(1, 60, 600)
+val SIMULATION_SPEEDS: List<Int> = listOf(1, AUTO_NEAR_SPEED, 60, AUTO_FAR_SPEED)
 
 /**
  * The current virtual instant, given the real wall-clock instant [realNow] - identity when [warp] is null.
@@ -79,20 +83,13 @@ fun normalizedWarp(speed: Int, anchorReal: Instant, anchorVirtual: Instant): Clo
     if (speed == 1 && anchorVirtual == anchorReal) null else ClockWarp(speed, anchorReal, anchorVirtual)
 
 /**
- * [com.nikita.sleepcycle.ui.DebugScreenController.setSpeed]'s own computation, extracted so a JVM test can call
+ * [com.nikita.sleepcycle.ui.DebugScreenController.setSpeedChoice]'s own computation, extracted so a JVM test can call
  * the SAME function the controller does rather than re-deriving equivalent arithmetic locally (V10's own
  * complaint about the test file this replaces). Re-anchors at the CURRENT virtual instant and [speed] in one
  * step, so changing speed never itself jumps the clock - only the rate it moves at from here on.
  */
 fun computeSpeedChangeWarp(currentWarp: ClockWarp?, speed: Int, realNow: Instant): ClockWarp? =
     normalizedWarp(speed, anchorReal = realNow, anchorVirtual = virtualNow(currentWarp, realNow))
-
-/**
- * [com.nikita.sleepcycle.ui.DebugScreenController.applyClockJump]'s own computation, extracted for the same
- * reason as [computeSpeedChangeWarp]. Keeps the current speed, re-anchoring virtual time at [newVirtual].
- */
-fun computeJumpWarp(currentWarp: ClockWarp?, newVirtual: Instant, realNow: Instant): ClockWarp? =
-    normalizedWarp(currentWarp?.speed ?: 1, anchorReal = realNow, anchorVirtual = newVirtual)
 
 /** W1: how often the UI re-samples the clock on an unwarped night - the cadence the app has always used, one sample per half minute. */
 const val UI_TICKER_INTERVAL_MS: Long = 30_000L

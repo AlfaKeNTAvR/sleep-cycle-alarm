@@ -251,7 +251,7 @@ internal fun shouldRearmPendingNudge(pendingNudgeAt: Instant?, now: Instant): Bo
 
 /**
  * V5: after a mid-night speed change has re-anchored [AppClock]'s own warp
- * ([com.nikita.sleepcycle.ui.DebugScreenController.setSpeed]), re-arms every outstanding virtual-time event that
+ * ([com.nikita.sleepcycle.ui.DebugScreenController.setSpeedChoice]), re-arms every outstanding virtual-time event that
  * was armed under the OLD mapping and does not self-heal on its own:
  *
  * - The wake alarm and the next tick DO self-heal, but only once the NEXT tick actually runs - which is itself
@@ -268,6 +268,17 @@ internal fun shouldRearmPendingNudge(pendingNudgeAt: Instant?, now: Instant): Bo
  * change just replaced.
  */
 suspend fun rearmAfterSpeedChange(context: Context) {
+    rearmPendingFollowUp(context)
+    cancelTick(context)
+    requestImmediateTick(context)
+}
+
+/**
+ * The out-of-bed half of [rearmAfterSpeedChange], on its own for a speed change made from inside a tick (Auto,
+ * NightOrchestrator.kt), where the tick itself goes on to re-arm the wake alarm and book the next tick under
+ * the new mapping - an extra immediate tick there would only queue behind the lock and redo the same work.
+ */
+suspend fun rearmPendingFollowUp(context: Context) {
     val now = nowInstant()
     val pending = readPendingFollowUp(context)
     if (shouldRearmPendingNudge(pending?.at, now)) {
@@ -284,8 +295,6 @@ suspend fun rearmAfterSpeedChange(context: Context) {
             cancelPreNudgeCheck(context)
         }
     }
-    cancelTick(context)
-    requestImmediateTick(context)
 }
 
 /** Asks the tracking service to run one sync-plan cycle right away, e.g. when the user opens the Night screen. Goes through the same transaction lock as every other tick. */

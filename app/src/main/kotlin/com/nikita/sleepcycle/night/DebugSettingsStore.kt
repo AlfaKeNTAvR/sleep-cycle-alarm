@@ -43,6 +43,7 @@ private val KEY_SIMULATED_BAND_DATA = booleanPreferencesKey("simulated_band_data
 // any more, so a stray "speed" entry an old build left on a real device just sits there, inert, never decoded.
 private val KEY_SIMULATED_EVENTS = stringPreferencesKey("simulated_sleep_events")
 private val KEY_LAST_CHANGED_AT = stringPreferencesKey("debug_options_last_changed_at")
+private val KEY_AUTO_SPEED = booleanPreferencesKey("auto_speed")
 private val KEY_CLOCK_WARP_SPEED = intPreferencesKey("clock_warp_speed")
 private val KEY_CLOCK_WARP_ANCHOR_REAL = stringPreferencesKey("clock_warp_anchor_real")
 private val KEY_CLOCK_WARP_ANCHOR_VIRTUAL = stringPreferencesKey("clock_warp_anchor_virtual")
@@ -66,7 +67,8 @@ fun readDebugOptions(context: Context): Flow<DebugOptions> =
 /** V6/V7: the one place that decodes [DebugOptions] (minus its derived `speed`) out of a preferences snapshot - shared by [readDebugOptions] and [updateDebugOptions]'s own read-modify-write, so both always see the SAME shape. */
 private fun debugOptionsFromPreferences(preferences: Preferences): DebugOptions = DebugOptions(
     simulatedBandData = preferences[KEY_SIMULATED_BAND_DATA] ?: false,
-    warp = readClockWarpFromPreferences(preferences)
+    warp = readClockWarpFromPreferences(preferences),
+    autoSpeed = preferences[KEY_AUTO_SPEED] ?: false,
 )
 
 /** A1: when the switches were last changed by [updateDebugOptions], for [shouldAutoResetDebugOptions]. Null before the first change. */
@@ -76,7 +78,7 @@ fun readDebugOptionsLastChangedAt(context: Context): Flow<Instant?> =
 /**
  * V6: applies [transform] to the CURRENTLY persisted [DebugOptions], inside DataStore's own `edit {}`
  * transaction - see this file's own header for the class of bug this fixes. [transform] receives [DebugOptions]
- * (including its live `warp`) so a caller reasoning about the whole value can, but only `simulatedBandData` is
+ * (including its live `warp`) so a caller reasoning about the whole value can, but only `simulatedBandData` and `autoSpeed` are
  * ever written back here: `warp` is [writeClockWarp]'s own separate keys (different keys, no conflict - a
  * caller that also wants to change the warp calls that too, same coroutine, per V5's own ordering rule), and
  * `speed` is derived and was never a real key to write (V7). Records [changedAt] for the idle auto-reset (A1)
@@ -86,6 +88,7 @@ suspend fun updateDebugOptions(context: Context, changedAt: Instant = Instant.no
     context.debugSettingsStore.edit { preferences ->
         val updated = transform(debugOptionsFromPreferences(preferences))
         preferences[KEY_SIMULATED_BAND_DATA] = updated.simulatedBandData
+        preferences[KEY_AUTO_SPEED] = updated.autoSpeed
         preferences[KEY_LAST_CHANGED_AT] = changedAt.toString()
     }
 }
@@ -143,6 +146,9 @@ suspend fun writeClockWarp(context: Context, warp: ClockWarp?) {
 suspend fun resetDebugOptionsAndClock(context: Context, changedAt: Instant) {
     updateDebugOptions(context, changedAt) { DebugOptions() }
     writeClockWarp(context, null)
+    // Owner spec, 2026-10-02: the simulated sleep timeline belongs to the run that made it - the Debug screen
+    // no longer has a Clear button, so it is emptied here, after the night's morning report is already saved.
+    writeSimulatedSleepEvents(context, clearedSimulatedSleepEvents())
 }
 
 /** Streams the persisted simulated sleep event timeline, oldest first. A corrupt stored value decodes as empty rather than failing the read. */

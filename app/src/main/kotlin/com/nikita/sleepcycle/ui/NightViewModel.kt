@@ -34,7 +34,9 @@ import com.nikita.sleepcycle.night.readAppSettings
 import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.readPendingFollowUp
 import com.nikita.sleepcycle.night.startManualNap
+import com.nikita.sleepcycle.night.SpeedChoice
 import com.nikita.sleepcycle.night.pressImUp
+import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
 import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.BedtimeAudioSettings
@@ -707,7 +709,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     fun confirmImUp() {
         confirmingImUp.value = false
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { pressImUp(context, nowInstant()) }
+            withContext(Dispatchers.IO) {
+                // Owner spec, 2026-10-02: a simulated night drops to 1x first, so the nudge is armed at real speed.
+                dropSimulationToRealSpeed(context)
+                pressImUp(context, nowInstant())
+            }
             refreshPendingOutOfBedNudge()
             requestImmediateTick(context)
         }
@@ -780,11 +786,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     // Debug screen actions: thin delegates to DebugScreenController.kt, which owns the actual state.
     fun setSimulatedBandData(enabled: Boolean) = debug.setSimulatedBandData(enabled)
-    fun setSpeed(speed: Int) = debug.setSpeed(speed)
+    fun setSpeedChoice(choice: SpeedChoice) = debug.setSpeedChoice(choice)
     fun setSimulatedAsleep(asleep: Boolean) = debug.setSimulatedAsleep(asleep)
-    fun clearSimulatedSleep() = debug.clearSimulatedSleep()
-    fun applyClockJump(time: LocalTime) = debug.applyClockJump(time)
-    fun resetClockToRealTime() = debug.resetToRealTime()
     fun ringDebugTestAlarm() = debug.ringTestAlarm()
 }
 

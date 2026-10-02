@@ -1,7 +1,7 @@
 package com.nikita.sleepcycle.night
 
 // File purpose: V10 REPLACES the original version of this file. That version re-implemented
-// DebugScreenController's own setSpeed/applyClockJump arithmetic locally instead of calling it, which is
+// DebugScreenController's own speed and jump arithmetic locally instead of calling it, which is
 // exactly why V6's clobber (two un-atomic DataStore writes from a stale snapshot) and V7's split store
 // (DebugOptions.speed and ClockWarp.speed drifting apart) were both invisible to it - neither bug lives in the
 // pure warp arithmetic that file modelled, they live in the impure write path and the persisted shape around
@@ -9,9 +9,9 @@ package com.nikita.sleepcycle.night
 // the loop variable only in the failure message - a tautology that could not fail.
 //
 // This version:
-// - drives [computeSpeedChangeWarp]/[computeJumpWarp], the ACTUAL functions
-//   [com.nikita.sleepcycle.ui.DebugScreenController.setSpeed]/[applyClockJump] call (extracted FROM those
-//   methods, not re-derived), chained across realistic multi-step sessions - the state-machine coverage the
+// - drives [computeSpeedChangeWarp], the ACTUAL function
+//   [com.nikita.sleepcycle.ui.DebugScreenController.setSpeedChoice] and Auto call (extracted FROM those
+//   methods, not re-derived; the jump to a set time is gone, owner spec 2026-10-02), chained across realistic multi-step sessions - the state-machine coverage the
 //   original file had, now anchored to the real code.
 // - exercises V5's own re-arm gate, [shouldRearmPendingNudge], and V4's own toggle gate,
 //   [isSimulatedBandDataToggleAllowed] - both genuinely new pure decision seams
@@ -103,39 +103,10 @@ class ClockWarpTransitionsTest {
         assertEquals(t0.plus(Duration.ofHours(6)), warp?.anchorVirtual)
     }
 
-    // ---- Transition: apply jump - via computeJumpWarp, the function applyClockJump itself calls -------------
-
-    @Test
-    fun `a jump from NONE at speed 1 moves to JUMP_AT_1X`() {
-        val newVirtual = t0.plus(Duration.ofHours(7))
-        val warp = computeJumpWarp(currentWarp = null, newVirtual = newVirtual, realNow = t0)
-        assertEquals(WarpState.JUMP_AT_1X, classify(warp))
-        assertEquals(ClockWarp(1, t0, newVirtual), warp)
-    }
-
-    @Test
-    fun `a jump while SPEED_ONLY keeps the speed and moves to JUMP_PLUS_SPEED`() {
-        val speedOnly = ClockWarp(speed = 60, anchorReal = t0, anchorVirtual = t0)
-        val newVirtual = t0.plus(Duration.ofHours(7))
-        val warp = computeJumpWarp(speedOnly, newVirtual, realNow = t0)
-        assertEquals(WarpState.JUMP_PLUS_SPEED, classify(warp))
-        assertEquals(60, warp?.speed)
-        assertEquals(newVirtual, warp?.anchorVirtual)
-    }
-
-    @Test
-    fun `a second jump while already JUMP_AT_1X re-anchors to the new instant, still JUMP_AT_1X`() {
-        val jumpAt1x = ClockWarp(speed = 1, anchorReal = t0, anchorVirtual = t0.plus(Duration.ofHours(5)))
-        val newVirtual = t0.plus(Duration.ofHours(1))
-        val warp = computeJumpWarp(jumpAt1x, newVirtual, realNow = t0)
-        assertEquals(WarpState.JUMP_AT_1X, classify(warp))
-        assertEquals(newVirtual, warp?.anchorVirtual)
-    }
-
     // ---- A realistic multi-step session, chained through the SAME functions the controller calls ------------
 
     @Test
-    fun `a realistic session - set 60x, run for a while, drop to 1x, jump, raise to 600x - stays legal at every step`() {
+    fun `a realistic session - set 60x, run for a while, drop to 1x, raise to 600x - stays legal at every step`() {
         var warp: ClockWarp? = null
         assertEquals(WarpState.NONE, classify(warp))
 
@@ -147,16 +118,11 @@ class ClockWarpTransitionsTest {
         assertEquals(WarpState.JUMP_AT_1X, classify(warp))
         assertEquals(t0.plus(Duration.ofHours(2)), warp?.anchorVirtual)
 
-        val jumpTarget = t0.plus(Duration.ofHours(9))
-        warp = computeJumpWarp(warp, jumpTarget, realNow = afterRunning)
-        assertEquals(WarpState.JUMP_AT_1X, classify(warp))
-        assertEquals(jumpTarget, warp?.anchorVirtual)
-
         warp = computeSpeedChangeWarp(warp, speed = 600, realNow = afterRunning)
         assertEquals(WarpState.JUMP_PLUS_SPEED, classify(warp))
-        assertEquals(jumpTarget, warp?.anchorVirtual)
+        assertEquals(t0.plus(Duration.ofHours(2)), warp?.anchorVirtual)
 
-        // "Reset to real time" writes a literal null - nothing to compute, see DebugScreenController.clearClockWarp.
+        // A night's end writes a literal null - nothing to compute, see DebugSettingsStore.resetDebugOptionsAndClock.
         warp = null
         assertEquals(WarpState.NONE, classify(warp))
     }

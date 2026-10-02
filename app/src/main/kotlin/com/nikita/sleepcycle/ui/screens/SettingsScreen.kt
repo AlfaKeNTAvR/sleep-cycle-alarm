@@ -51,6 +51,9 @@ import com.nikita.sleepcycle.ui.components.CardDivider
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.components.SettingsMenuRow
+import com.nikita.sleepcycle.ui.components.SettingsButtonRow
+import com.nikita.sleepcycle.ui.components.SettingsSection
+import com.nikita.sleepcycle.ui.components.SettingsSwitchRow
 import com.nikita.sleepcycle.ui.components.ToggleRow
 import com.nikita.sleepcycle.ui.state.SettingsMenuEntry
 import com.nikita.sleepcycle.ui.state.settingsMenuEntries
@@ -63,12 +66,8 @@ import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import com.nikita.sleepcycle.ui.theme.NightOutline
 import java.time.LocalTime
 
-private val SectionGap = 8.dp
-private val SectionTitleLetterSpacing = 1.sp
 private val StepperButtonSize = 40.dp
 private val StepperValueMinWidth = 64.dp
-private val TimeButtonCornerRadius = 12.dp
-private val TimeButtonPadding = 10.dp
 
 /**
  * The Settings screen. [isDebugBuild] defaults to the real [BuildConfig.DEBUG] flag and is a parameter only so a
@@ -123,13 +122,13 @@ fun SettingsScreen(
         }
 
         SettingsSection(stringResource(R.string.settings_section_bedtime_audio)) {
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_pause_when_asleep),
                 checked = bedtimeAudio.pauseWhenAsleep,
                 onCheckedChange = { onBedtimeAudioChange(bedtimeAudio.copy(pauseWhenAsleep = it)) },
             )
             CardDivider()
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_fade),
                 // Shown off while the pause is off (it cannot run then); the stored choice comes back with the pause.
                 checked = shouldFadeMedia(bedtimeAudio),
@@ -148,13 +147,13 @@ fun SettingsScreen(
         }
 
         SettingsSection(stringResource(R.string.settings_section_rating)) {
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_rate_night),
                 checked = sleepRating.enabled,
                 onCheckedChange = { onSleepRatingChange(sleepRating.copy(enabled = it)) },
             )
             CardDivider()
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_ask_again_later),
                 checked = sleepRating.askAgainLater,
                 onCheckedChange = { onSleepRatingChange(sleepRating.copy(askAgainLater = it)) },
@@ -179,33 +178,6 @@ fun SettingsScreen(
             }
         }
     }
-}
-
-/** A small upper-case section title over one card holding that section's rows. */
-@Composable
-private fun SettingsSection(title: String, rows: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(SectionGap)) {
-        Text(
-            text = title.uppercase(),
-            style = MaterialTheme.typography.labelLarge,
-            letterSpacing = SectionTitleLetterSpacing,
-            color = NightOnSurfaceMuted,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        SettingsCard(contentPadding = CardNarrowPadding) { rows() }
-    }
-}
-
-@Composable
-private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    ToggleRow(
-        title = label,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        contentDescription = label,
-        enabled = enabled,
-        modifier = Modifier.heightIn(min = MinTouchTarget),
-    )
 }
 
 /** A label, then minus / value / plus. A button that would not change the value (at the limit) is disabled. */
@@ -269,24 +241,7 @@ private fun StepperButton(text: String, contentDescription: String, enabled: Boo
 @Composable
 private fun TimeRow(label: String, time: LocalTime, onTimeChange: (LocalTime) -> Unit, enabled: Boolean) {
     var showPicker by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = label, style = MaterialTheme.typography.titleMedium, color = if (enabled) NightOnBackground else NightOnSurfaceMuted)
-        Text(
-            text = "%02d:%02d".format(time.hour, time.minute),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (enabled) AmberAccent else NightOnSurfaceDisabled,
-            modifier = Modifier
-                .clip(RoundedCornerShape(TimeButtonCornerRadius))
-                .border(BorderStroke(1.dp, NightOutline), RoundedCornerShape(TimeButtonCornerRadius))
-                .clickable(enabled = enabled, role = Role.Button) { showPicker = true }
-                .padding(TimeButtonPadding),
-        )
-    }
+    SettingsButtonRow(label = label, buttonText = "%02d:%02d".format(time.hour, time.minute), onClick = { showPicker = true }, enabled = enabled)
     if (showPicker) AppTimePickerDialog(time = time, onTimeChange = onTimeChange, onDismiss = { showPicker = false })
 }
 

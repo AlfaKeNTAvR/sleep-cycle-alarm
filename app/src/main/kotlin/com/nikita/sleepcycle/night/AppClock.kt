@@ -51,7 +51,7 @@ object AppClock {
      * than at each of those comparisons individually: [virtualNow]'s own arithmetic only ever ADDS whole
      * milliseconds to [ClockWarp.anchorVirtual] (see SimulatedClock.kt's `plusMillisSaturating`), so truncating
      * the RESULT here is exactly as correct as truncating every input would have been, including when
-     * [anchorVirtual] itself was seeded from an untruncated `Instant.now()` (DebugScreenController.setSpeed's
+     * [anchorVirtual] itself was seeded from an untruncated `Instant.now()` (DebugScreenController.setSpeedChoice's
      * first-ever call, when the previous warp was null) - any sub-millisecond remainder baked into the anchor
      * survives every later addition unchanged and is dropped here regardless of how much virtual time has
      * elapsed since. See docs/decisions.md's M2 record for the night this was reproduced on.

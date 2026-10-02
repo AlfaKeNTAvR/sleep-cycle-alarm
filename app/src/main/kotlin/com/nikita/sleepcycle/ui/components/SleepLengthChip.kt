@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.ChipCornerRadius
 import com.nikita.sleepcycle.ui.theme.ChipHeight
@@ -80,6 +81,8 @@ fun SleepLengthChip(
             style = MaterialTheme.typography.labelMedium,
             color = textColor,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            // Centred line by line, for a two-line label (the Auto speed chip, DebugQuickControls.kt).
+            textAlign = TextAlign.Center,
         )
     }
 }

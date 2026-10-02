@@ -39,6 +39,7 @@ import com.nikita.sleepcycle.ui.state.DebugUiState
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
+import com.nikita.sleepcycle.night.SpeedChoice
 import com.nikita.sleepcycle.night.SleepRating
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.heightIn
@@ -62,7 +63,7 @@ fun NightScreen(
     onDone: () -> Unit,
     morningRating: MorningRatingCard?,
     onRateMorning: (SleepRating) -> Unit,
-    onSpeedChange: (Int) -> Unit,
+    onSpeedChoice: (SpeedChoice) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
     onOpenDebug: () -> Unit = {},
 ) {
@@ -114,7 +115,7 @@ fun NightScreen(
             // W7: the speed row and the Asleep toggle, right where a simulated night is actually watched - this
             // screen is where the owner spends the whole simulation, and driving it meant a round trip to Debug
             // for every change. Renders nothing at all on a real night.
-            DebugQuickControls(state = debug, onSpeedChange = onSpeedChange, onSetSimulatedAsleep = onSetSimulatedAsleep)
+            DebugQuickControls(state = debug, onSpeedChoice = onSpeedChoice, onSetSimulatedAsleep = onSetSimulatedAsleep)
 
             // P3 (owner spec, 2026-09-30): "Nap for 20 min", a filled amber button stacked ABOVE the outlined
             // end-night button, offered only while the out-of-bed nudge is pending (NightUiState.napButtonMinutes).
