@@ -146,8 +146,8 @@ fun startNight(
                 debugOptions.isAnyEnabled
             )
             logAlarmReadiness(context, now, debugOptions.isAnyEnabled)
-            // Fade switched off in Settings: still finish a fade left over from a night that never ended cleanly, so its volume comes back.
-            if (bedtimeAudio.fadeEnabled) startMediaFade(context, now, now, bedtimeAudio.fadeStartPercent, debugOptions.isAnyEnabled)
+            // Fade off in Settings (or the pause it leads into is off): still finish a fade left over from a night that never ended cleanly, so its volume comes back.
+            if (shouldFadeMedia(bedtimeAudio)) startMediaFade(context, now, now, bedtimeAudio.fadeStartPercent, debugOptions.isAnyEnabled)
             else endMediaFade(context, now, now, debugOptions.isAnyEnabled)
             // The new night is now the newest log and has not ended: drops a later rating question still armed for the last one.
             syncLaterRatingAsk(context)

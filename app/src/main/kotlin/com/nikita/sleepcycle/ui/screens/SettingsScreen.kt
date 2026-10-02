@@ -43,6 +43,7 @@ import com.nikita.sleepcycle.night.BedtimeAudioSettings
 import com.nikita.sleepcycle.night.SettingStepper
 import com.nikita.sleepcycle.night.SleepRatingSettings
 import com.nikita.sleepcycle.night.canStepSetting
+import com.nikita.sleepcycle.night.shouldFadeMedia
 import com.nikita.sleepcycle.night.stepSetting
 import com.nikita.sleepcycle.ui.components.AppTimePickerDialog
 import com.nikita.sleepcycle.ui.components.BackArrowButton
@@ -73,7 +74,7 @@ private val TimeButtonPadding = 10.dp
  * The Settings screen. [isDebugBuild] defaults to the real [BuildConfig.DEBUG] flag and is a parameter only so a
  * preview/test can force either list; [settingsMenuEntries] (X4) is what actually decides whether Debug shows.
  * A row whose switch above it is off stays visible but dimmed and inert (Starting volume under a fade that is
- * off; Ask again later and Ask at under a rating that is off).
+ * off, and the fade rows under a pause that is off; Ask again later and Ask at under a rating that is off).
  *
  * W17 (owner request): there is no "Done" button. X1 gave this screen one, but it went exactly where the back
  * arrow already goes, so it was a second control for a job one already did.
@@ -130,8 +131,10 @@ fun SettingsScreen(
             CardDivider()
             SwitchRow(
                 label = stringResource(R.string.settings_fade),
-                checked = bedtimeAudio.fadeEnabled,
+                // Shown off while the pause is off (it cannot run then); the stored choice comes back with the pause.
+                checked = shouldFadeMedia(bedtimeAudio),
                 onCheckedChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeEnabled = it)) },
+                enabled = bedtimeAudio.pauseWhenAsleep,
             )
             CardDivider()
             StepperRow(
@@ -140,7 +143,7 @@ fun SettingsScreen(
                 value = bedtimeAudio.fadeStartPercent,
                 valueText = stringResource(R.string.settings_percent_value, bedtimeAudio.fadeStartPercent),
                 onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeStartPercent = it)) },
-                enabled = bedtimeAudio.fadeEnabled,
+                enabled = shouldFadeMedia(bedtimeAudio),
             )
         }
 

@@ -35,7 +35,7 @@ Section titles, no descriptions. Every change is saved at once.
 - **Sleep rating:** Rate the night (on/off), Ask again later (on/off), Ask at (default 15:00).
 - **More:** Setup, Debug.
 
-A row whose switch above it is off stays visible, dimmed and inert.
+A row whose switch above it is off stays visible, dimmed and inert. The fade needs the pause: with "Pause media when asleep" off, the fade rows dim and the fade switch reads off.
 
 ## Later rating notification
 

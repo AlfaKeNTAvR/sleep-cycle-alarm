@@ -29,7 +29,10 @@ data class BedtimeAudioSettings(
     val pauseWhenAsleep: Boolean = true,
 )
 
-/** Sleep rating: the morning report's "How did you sleep?" card, and the later "Still feel the same?" notification at [askAt]. */
+/** Owner request, 2026-10-02: the fade only runs alongside the pause - it exists to lead into it, so switching the pause off switches the fade off too. */
+fun shouldFadeMedia(audio: BedtimeAudioSettings): Boolean = audio.pauseWhenAsleep && audio.fadeEnabled
+
+/** Sleep rating:the morning report's "How did you sleep?" card, and the later "Still feel the same?" notification at [askAt]. */
 data class SleepRatingSettings(
     val enabled: Boolean = true,
     val askAgainLater: Boolean = true,

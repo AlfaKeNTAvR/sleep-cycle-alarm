@@ -55,6 +55,13 @@ class SettingsLimitsTest {
     }
 
     @Test
+    fun `the fade runs only while media is also paused on falling asleep`() {
+        assertTrue(shouldFadeMedia(BedtimeAudioSettings(pauseWhenAsleep = true, fadeEnabled = true)))
+        assertFalse(shouldFadeMedia(BedtimeAudioSettings(pauseWhenAsleep = false, fadeEnabled = true)))
+        assertFalse(shouldFadeMedia(BedtimeAudioSettings(pauseWhenAsleep = true, fadeEnabled = false)))
+    }
+
+    @Test
     fun `a stored value outside the limits reads back at the nearest limit`() {
         assertEquals(5, clampSetting(SettingStepper.NUDGE_MINUTES, 2))
         assertEquals(30, clampSetting(SettingStepper.NAP_MINUTES, 90))
