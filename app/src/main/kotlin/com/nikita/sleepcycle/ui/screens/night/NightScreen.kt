@@ -159,10 +159,10 @@ fun NightScreen(
         )
     }
     if (state.confirmingEndNight && !state.endingNight) {
-        val (titleRes, messageRes) = confirmDialogTextResources(state.endAction)
+        // Owner request, 2026-10-02: the title alone, centred, no explanation underneath.
         ConfirmDialog(
-            title = stringResource(titleRes),
-            message = stringResource(messageRes),
+            title = stringResource(confirmDialogTitleResource(state.endAction)),
+            message = null,
             confirmText = endActionLabel(state.endAction),
             dismissText = stringResource(R.string.action_cancel),
             onConfirm = onConfirmEndNight,
@@ -204,7 +204,7 @@ private fun endActionLabel(action: EndNightAction): String = when (action) {
     EndNightAction.END -> stringResource(R.string.night_end_night)
 }
 
-private fun confirmDialogTextResources(action: EndNightAction): Pair<Int, Int> = when (action) {
-    EndNightAction.STOP -> R.string.night_confirm_stop_title to R.string.night_confirm_stop_message
-    EndNightAction.IM_UP, EndNightAction.END -> R.string.night_confirm_im_up_title to R.string.night_confirm_im_up_message
+private fun confirmDialogTitleResource(action: EndNightAction): Int = when (action) {
+    EndNightAction.STOP -> R.string.night_confirm_stop_title
+    EndNightAction.IM_UP, EndNightAction.END -> R.string.night_confirm_im_up_title
 }

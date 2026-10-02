@@ -8,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -32,17 +34,29 @@ fun ConfirmDialog(
             if (message == null) Text(title, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) else Text(title)
         },
         text = message?.let { { Text(it) } },
+        // Owner request, 2026-10-02: in every dialog, cancel on the left edge and confirm on the right edge,
+        // instead of both sitting together on the right.
         confirmButton = {
-            TextButton(
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                onClick = onConfirm,
-            ) { Text(confirmText) }
-        },
-        dismissButton = {
-            TextButton(
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
-                onClick = onDismiss,
-            ) { Text(dismissText) }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                DismissButton(dismissText, onDismiss)
+                ConfirmButton(confirmText, onConfirm)
+            }
         },
     )
+}
+
+@Composable
+private fun ConfirmButton(text: String, onClick: () -> Unit) {
+    TextButton(
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+        onClick = onClick,
+    ) { Text(text) }
+}
+
+@Composable
+private fun DismissButton(text: String, onClick: () -> Unit) {
+    TextButton(
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+        onClick = onClick,
+    ) { Text(text) }
 }

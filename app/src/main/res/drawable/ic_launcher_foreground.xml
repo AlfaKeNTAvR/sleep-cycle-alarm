@@ -2,7 +2,8 @@
 <!-- One crescent moon, drawn as a single closed outline: the outer arc of the moon's disc, then back
      along the arc of the circle that bites into it. Drawn this way rather than as two subtracted
      circles, because subtracting also fills the sliver lying inside the biting circle but outside the
-     disc, which read as a second, smaller moon beside the first. -->
+     disc, which read as a second, smaller moon beside the first. Filled with the buttons' amber
+     (AmberAccent in ui/theme/Color.kt), owner request 2026-10-02. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -10,7 +11,7 @@
     android:viewportHeight="108">
 
     <path
-        android:fillColor="#FFC9D6EA"
+        android:fillColor="#FFF0B75A"
         android:pathData="
             M 46.25,27.10
             A 28,28 0 1 0 79.07,66.48

@@ -96,9 +96,7 @@
     <string name="night_nap_for_minutes">Nap for %1$d min</string>
     <string name="night_ending">Ending night…</string>
     <string name="night_confirm_stop_title">Stop night?</string>
-    <string name="night_confirm_stop_message">This ends tracking and shows tonight\'s report.</string>
     <string name="night_confirm_im_up_title">End night?</string>
-    <string name="night_confirm_im_up_message">This stops the alarm and shows tonight\'s report.</string>
 
     <!-- Night screen: the label above the hero time (owner request, 09/21 review's must-fix 1) - what the
          owner sees when the engine has nothing armed at all, instead of a wrong alarm name. -->
