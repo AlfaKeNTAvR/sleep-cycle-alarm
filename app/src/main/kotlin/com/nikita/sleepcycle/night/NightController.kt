@@ -428,6 +428,9 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
         appendNightLog(context, loaded.startedAt, NightLogEvent(now, "night_end", nightEndFields(loaded, now)), loaded.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, loaded, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(loaded, now)) }
+        // Emulator audit, 2026-10-03: a night finishing on its own (deadline passed, no alarm ever rang) kept the
+        // faded volume until the next Start night; it is put back here just as End night does.
+        endMediaFade(context, loaded.startedAt, now, loaded.debugOptions.isAnyEnabled)
         // Bookkeeping only: no stopAlarmRinging, no cancelOutOfBedAlarm/clearOutOfBedNudgePendingAt, no
         // cancelPhoneAlarm - the tick that produced this FINISHED plan already cancelled the phone alarm's own
         // slot (armPhoneAlarmIfNeeded, plan.wakeAt == null) and the tick alarm (scheduleNextTick, nextSyncDelay
