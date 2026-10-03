@@ -57,6 +57,7 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
     val setupWizardPage by viewModel.setupWizardPage.collectAsState()
     val pastNight by viewModel.pastNight.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val simulatedStartTime by viewModel.simulatedStartTime.collectAsState()
     val morningRating by viewModel.morningRating.collectAsState()
 
     LifecycleResumeEffect(Unit) {
@@ -80,6 +81,8 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                             onSleepRatingChange = viewModel::setSleepRatingSettings,
                             debug = uiState.debug,
                             onSimulatedBandDataChange = viewModel::setSimulatedBandData,
+                            simulatedStartTime = simulatedStartTime,
+                            onSimulatedStartTimeChange = viewModel::setSimulatedStartTime,
                             onRingTestAlarm = viewModel::ringDebugTestAlarm,
                             onOpenSetup = viewModel::openSetup,
                             onBack = viewModel::closeSettings,

@@ -20,6 +20,7 @@ import android.content.Context
 import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.AppClock
+import com.nikita.sleepcycle.night.DEFAULT_SIMULATED_START
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.SIMULATED_AWAKE_RETICK_MARGIN
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
@@ -33,6 +34,7 @@ import com.nikita.sleepcycle.night.readPendingFollowUp
 import com.nikita.sleepcycle.night.autoSpeedAlarmAt
 import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.appendSimulatedSleepEvent
+import com.nikita.sleepcycle.night.enableSimulatedBandData
 import com.nikita.sleepcycle.night.isDebugTestAlarmAllowed
 import com.nikita.sleepcycle.night.isSimulatedBandDataToggleAllowed
 import com.nikita.sleepcycle.night.isSimulatedSleepControlAllowed
@@ -42,6 +44,7 @@ import com.nikita.sleepcycle.night.observedNightState
 import com.nikita.sleepcycle.night.readDebugOptions
 import com.nikita.sleepcycle.night.readDebugOptionsLastChangedAt
 import com.nikita.sleepcycle.night.readSimulatedSleepEvents
+import com.nikita.sleepcycle.night.readSimulatedStartTime
 import com.nikita.sleepcycle.night.rearmAfterSpeedChange
 import com.nikita.sleepcycle.night.runImmediateTick
 import com.nikita.sleepcycle.night.resolveEngineConfig
@@ -53,6 +56,7 @@ import com.nikita.sleepcycle.night.shouldAutoResetDebugOptions
 import com.nikita.sleepcycle.night.updateDebugOptions
 import com.nikita.sleepcycle.night.updateSimulatedSleepEvents
 import com.nikita.sleepcycle.night.writeClockWarp
+import com.nikita.sleepcycle.night.writeSimulatedStartTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,12 +65,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 
 
 /** Everything the Debug screen persists and can act on, plus the one seam ([effectiveOptions]) that forces every switch off outside a debug build. */
 class DebugScreenController(private val context: Context, private val scope: CoroutineScope) {
     val storedOptions: StateFlow<DebugOptions> = readDebugOptions(context).stateIn(scope, SharingStarted.Eagerly, DebugOptions())
     val simulatedSleepEvents: StateFlow<List<SimulatedSleepEvent>> = readSimulatedSleepEvents(context).stateIn(scope, SharingStarted.Eagerly, emptyList())
+    /** Owner request, 2026-10-03: the Debug section's "Simulated start" time. */
+    val simulatedStartTime: StateFlow<LocalTime> = readSimulatedStartTime(context).stateIn(scope, SharingStarted.Eagerly, DEFAULT_SIMULATED_START)
 
     /** A1: when the switches were last changed, for [resetIfIdle]. */
     private val lastChangedAt: StateFlow<Instant?> = readDebugOptionsLastChangedAt(context).stateIn(scope, SharingStarted.Eagerly, null)
@@ -82,8 +90,9 @@ class DebugScreenController(private val context: Context, private val scope: Cor
 
     /**
      * U1: turning simulated band data off clears any active clock warp too - a warp and real band data must
-     * never be live at once (see this file's own header). Turning it on is unconditional - the speed chips only
-     * unlock afterwards.
+     * never be live at once (see this file's own header). Owner request, 2026-10-03: turning it on starts the
+     * clock at the next "Simulated start" time, at 1x ([enableSimulatedBandData]) - the speed chips only unlock
+     * afterwards.
      *
      * V4: refused (a no-op) while a night is active, in EITHER direction - see
      * [isSimulatedBandDataToggleAllowed]'s own doc for why turning it off specifically is unsafe mid-night
@@ -94,7 +103,7 @@ class DebugScreenController(private val context: Context, private val scope: Cor
     fun setSimulatedBandData(enabled: Boolean) {
         if (!isSimulatedBandDataToggleAllowed(nightActive = observedNightState.value != null)) return
         if (enabled) {
-            persistOptions { it.copy(simulatedBandData = enabled) }
+            scope.launch { enableSimulatedBandData(context, Instant.now(), ZoneId.systemDefault()) }
             return
         }
         // W6 (owner decision, 2026-09-20): turning the switch off also wakes the simulator up. Leaving the
@@ -152,6 +161,11 @@ class DebugScreenController(private val context: Context, private val scope: Cor
     fun setSimulatedAsleep(asleep: Boolean) {
         if (!isSimulatedSleepControlAllowed(storedOptions.value.simulatedBandData)) return
         recordEvent(if (asleep) SimulatedSleepEventKind.ASLEEP else SimulatedSleepEventKind.AWAKE)
+    }
+
+    /** Owner request, 2026-10-03: saves the "Simulated start" time. A clock already running keeps going; the new time applies on the next switch-on. */
+    fun setSimulatedStartTime(time: LocalTime) {
+        scope.launch { writeSimulatedStartTime(context, time) }
     }
 
     /** "Ring phone alarm in 1 min": exercises the real alarm path in daylight, without starting or touching a night (D1). The button is also disabled per [canRingTestAlarm]; this is the second guard. */
@@ -219,10 +233,5 @@ class DebugScreenController(private val context: Context, private val scope: Cor
                 scheduleTick(context, at + resolveEngineConfig(effectiveOptions(), AfterAlarmSettings()).minAwakening + SIMULATED_AWAKE_RETICK_MARGIN)
             }
         }
-    }
-
-    /** V6: routes through [updateDebugOptions], which applies [transform] to the value DataStore's own `edit {}` reads AT WRITE TIME - never the possibly-stale [storedOptions] snapshot this method used to close over - so two calls launched close together can never lose one's change to the other's. */
-    private fun persistOptions(transform: (DebugOptions) -> DebugOptions) {
-        scope.launch { updateDebugOptions(context, Instant.now(), transform) }
     }
 }

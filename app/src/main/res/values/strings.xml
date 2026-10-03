@@ -175,6 +175,7 @@
     <!-- Debug screen -->
     <string name="debug_title">Debug</string>
     <string name="debug_simulated_band_data_title">Simulated band data</string>
+    <string name="debug_simulated_start">Simulated start</string>
     <string name="debug_quick_controls_title">Simulation</string>
     <string name="debug_speed_multiplier_label">%1$dx</string>
     <string name="debug_speed_auto">Auto</string>

@@ -16,11 +16,14 @@ package com.nikita.sleepcycle.night
 // actually a live warp or the identity in disguise, so every writer of a [ClockWarp] (DebugScreenController's
 // setSpeedChoice, and Auto) can route through it and never hand-roll the null-vs-ClockWarp choice differently.
 // T12 adds [formatSimulatedTimeValue]: the live "HH:mm[, Nx]" reading shown on the debug banner/notification.
+// Owner request, 2026-10-03, adds [nextOccurrenceOf]: where switching simulated band data on starts the clock.
 
 import java.time.Duration
 import java.time.Instant
 import java.time.DateTimeException
+import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
@@ -91,6 +94,21 @@ fun normalizedWarp(speed: Int, anchorReal: Instant, anchorVirtual: Instant): Clo
  */
 fun computeSpeedChangeWarp(currentWarp: ClockWarp?, speed: Int, realNow: Instant): ClockWarp? =
     normalizedWarp(speed, anchorReal = realNow, anchorVirtual = virtualNow(currentWarp, realNow))
+
+/** Owner request, 2026-10-03: the Debug section's "Simulated start" until the owner picks another. */
+val DEFAULT_SIMULATED_START: LocalTime = LocalTime.of(23, 0)
+
+/**
+ * Owner request, 2026-10-03: the instant switching simulated band data on jumps the clock to - [time] today in
+ * [zone] when that is not yet behind [realNow], else [time] tomorrow. Exactly now counts as today: it is not a
+ * jump at all, and a whole day ahead would be the surprise. A [time] the spring DST jump skips moves to just
+ * after the gap (ZonedDateTime.of's own rule), so 02:30 on that night is 03:30.
+ */
+fun nextOccurrenceOf(time: LocalTime, zone: ZoneId, realNow: Instant): Instant {
+    val today = realNow.atZone(zone).toLocalDate()
+    val todays = ZonedDateTime.of(today, time, zone).toInstant()
+    return if (!todays.isBefore(realNow)) todays else ZonedDateTime.of(today.plusDays(1), time, zone).toInstant()
+}
 
 /** W1: how often the UI re-samples the clock on an unwarped night - the cadence the app has always used, one sample per half minute. */
 const val UI_TICKER_INTERVAL_MS: Long = 30_000L

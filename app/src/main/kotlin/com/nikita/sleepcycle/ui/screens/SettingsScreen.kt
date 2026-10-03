@@ -96,6 +96,8 @@ fun SettingsScreen(
     onSleepRatingChange: (SleepRatingSettings) -> Unit,
     debug: DebugUiState,
     onSimulatedBandDataChange: (Boolean) -> Unit,
+    simulatedStartTime: LocalTime,
+    onSimulatedStartTimeChange: (LocalTime) -> Unit,
     onRingTestAlarm: () -> Unit,
     onOpenSetup: () -> Unit,
     onBack: () -> Unit,
@@ -192,6 +194,15 @@ fun SettingsScreen(
                     checked = debug.simulatedBandData,
                     onCheckedChange = onSimulatedBandDataChange,
                     enabled = debug.simulatedBandDataControlEnabled,
+                )
+                CardDivider()
+                // Owner request, 2026-10-03: where switching simulated band data on starts the clock. Always set (no
+                // Clear), and always editable: a new time only applies on the next switch-on, so it is harmless mid-night.
+                TimeRow(
+                    label = stringResource(R.string.debug_simulated_start),
+                    time = simulatedStartTime,
+                    onTimeChange = onSimulatedStartTimeChange,
+                    enabled = true,
                 )
                 CardDivider()
                 SecondaryActionButton(

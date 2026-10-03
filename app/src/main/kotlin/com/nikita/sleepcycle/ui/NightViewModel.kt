@@ -211,6 +211,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         if (ratings != null && settings?.sleepRating?.enabled == true) MorningRatingCard(ratings.afterEndNight?.rating) else null
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Owner request, 2026-10-03: the Debug section's "Simulated start" time, for the Settings screen. */
+    val simulatedStartTime: StateFlow<LocalTime> = debug.simulatedStartTime
+
     /** Which Setup wizard page (if any) is showing; null means the one-page checklist. See [setupWizardPageState]. */
     val setupWizardPage: StateFlow<SetupWizardPage?> = setupWizardPageState.asStateFlow()
 
@@ -779,6 +782,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     // Debug screen actions: thin delegates to DebugScreenController.kt, which owns the actual state.
     fun setSimulatedBandData(enabled: Boolean) = debug.setSimulatedBandData(enabled)
+    fun setSimulatedStartTime(time: LocalTime) = debug.setSimulatedStartTime(time)
     fun setSpeedChoice(choice: SpeedChoice) = debug.setSpeedChoice(choice)
     fun setSimulatedAsleep(asleep: Boolean) = debug.setSimulatedAsleep(asleep)
     fun ringDebugTestAlarm() = debug.ringTestAlarm()

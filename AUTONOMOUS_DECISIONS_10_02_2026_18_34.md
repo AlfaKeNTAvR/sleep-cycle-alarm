@@ -41,6 +41,7 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 - **File writes use `Files.move` (replace, atomic)** instead of `File.renameTo` in the three temp-file writes: same atomic rename on Android, but `renameTo` cannot replace a file on Windows, so every night state save after the first failed under Robolectric.
 - **Test audit**: removed 2 TickScheduling tests and 3 warp replays that could not fail (identity inputs); the tick chain test now checks spacing instead of a count fixed by construction. New Robolectric scenarios: a whole night's fade, play while asleep, a 1x tap racing Auto ticks.
 - **Not tested**: the self-finishing night's restore (reaching FINISHED needs a long scripted night); the speed race test passes, but was not shown failing against the old code.
+- **Simulated start** (owner approved, 2026-10-03): stored as its own key in the debug store, outside DebugOptions, so the night-end and idle resets never touch it. Switching simulated band data on writes the clock first, then the switch (W4 order). A start time exactly equal to now counts as today (no jump) rather than tomorrow. Changing the time while simulated data is on does not move the running clock; it applies on the next switch-on. The time row stays editable mid-night, since a new time does nothing until then.
 
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.
