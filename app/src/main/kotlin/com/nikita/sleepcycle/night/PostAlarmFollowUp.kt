@@ -66,7 +66,7 @@ fun startManualNap(context: Context, now: Instant): Boolean {
     val next = nextFollowUp(PostAlarmEvent.NapPressed(now), pending, state.settings.deadline, resolveEngineConfig(state))
     if (next == null || next == pending) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "manual_nap_refused", mapOf("cause" to "no out-of-bed nudge pending to trade for a nap", "pending" to pending.toString())),
             state.debugOptions.isAnyEnabled
         )
@@ -92,24 +92,24 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
     val pending = readPendingFollowUp(context)
     if (morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)) {
         if (pending?.kind != FollowUpKind.NAP || !pending.at.isAfter(now)) {
-            appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang and no nap is ahead")), debugNight)
+            appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang and no nap is ahead")), debugNight)
             return@withNightTransactionLock false
         }
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledNapAt" to pending.at.toString())), debugNight)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledNapAt" to pending.at.toString())), debugNight)
         val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, state.settings.deadline, resolveEngineConfig(state))
             ?: return@withNightTransactionLock false
         return@withNightTransactionLock armFollowUp(context, state, next, now, "im_up_pressed")
     }
     if (!saveWakeAlarmFiredAt(context, now)) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist wakeAlarmFiredAt for I'm up")),
             debugNight
         )
         return@withNightTransactionLock false
     }
     cancelPhoneAlarm(context)
-    appendNightLog(context, state.startedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledAlarmAt" to state.lastPlan?.wakeAt.toString())), debugNight)
+    appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledAlarmAt" to state.lastPlan?.wakeAt.toString())), debugNight)
     val upState = state.copy(wakeAlarmFiredAt = now)
     // Seen on the phone 2026-10-02: without this the screen kept offering "I'm up" next to Nap until the
     // follow-up tick committed, which waits on a band sync of up to 20 s.
@@ -128,17 +128,17 @@ private fun armFollowUp(context: Context, state: NightState, followUp: PendingFo
     val debugNight = state.debugOptions.isAnyEnabled
     if (!scheduleOutOfBedAlarm(context, followUp.at, alarmLabelForFollowUp(followUp.kind))) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "out_of_bed_alarm", "cause" to "could not arm the ${followUp.kind} at ${followUp.at} ($cause) - exact alarm permission was likely revoked")),
             debugNight
         )
         return false
     }
     val event = if (followUp.kind == FollowUpKind.NAP) "manual_nap_armed" else "out_of_bed_nudge_armed"
-    appendNightLog(context, state.startedAt, NightLogEvent(now, event, mapOf("at" to followUp.at.toString(), "cause" to cause)), debugNight)
+    appendNightLog(context, state.realStartedAt, NightLogEvent(now, event, mapOf("at" to followUp.at.toString(), "cause" to cause)), debugNight)
     if (!savePendingFollowUp(context, followUp)) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist the pending ${followUp.kind} instant")),
             debugNight
         )
@@ -147,7 +147,7 @@ private fun armFollowUp(context: Context, state: NightState, followUp: PendingFo
         val config = resolveEngineConfig(state)
         if (!schedulePreNudgeCheck(context, followUp.at.minus(config.preNudgeCheckLead))) {
             appendNightLog(
-                context, state.startedAt,
+                context, state.realStartedAt,
                 NightLogEvent(now, "error", mapOf("step" to "pre_nudge_check", "cause" to "exact alarm permission was likely revoked - the nudge will still ring on schedule")),
                 debugNight
             )

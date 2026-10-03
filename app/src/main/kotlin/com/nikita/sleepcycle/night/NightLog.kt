@@ -55,7 +55,9 @@ fun parseNightLogLine(line: String): NightLogEvent? {
 
 /**
  * Appends one event to the log file for the night that started at [startedAt], creating the file and
- * directory on first use. [debugNight] must be true whenever this night ran with any debug option on (see
+ * directory on first use. Owner request, 2026-10-03: [startedAt] is the night's REAL start
+ * (NightState.realStartedAt), so a simulated night is filed under when it was really started, not under its
+ * simulated clock; the event's own `at` is untouched. [debugNight] must be true whenever this night ran with any debug option on (see
  * DebugOptions.kt) - it changes the file's name to `night-sim-...` so a simulated night can never be mistaken
  * for a real one (see [nightLogFile]). Defaults to false so every real-night call site is unaffected.
  */
@@ -152,7 +154,7 @@ fun deleteNightLog(file: File): Boolean {
 
 private fun currentOrNewestNightLogFile(context: Context): File? {
     val activeState = loadNightState(context)
-    if (activeState != null) return nightLogFile(context, activeState.startedAt, activeState.debugOptions.isAnyEnabled)
+    if (activeState != null) return nightLogFile(context, activeState.realStartedAt, activeState.debugOptions.isAnyEnabled)
     return listNightLogs(context).firstOrNull()
 }
 
@@ -160,7 +162,7 @@ private fun nightLogsDir(context: Context): File = File(context.filesDir, NIGHT_
 
 private fun setupLogFile(context: Context): File = File(nightLogsDir(context), SETUP_LOG_FILE_NAME)
 
-/** [debugNight] picks between the real-night and the simulated-night file name prefix (see [NIGHT_LOG_SIMULATED_PREFIX]). */
+/** [debugNight] picks between the real-night and the simulated-night file name prefix (see [NIGHT_LOG_SIMULATED_PREFIX]). [startedAt] is the night's real start (NightState.realStartedAt, owner request, 2026-10-03). */
 internal fun nightLogFile(context: Context, startedAt: Instant, debugNight: Boolean): File {
     val prefix = if (debugNight) NIGHT_LOG_SIMULATED_PREFIX else NIGHT_LOG_REAL_PREFIX
     val name = "$prefix${LOG_FILE_NAME_FORMAT.withZone(ZoneId.systemDefault()).format(startedAt)}.jsonl"

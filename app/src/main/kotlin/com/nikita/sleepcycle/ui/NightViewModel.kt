@@ -326,7 +326,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** Points the morning report's rating card at the night that just ended: its log file and the ratings it already has. */
     private suspend fun loadMorningRatingTarget(endedNight: NightState) {
         morningRatingTarget.value = withContext(Dispatchers.IO) {
-            val logFile = nightLogFile(context, endedNight.startedAt, endedNight.debugOptions.isAnyEnabled)
+            val logFile = nightLogFile(context, endedNight.realStartedAt, endedNight.debugOptions.isAnyEnabled)
             MorningRatingTarget(logFile, readPastNightLog(logFile).ratings)
         }
     }

@@ -116,7 +116,7 @@ class NightService : Service() {
         val state = loadNightState(this)
         val debugOptions = state?.debugOptions ?: DebugOptions()
         state?.let {
-            appendNightLog(this, it.startedAt, NightLogEvent(nowInstant(), "error", mapOf("step" to "tick", "cause" to (error.message ?: error.toString()))), debugOptions.isAnyEnabled)
+            appendNightLog(this, it.realStartedAt, NightLogEvent(nowInstant(), "error", mapOf("step" to "tick", "cause" to (error.message ?: error.toString()))), debugOptions.isAnyEnabled)
         }
         // T4/T6: virtual - scheduleTick converts to the real AlarmManager/in-process instant itself.
         scheduleTick(this, nowInstant().plus(resolveEngineConfig(debugOptions, state?.afterAlarm ?: AfterAlarmSettings()).normalSyncDelay))

@@ -144,7 +144,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
      */
     private fun recordRealAlarmFired(context: Context, state: NightState, intent: Intent, now: Instant, isOutOfBed: Boolean) {
         val eventName = if (isOutOfBed) "out_of_bed_alarm_fired" else "phone_alarm_fired"
-        appendNightLog(context, state.startedAt, NightLogEvent(now, eventName, emptyMap()), state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, eventName, emptyMap()), state.debugOptions.isAnyEnabled)
         if (firedAlarmRecordsPlanBookkeeping(isOutOfBed)) {
             val scheduledForMillis = intent.getLongExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, -1L)
             if (scheduledForMillis >= 0) {
@@ -165,7 +165,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
     private fun markPhoneAlarmFired(context: Context, state: NightState, firedFor: Instant) {
         if (!savePhoneAlarmFiredFor(context, firedFor)) {
             appendNightLog(
-                context, state.startedAt,
+                context, state.realStartedAt,
                 NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist phoneAlarmFiredFor after the alarm fired")),
                 state.debugOptions.isAnyEnabled
             )
@@ -207,7 +207,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         val firedPlan = state.lastPlan?.takeIf { sameAlarmInstant(lastPlanWakeAt, firedFor) }
         if (firedPlan == null) {
             appendNightLog(
-                context, state.startedAt,
+                context, state.realStartedAt,
                 NightLogEvent(
                     nowInstant(), "error",
                     mapOf(
@@ -223,7 +223,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         if (firedAlarmIsWakeAlarm(firedPlan.mode, firedFor, state.morningAlarmAt)) {
             if (!saveWakeAlarmFiredAt(context, firedFor)) {
                 appendNightLog(
-                    context, state.startedAt,
+                    context, state.realStartedAt,
                     NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist wakeAlarmFiredAt after the wake alarm fired")),
                     state.debugOptions.isAnyEnabled
                 )
@@ -232,14 +232,14 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             val newCount = (state.napAlarmsUsed + 1).coerceAtMost(MAX_NAP_ALARMS)
             if (!saveNapAlarmsUsed(context, newCount)) {
                 appendNightLog(
-                    context, state.startedAt,
+                    context, state.realStartedAt,
                     NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist napAlarmsUsed after the nap alarm fired")),
                     state.debugOptions.isAnyEnabled
                 )
             }
             if (!saveLastNapAlarmFiredAt(context, firedFor)) {
                 appendNightLog(
-                    context, state.startedAt,
+                    context, state.realStartedAt,
                     NightLogEvent(nowInstant(), "error", mapOf("step" to "save_night_state", "cause" to "failed to persist lastNapAlarmFiredAt after the nap alarm fired")),
                     state.debugOptions.isAnyEnabled
                 )
@@ -322,7 +322,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
     private fun handleServiceStartFailure(context: Context, state: NightState?, isOutOfBed: Boolean, label: AlarmLabel, error: Exception) {
         if (state != null) {
             appendNightLog(
-                context, state.startedAt,
+                context, state.realStartedAt,
                 NightLogEvent(nowInstant(), "error", mapOf("step" to "alarm_service_start", "cause" to (error.message ?: error.toString()))),
                 state.debugOptions.isAnyEnabled
             )

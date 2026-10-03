@@ -102,7 +102,17 @@ data class NightState(
      */
     val lastNapAlarmFiredAt: Instant? = null,
     /** Owner spec, 2026-10-02: the Settings screen's nudge and nap length, captured once at Start night like [debugOptions], so a change in Settings applies from the next night on. A state saved before Settings existed decodes as the defaults, which are exactly the timing it was started with. */
-    val afterAlarm: AfterAlarmSettings = AfterAlarmSettings()
+    val afterAlarm: AfterAlarmSettings = AfterAlarmSettings(),
+    /**
+     * Owner request, 2026-10-03: the REAL wall-clock instant Start night was tapped, recorded once at startNight.
+     * The night log's identity - its file name, and so its place and label on the Logs and Past night screens -
+     * is built from this, never from the simulated [startedAt]: a debug night started at real 14:05 with the
+     * clock jumped to 23:00 is filed as 14:05. Everything inside the log stays on the simulated clock. A real
+     * night's two clocks are the same, so this equals [startedAt]. It cannot be recomputed later: the live warp
+     * dies with the process (V8) and Auto re-anchors it mid-night. A state saved before this field existed
+     * decodes as [startedAt], the start its log is already named for, so a night in progress keeps one log.
+     */
+    val realStartedAt: Instant = startedAt
 )
 
 /** Turns a night state into its JSON text form, the inverse of [decodeNightState]. */
@@ -124,6 +134,7 @@ fun encodeNightState(state: NightState): String {
     json.put("morningAlarmAt", state.morningAlarmAt?.toString() ?: JSONObject.NULL)
     json.put("lastNapAlarmFiredAt", state.lastNapAlarmFiredAt?.toString() ?: JSONObject.NULL)
     json.put("afterAlarm", encodeAfterAlarmSettings(state.afterAlarm))
+    json.put("realStartedAt", state.realStartedAt.toString())
     return json.toString()
 }
 
@@ -142,8 +153,9 @@ fun encodeNightState(state: NightState): String {
  */
 fun decodeNightState(text: String): NightState {
     val json = JSONObject(text)
+    val startedAt = Instant.parse(json.getString("startedAt"))
     return NightState(
-        startedAt = Instant.parse(json.getString("startedAt")),
+        startedAt = startedAt,
         settings = decodeNightSettings(json.getJSONObject("settings")),
         lastPlan = decodePlanTolerant(json.optJSONObject("lastPlan")),
         lastSyncAt = json.optStringOrNull("lastSyncAt")?.let(Instant::parse),
@@ -171,8 +183,19 @@ fun decodeNightState(text: String): NightState {
         // load (see loadNightState) - this blob copy is only ever a fallback for a state file saved before
         // this field existed (absent, decodes as null).
         lastNapAlarmFiredAt = json.optStringOrNull("lastNapAlarmFiredAt")?.let(Instant::parse),
-        afterAlarm = decodeAfterAlarmSettingsTolerant(json.optJSONObject("afterAlarm"))
+        afterAlarm = decodeAfterAlarmSettingsTolerant(json.optJSONObject("afterAlarm")),
+        realStartedAt = decodeRealStartedAtTolerant(json, startedAt)
     )
+}
+
+/** Owner request, 2026-10-03: absent (a state saved before [NightState.realStartedAt] existed) or unparseable decodes as [startedAt], the start that night's log is already named for. */
+private fun decodeRealStartedAtTolerant(json: JSONObject, startedAt: Instant): Instant {
+    val text = json.optStringOrNull("realStartedAt") ?: return startedAt
+    return try {
+        Instant.parse(text)
+    } catch (error: Exception) {
+        startedAt
+    }
 }
 
 private fun encodeAfterAlarmSettings(settings: AfterAlarmSettings): JSONObject = JSONObject().apply {

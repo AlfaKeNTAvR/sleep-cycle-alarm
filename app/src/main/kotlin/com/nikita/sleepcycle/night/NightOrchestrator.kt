@@ -231,7 +231,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     }
     val debugNight = state.debugOptions.isAnyEnabled
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(
             now, "tick",
             mapOf(
@@ -284,7 +284,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         // itself is guaranteed non-null here too.
         val keptPlan = checkNotNull(state.lastPlan)
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(
                 decisionNow, "stale_sync_keep_plan",
                 // S5/item 3c (reviewer note, 2026-09-21): reworded from "already has a real alarm armed" -
@@ -352,7 +352,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         // phone_alarm_set lines above, which are all stamped with decisionNow; appendLogLine no longer
         // re-stamps every event to nowInstant() on write (V9), so this one must already carry an `at` at least
         // as late as what came before it, or a reader would see a "later" line with an earlier timestamp.
-        appendNightLog(context, state.startedAt, NightLogEvent(decisionNow, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist state after this tick")), debugNight)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(decisionNow, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist state after this tick")), debugNight)
     }
     // FIX2: booked from decisionNow - the instant this tick's own decision was actually made at - never the
     // caller's stale entry `now`. See nextTickAt's own doc for why, and TickScheduling.kt's own in-process
@@ -385,13 +385,13 @@ private suspend fun stepMediaFadeForSleepState(context: Context, state: NightSta
     val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
     val endPercent = appSettings.bedtimeAudio.fadeEndPercent
     val fadeStarted = startWakeFadeIfDue(
-        context, state.startedAt, now,
+        context, state.realStartedAt, now,
         fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = appSettings.bedtimeAudio.fadeStartPercent,
         morningAlarmRang = morningAlarmRang, debugNight = debugNight,
     )
-    stepMediaFade(context, state.startedAt, now, endPercent = endPercent, morningAlarmRang = morningAlarmRang, debugNight = debugNight)
+    stepMediaFade(context, state.realStartedAt, now, endPercent = endPercent, morningAlarmRang = morningAlarmRang, debugNight = debugNight)
     if (appSettings.bedtimeAudio.pauseWhenAsleep) {
-        pauseFinishedFadeIfDue(context, state.startedAt, now, sleepState, endPercent, morningAlarmRang, debugNight)
+        pauseFinishedFadeIfDue(context, state.realStartedAt, now, sleepState, endPercent, morningAlarmRang, debugNight)
     }
     return fadeStarted
 }
@@ -425,13 +425,13 @@ private suspend fun pauseMediaIfJustFellAsleep(context: Context, state: NightSta
     if (!shouldPauseMediaOnSleep(previousSleepState, sleepState, morningAlarmRang)) return
     val result = pausePlayingMedia(context)
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(now, "media_pause_on_sleep", mapOf("result" to result.name.lowercase())),
         state.debugOptions.isAnyEnabled
     )
     if (result != MediaPauseResult.STILL_PLAYING) {
         // Parked at the starting volume, not restored: media restarted on waking plays quietly (MediaFade.kt).
-        parkMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
+        parkMediaFade(context, state.realStartedAt, now, state.debugOptions.isAnyEnabled)
         // The next awakening with media playing gets a fresh fade (startWakeFadeIfDue).
         rearmMediaFadeForWake(context)
     }
@@ -548,7 +548,7 @@ private fun cancelNudgeIfSupersededByNap(
     cancelPreNudgeCheck(context)
     clearOutOfBedNudgePendingAt(context)
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(
             now, "out_of_bed_nudge_cancelled",
             mapOf("cause" to "a_nap_was_armed", "pendingNudgeAt" to pendingNudgeAt.toString(), "napWakeAt" to plan.wakeAt.toString())
@@ -624,27 +624,27 @@ private fun rearmNudgeIfNapCancelledWhileAwake(
     val at = now.plus(config.outOfBedDelay)
     if (!scheduleOutOfBedAlarm(context, at)) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "out_of_bed_alarm", "cause" to "could not re-arm the nudge at $at after cancelling this night's nap - exact alarm permission was likely revoked")),
             state.debugOptions.isAnyEnabled
         )
         return
     }
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(now, "out_of_bed_nudge_rearmed", mapOf("at" to at.toString(), "cause" to "rule 7's AWAKE branch cancelled this night's nap and no nudge was left pending")),
         state.debugOptions.isAnyEnabled
     )
     if (!saveOutOfBedNudgePendingAt(context, at)) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to persist the re-armed out-of-bed nudge instant")),
             state.debugOptions.isAnyEnabled
         )
     }
     if (!schedulePreNudgeCheck(context, at.minus(config.preNudgeCheckLead))) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "pre_nudge_check", "cause" to "exact alarm permission was likely revoked - the re-armed nudge will still ring on schedule")),
             state.debugOptions.isAnyEnabled
         )
@@ -675,7 +675,7 @@ internal suspend fun syncOrFail(context: Context, appSettings: AppSettings, stat
     // every OTHER caller of this function (the pre-nudge check's own re-sync, which only ever reads the
     // LATEST sleep state and never the night's own onset) is unaffected either way.
     return syncAndReadBandData(context, exportUri, deviceMac, state.startedAt.minus(BAND_QUERY_LOOKBACK)) { event ->
-        appendNightLog(context, state.startedAt, event, state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.realStartedAt, event, state.debugOptions.isAnyEnabled)
     }
 }
 
@@ -710,14 +710,14 @@ data class SyncOutcome(
 internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult: BandDataResult, now: Instant): SyncOutcome =
     when (syncResult) {
         is BandDataResult.Failure -> {
-            appendNightLog(context, state.startedAt, NightLogEvent(now, "error", mapOf("step" to syncResult.step, "cause" to syncResult.cause)), state.debugOptions.isAnyEnabled)
+            appendNightLog(context, state.realStartedAt, NightLogEvent(now, "error", mapOf("step" to syncResult.step, "cause" to syncResult.cause)), state.debugOptions.isAnyEnabled)
             SyncOutcome(state.lastSegments, null, false, state.lastExportFileModifiedAt, syncResult.cause)
         }
         is BandDataResult.Success -> {
             val freshness = checkDataFreshness(syncResult.newestSampleAt, now, syncResult.exportFileModifiedAt, state.lastExportFileModifiedAt)
             if (!freshness.isFresh) {
                 appendNightLog(
-                    context, state.startedAt,
+                    context, state.realStartedAt,
                     NightLogEvent(now, "stale_data", mapOf("reason" to (freshness.reason ?: ""), "newestSampleAt" to (syncResult.newestSampleAt?.toString() ?: ""))),
                     state.debugOptions.isAnyEnabled
                 )
@@ -982,7 +982,7 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         // and easy to mistake for a code bug rather than a slow sync. J3 removed the second clock entirely, so
         // the timestamp and the comparison instant are now always the same value - this just says so explicitly.
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "planned phone alarm $wakeAt is at or before $now, not arming - Android fires a past exact alarm immediately")),
             debugNight
         )
@@ -998,7 +998,7 @@ private fun armPhoneAlarmIfNeeded(context: Context, state: NightState, previousP
         changed -> NightLogEvent(now, "phone_alarm_set", mapOf("at" to wakeAt.toString()))
         else -> null
     }
-    event?.let { appendNightLog(context, state.startedAt, it, debugNight) }
+    event?.let { appendNightLog(context, state.realStartedAt, it, debugNight) }
     return armed
 }
 
