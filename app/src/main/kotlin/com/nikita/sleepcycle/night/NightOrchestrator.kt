@@ -360,6 +360,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         context, plan, decisionNow, config,
         watchingForSleepSince = state.startedAt.takeIf { sleepState == SleepState.NOT_YET_ASLEEP },
         autoSpeedFollowUpAt = followUpAt.takeIf { autoSpeedOn }, autoSpeedOn = autoSpeedOn,
+        simulatedAwakeSettlesAt = simulatedAwakeSettlesAt(simulatedEvents, decisionNow, config.minAwakening),
     )
     // FIX1: published from INSIDE this same lock - the one seam every committed tick's result now reaches
     // observedNightState through, whether it ran from NightService's own tick or an immediate UI-requested
@@ -1023,12 +1024,13 @@ internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineCon
  * null from [nextTickAt] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig.
  * [watchingForSleepSince] is the night's start while the band has seen no sleep yet tonight, null otherwise (see nextSyncDelay).
  * [autoSpeedOn] with [autoSpeedFollowUpAt]: Auto is driving the clock, and the pending nudge or own nap it also slows down for.
+ * [simulatedAwakeSettlesAt]: a fresh simulated awake mark first counts then, so a tick must land there.
  */
 private fun scheduleNextTick(
     context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig, watchingForSleepSince: Instant?,
-    autoSpeedFollowUpAt: Instant?, autoSpeedOn: Boolean,
+    autoSpeedFollowUpAt: Instant?, autoSpeedOn: Boolean, simulatedAwakeSettlesAt: Instant?,
 ) {
-    val ordinaryAt = nextTickAt(plan, decisionNow, config, watchingForSleepSince)
+    val ordinaryAt = earliestTickAt(nextTickAt(plan, decisionNow, config, watchingForSleepSince), simulatedAwakeSettlesAt)
     // Auto: a tick must land on the slow-down instant, or the ordinary sync gap can skip the 60x approach.
     val at = if (autoSpeedOn) autoSpeedTickAt(ordinaryAt, decisionNow, plan.wakeAt, autoSpeedFollowUpAt) else ordinaryAt
     if (at == null) {

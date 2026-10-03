@@ -9,6 +9,7 @@ package com.nikita.sleepcycle.night
 
 import com.nikita.sleepcycle.engine.SegmentKind
 import com.nikita.sleepcycle.engine.SleepSegment
+import java.time.Duration
 import java.time.Instant
 
 /** T9: the Debug screen's "Asleep" toggle has exactly two states - no more three-button FELL_ASLEEP/WOKE_UP/FELL_BACK_ASLEEP distinction, since "asleep again after waking" behaves identically to "asleep for the first time" from the engine's point of view. */
@@ -71,4 +72,25 @@ fun buildSimulatedSegments(events: List<SimulatedSleepEvent>, now: Instant): Lis
         val end = sorted.getOrNull(index + 1)?.at ?: now
         if (!end.isAfter(event.at)) null else SleepSegment(start = event.at, end = end, kind = segmentKindStartedBy(event.kind))
     }
+}
+
+/** W9: how far past the engine's own minimum awakening the awake re-tick lands, so the mark is already longer than the floor rather than exactly on it. */
+val SIMULATED_AWAKE_RETICK_MARGIN: Duration = Duration.ofSeconds(2)
+
+/**
+ * When the latest simulated mark, if it is AWAKE, first counts as an awakening: [minAwakening] (the engine
+ * ignores shorter awake marks) plus [SIMULATED_AWAKE_RETICK_MARGIN] after it. Null once that is behind [now], or
+ * when the latest mark is ASLEEP. Phone test, 2026-10-02: every tick books its next one no later than this
+ * ([earliestTickAt]), so a tick run in between (the owner coming back to the app) can no longer wipe it.
+ */
+fun simulatedAwakeSettlesAt(events: List<SimulatedSleepEvent>, now: Instant, minAwakening: Duration): Instant? {
+    val latest = events.lastOrNull()?.takeIf { it.kind == SimulatedSleepEventKind.AWAKE } ?: return null
+    return latest.at.plus(minAwakening).plus(SIMULATED_AWAKE_RETICK_MARGIN).takeIf { it.isAfter(now) }
+}
+
+/** The next tick: the earlier of [ordinaryAt] and [pullInAt]; none at all when [ordinaryAt] is null (the night is over). */
+fun earliestTickAt(ordinaryAt: Instant?, pullInAt: Instant?): Instant? = when {
+    ordinaryAt == null -> null
+    pullInAt == null -> ordinaryAt
+    else -> minOf(ordinaryAt, pullInAt)
 }

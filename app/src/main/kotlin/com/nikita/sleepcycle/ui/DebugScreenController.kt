@@ -21,6 +21,7 @@ import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.AppClock
 import com.nikita.sleepcycle.night.DebugOptions
+import com.nikita.sleepcycle.night.SIMULATED_AWAKE_RETICK_MARGIN
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import com.nikita.sleepcycle.night.SimulatedSleepEventKind
 import com.nikita.sleepcycle.night.SpeedChoice
@@ -59,11 +60,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 
-/** W9: how far past the engine's own minimum awakening the follow-up tick is booked, so it lands once the awake mark is already longer than the floor rather than exactly on it. */
-private val DEBOUNCE_RETICK_MARGIN: Duration = Duration.ofSeconds(2)
 
 /** Everything the Debug screen persists and can act on, plus the one seam ([effectiveOptions]) that forces every switch off outside a debug build. */
 class DebugScreenController(private val context: Context, private val scope: CoroutineScope) {
@@ -214,7 +212,7 @@ class DebugScreenController(private val context: Context, private val scope: Cor
             updateSimulatedSleepEvents(context) { stored -> appendSimulatedSleepEvent(stored, kind, at) }
             runImmediateTick(context)
             if (kind == SimulatedSleepEventKind.AWAKE) {
-                scheduleTick(context, at + resolveEngineConfig(effectiveOptions(), AfterAlarmSettings()).minAwakening + DEBOUNCE_RETICK_MARGIN)
+                scheduleTick(context, at + resolveEngineConfig(effectiveOptions(), AfterAlarmSettings()).minAwakening + SIMULATED_AWAKE_RETICK_MARGIN)
             }
         }
     }

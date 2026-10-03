@@ -29,5 +29,7 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 - **Parked volume is capped too**: while parked (asleep, or awake before media plays), a volume turned above the starting volume is pulled back to it; one turned below stays.
 - **Before bed banner** (owner request): now the same amber-outlined block as the Night screen, "SIMULATED" left, clock right, no controls. Supersedes W7's no-clock banner. The clock re-reads every 30 s there, so it can lag the real minute by up to 30 s.
 
+- **Awake re-tick survives other ticks** (phone test, 21:45 night): coming back to the app after starting media ran an immediate tick that replaced the re-tick booked for when the awake mark passes the 1 min floor, so the awakening (and the wake fade) was never seen. Every tick now books its next one no later than that instant (`simulatedAwakeSettlesAt`, `earliestTickAt`). Simulated nights only.
+
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.
