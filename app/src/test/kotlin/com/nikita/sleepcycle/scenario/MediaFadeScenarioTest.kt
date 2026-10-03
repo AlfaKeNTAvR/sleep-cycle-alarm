@@ -90,9 +90,9 @@ class MediaFadeScenarioTest {
 
     private fun nightLog(): String = listNightLogs(context).first().readText()
 
-    private fun startSimulatedNight(startedAt: Instant) = runBlocking {
+    private fun startSimulatedNight(startedAt: Instant, deadline: Instant? = null) = runBlocking {
         startNight(
-            context, NightSettings(deadline = null, pickedCycles = 5), startedAt,
+            context, NightSettings(deadline = deadline, pickedCycles = 5), startedAt,
             AfterAlarmSettings(), BedtimeAudioSettings(), DebugOptions(simulatedBandData = true),
         )
         withTimeout(10_000) { while (loadNightState(context) == null) delay(20) }
@@ -161,6 +161,27 @@ class MediaFadeScenarioTest {
 
         endNight(context, nowInstant())
         assertEquals("End night puts back the volume the night's first fade started from", 2, volume)
+    }
+
+    // Emulator audit, 2026-10-03 (spec-audit.md test gaps): a night that finishes on its own, with no End night,
+    // used to keep the faded volume until the next Start night. Reached here by the deadline passing more than an
+    // hour ago with nothing rung (the phone alarm is never delivered under Robolectric), which ends the night at
+    // the next tick with no out-of-bed nudge to defer it.
+    @Test
+    fun `a night that finishes on its own puts back the volume its fade lowered`() = runBlocking {
+        val now = Instant.now()
+        val deadline = now.plus(Duration.ofMinutes(30))
+        startSimulatedNight(now.minus(Duration.ofMinutes(10)), deadline)
+        setVolume(10)
+        play()
+        runMediaFadeCheck(context)
+        assertEquals("the fade starts at the starting volume", startStep, volume)
+
+        AppClock.setWarp(ClockWarp(1, Instant.now(), deadline.plus(Duration.ofMinutes(61))))
+        runImmediateTick(context)
+
+        assertEquals("the night finished on its own", null, loadNightState(context))
+        assertEquals("the night's own volume is back", 10, volume)
     }
 
     private fun changeBedtimeAudio(change: (BedtimeAudioSettings) -> BedtimeAudioSettings) = runBlocking {
