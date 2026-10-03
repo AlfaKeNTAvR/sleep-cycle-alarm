@@ -331,12 +331,13 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
             morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
             debugNight = debugNight,
         )
-        stepMediaFade(
-            context, state.startedAt, decisionNow, endPercent = appSettings.bedtimeAudio.fadeEndPercent,
-            morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
-            debugNight = debugNight,
-        )
     }
+    // Every tick, asleep or not: a parked volume must still come back once the morning alarm has rung.
+    stepMediaFade(
+        context, state.startedAt, decisionNow, endPercent = appSettings.bedtimeAudio.fadeEndPercent,
+        morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
+        debugNight = debugNight,
+    )
 
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are
     // PhoneAlarmReceiver's own bookkeeping (see PhoneAlarmFiredStore.kt) - a tick only ever reads them

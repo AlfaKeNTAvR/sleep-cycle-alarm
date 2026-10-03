@@ -3,7 +3,7 @@ package com.nikita.sleepcycle.night
 // File purpose: the bedtime media fade - owner request, 2026-10-02. Once media is playing after Start night the
 // media volume drops to the Settings screen's starting volume (default 25%, never raised; the fade can be switched off), holds for 10 minutes, then loses one volume step every 5 minutes down to the
 // Settings screen's ending volume (default 5%), where it stays until the band says the owner is asleep (MediaPauseOnSleep.kt then pauses
-// playback and the volume is parked at the starting volume until End night - see below). Steps ride on the night's own ticks, which run every 5
+// playback and the volume is parked at the starting volume - see below). Steps ride on the night's own ticks, which run every 5
 // minutes for the first hour while the owner is not yet asleep, so a late tick makes its step late too.
 //
 // Owner request, 2026-10-02: the fade runs again after a mid-night awakening. Falling asleep re-arms it, and
@@ -17,12 +17,14 @@ package com.nikita.sleepcycle.night
 //
 // Phone test, 2026-10-02 (owner's choice): falling asleep used to put the owner's own volume back, so an
 // audiobook restarted on waking played at full volume until the band confirmed the awakening, minutes later.
-// Falling asleep now PARKS the volume at the fade's starting volume ([parkMediaFade]); only End night puts the
-// owner's own volume back. A fade after waking starts from the parked volume and keeps the night's original.
+// Falling asleep now PARKS the volume at the fade's starting volume ([parkMediaFade]). A fade after waking
+// starts from the parked volume and keeps the night's original.
 //
-// Owner request, 2026-10-02: a volume the owner sets himself during the night no longer stops the fade - it
-// carries on from his volume (a fresh hold, then steps down), until the morning alarm has rung, after which
-// the volume is left exactly where it is. End night still puts back the volume the night began with.
+// Owner spec, 2026-10-02: the fade owns the volume from Start night until the morning alarm. A volume the
+// owner sets himself in between is pulled back to the fade's schedule on the next tick ([fadeTickAction]),
+// and every awakening starts again from the starting volume. Once the morning alarm has rung there is no
+// fading at all: the next tick puts the owner's own volume back, so media in bed before the out-of-bed nudge
+// plays at his volume. End night does the same for a night that never reached its morning alarm.
 
 import android.content.Context
 import android.media.AudioManager
@@ -77,17 +79,41 @@ fun shouldStartWakeFade(fadeRearmed: Boolean, sleepState: SleepState, mediaPlayi
  */
 fun fadeOriginalStep(currentStep: Int, parkedOriginalStep: Int?): Int = parkedOriginalStep ?: currentStep
 
+/** What one tick does to the media volume while a fade is running or parked (see [fadeTickAction]). */
+sealed interface FadeTickAction {
+    /** Set the volume to [step]. */
+    data class SetVolume(val step: Int) : FadeTickAction
+    /** The fade is over: put the owner's own volume back and forget the fade. */
+    data object RestoreOriginal : FadeTickAction
+    /** Leave the volume as it is. */
+    data object None : FadeTickAction
+}
+
+/**
+ * One tick's decision for a fade begun at [startStep] at [startedAt] (owner spec, 2026-10-02): once the morning
+ * alarm has rung, the owner's own volume comes back; while [parked] (asleep) nothing moves; otherwise the volume
+ * is wherever [fadeTargetStep] says, down to [endPercent] - a [currentStep] the owner turned up himself is
+ * pulled back to it.
+ */
+fun fadeTickAction(
+    startStep: Int, startedAt: Instant, parked: Boolean, currentStep: Int, maxStep: Int, now: Instant, endPercent: Int, morningAlarmRang: Boolean,
+): FadeTickAction {
+    if (morningAlarmRang) return FadeTickAction.RestoreOriginal
+    if (parked) return FadeTickAction.None
+    val targetStep = fadeTargetStep(startStep, maxStep, startedAt, now, endPercent)
+    return if (targetStep == currentStep) FadeTickAction.None else FadeTickAction.SetVolume(targetStep)
+}
+
 /**
  * A fade in progress, persisted so it survives the process between ticks: the owner's own volume before the
- * fade ([originalStep], put back at End night), where and when it began, and the step the app itself last set
- * ([lastSetStep]) - any other reading means the owner changed the volume, which ends the fade. [parked]: the
- * owner fell asleep, the volume sits at [startStep] and no longer steps down.
+ * fade ([originalStep], put back once the fade is over), and where and when it began. [parked]: the owner fell
+ * asleep, the volume sits at [startStep] and no longer steps down.
  */
-private data class MediaFadeRecord(val originalStep: Int, val startStep: Int, val startedAt: Instant, val lastSetStep: Int, val parked: Boolean = false)
+private data class MediaFadeRecord(val originalStep: Int, val startStep: Int, val startedAt: Instant, val parked: Boolean = false)
 
 private const val MEDIA_FADE_FILE_NAME = "media_fade.txt"
 
-/** The record's optional fifth field, present while the volume is parked; a record without it is a running fade. */
+/** The record's optional fourth field, present while the volume is parked; a record without it is a running fade. */
 private const val PARKED_FIELD = "parked"
 
 /** Present once falling asleep has re-armed the fade for the next awakening; removed when a fade starts. */
@@ -108,10 +134,9 @@ fun startMediaFade(context: Context, nightStartedAt: Instant, now: Instant, star
     val originalStep = fadeOriginalStep(currentStep, parkedOriginalStep)
     val startStep = fadeStartStep(currentStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), startPercent)
     if (startStep != currentStep) audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, startStep, 0)
-    // What the device reports right after the set - the step later ticks compare against, so a device that
-    // rounds or ignores the set cannot read as the owner overriding the fade.
+    // What the device reports right after the set, for the night log: shows a device that ignored the set.
     val actualStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-    saveMediaFade(context, MediaFadeRecord(originalStep, startStep, now, actualStep))
+    saveMediaFade(context, MediaFadeRecord(originalStep, startStep, now))
     appendNightLog(
         context, nightStartedAt,
         NightLogEvent(
@@ -123,59 +148,47 @@ fun startMediaFade(context: Context, nightStartedAt: Instant, now: Instant, star
 }
 
 /**
- * One tick's fade step while the owner is not asleep: sets the volume to [fadeTargetStep], down to the
- * Settings screen's ending volume [endPercent]. If the volume is no longer what the app last set, the owner (or
- * a switch to other headphones) changed it: the fade carries on from that volume, with a fresh hold. Once the
- * morning alarm has rung ([morningAlarmRang]) nothing changes any more - naps and the nudge keep his volume.
+ * One tick of a fade, running or parked: applies [fadeTickAction] - steps the volume down to the Settings
+ * screen's ending volume [endPercent], pulls a volume the owner turned up himself back to the schedule, and
+ * once the morning alarm has rung ([morningAlarmRang]) puts the owner's own volume back for good.
  */
 fun stepMediaFade(context: Context, nightStartedAt: Instant, now: Instant, endPercent: Int, morningAlarmRang: Boolean, debugNight: Boolean) {
-    if (morningAlarmRang) return
-    val running = readMediaFade(context)?.takeUnless { it.parked } ?: return
+    val record = readMediaFade(context) ?: return
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return
     val currentStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-    val record = if (currentStep == running.lastSetStep) running else {
-        val rebased = running.copy(startStep = currentStep, startedAt = now, lastSetStep = currentStep)
-        saveMediaFade(context, rebased)
-        appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_followed", mapOf("step" to currentStep.toString())), debugNight)
-        rebased
+    val maxStep = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    when (val action = fadeTickAction(record.startStep, record.startedAt, record.parked, currentStep, maxStep, now, endPercent, morningAlarmRang)) {
+        FadeTickAction.RestoreOriginal -> endMediaFade(context, nightStartedAt, now, debugNight)
+        FadeTickAction.None -> Unit
+        is FadeTickAction.SetVolume -> {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, action.step, 0)
+            appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_step", mapOf("step" to action.step.toString(), "from" to currentStep.toString())), debugNight)
+        }
     }
-    val targetStep = fadeTargetStep(record.startStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), record.startedAt, now, endPercent)
-    if (targetStep == currentStep) return
-    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetStep, 0)
-    // The step the device reports, not the one asked for - see startMediaFade.
-    saveMediaFade(context, record.copy(lastSetStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)))
-    appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_step", mapOf("step" to targetStep.toString())), debugNight)
 }
 
 /**
- * Ends the fade, if one is running or parked: puts the owner's original volume back, unless the owner has
- * changed it since the app last set it (theirs wins). Called when the night ends (and at Start night, for a
- * night that never ended cleanly).
+ * Ends the fade, if one is running or parked: puts the owner's original volume back. Called by the first tick
+ * after the morning alarm, when the night ends, and at Start night for a night that never ended cleanly.
  */
 fun endMediaFade(context: Context, nightStartedAt: Instant, now: Instant, debugNight: Boolean) {
     val record = readMediaFade(context) ?: return
     clearMediaFade(context)
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return
-    val restored = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == record.lastSetStep
-    if (restored) audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, record.originalStep, 0)
-    appendNightLog(
-        context, nightStartedAt,
-        NightLogEvent(now, "media_fade_end", mapOf("restoredStep" to if (restored) record.originalStep.toString() else "none")),
-        debugNight
-    )
+    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, record.originalStep, 0)
+    appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_end", mapOf("restoredStep" to record.originalStep.toString())), debugNight)
 }
 
 /**
- * Falling asleep, once media is paused: parks the volume at the fade's starting volume until End night, so
- * media restarted on waking plays quietly from the first second (see this file's header) - whatever volume the
- * owner last set himself, since the fade follows his changes through the night.
+ * Falling asleep, once media is paused: parks the volume at the fade's starting volume, so media restarted on
+ * waking plays quietly from the first second (see this file's header), whatever volume was playing before.
  */
 fun parkMediaFade(context: Context, nightStartedAt: Instant, now: Instant, debugNight: Boolean) {
     val record = readMediaFade(context) ?: return
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return
     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, record.startStep, 0)
     val parkedStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-    saveMediaFade(context, record.copy(lastSetStep = parkedStep, parked = true))
+    saveMediaFade(context, record.copy(parked = true))
     appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_parked", mapOf("step" to parkedStep.toString())), debugNight)
 }
 
@@ -223,7 +236,7 @@ private fun mediaFadeFile(context: Context): File = File(context.filesDir, MEDIA
 private fun saveMediaFade(context: Context, record: MediaFadeRecord) {
     try {
         val parkedField = if (record.parked) " $PARKED_FIELD" else ""
-        mediaFadeFile(context).writeText("${record.originalStep} ${record.startStep} ${record.startedAt} ${record.lastSetStep}$parkedField")
+        mediaFadeFile(context).writeText("${record.originalStep} ${record.startStep} ${record.startedAt}$parkedField")
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to save the media fade record", error)
     }
@@ -234,7 +247,7 @@ private fun readMediaFade(context: Context): MediaFadeRecord? {
     val file = mediaFadeFile(context)
     if (!file.exists()) return null
     val parts = runCatching { file.readText().trim().split(" ") }.getOrNull() ?: return null
-    return runCatching { MediaFadeRecord(parts[0].toInt(), parts[1].toInt(), Instant.parse(parts[2]), parts[3].toInt(), parked = parts.getOrNull(4) == PARKED_FIELD) }
+    return runCatching { MediaFadeRecord(parts[0].toInt(), parts[1].toInt(), Instant.parse(parts[2]), parked = parts.getOrNull(3) == PARKED_FIELD) }
         .onFailure { Log.e(LOG_TAG, "unparsable media fade record, treating as absent", it) }
         .getOrNull()
 }

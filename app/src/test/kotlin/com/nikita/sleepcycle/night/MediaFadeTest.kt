@@ -67,6 +67,30 @@ class MediaFadeTest {
         assertEquals(0, stepAt(20, startStep = 0))
     }
 
+    // Owner spec, 2026-10-02: from Start night to the morning alarm the fade's schedule wins over the owner's own
+    // volume changes; once the morning alarm has rung the fade is over and his own volume comes back.
+
+    private fun tickAt(minutes: Long, currentStep: Int, parked: Boolean = false, morningAlarmRang: Boolean = false) =
+        fadeTickAction(startStep = 13, startedAt = nightStart, parked = parked, currentStep = currentStep, maxStep = pixelMaxStep, now = nightStart.plusSeconds(minutes * 60), endPercent = 5, morningAlarmRang = morningAlarmRang)
+
+    @Test fun `a volume turned up mid-fade is pulled back to where the fade is`() {
+        // 20 minutes in: the 10 minute hold, then 3 steps down from 13.
+        assertEquals(FadeTickAction.SetVolume(10), tickAt(20, currentStep = 22))
+    }
+
+    @Test fun `a volume already where the fade wants it is left alone`() {
+        assertEquals(FadeTickAction.None, tickAt(20, currentStep = 10))
+    }
+
+    @Test fun `a parked volume does not step down while the owner sleeps`() {
+        assertEquals(FadeTickAction.None, tickAt(60, currentStep = 13, parked = true))
+    }
+
+    @Test fun `once the morning alarm has rung the owner's own volume comes back, parked or not`() {
+        assertEquals(FadeTickAction.RestoreOriginal, tickAt(20, currentStep = 10, morningAlarmRang = true))
+        assertEquals(FadeTickAction.RestoreOriginal, tickAt(60, currentStep = 13, parked = true, morningAlarmRang = true))
+    }
+
     // Owner request, 2026-10-02: falling asleep parks the volume at the starting volume until End night, so a
     // fade after waking must remember the volume the night began with, not the parked one.
 
