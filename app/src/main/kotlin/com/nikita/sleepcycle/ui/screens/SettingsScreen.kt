@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -188,7 +189,8 @@ fun SettingsScreen(
                     text = stringResource(R.string.debug_ring_test_alarm_button),
                     onClick = onRingTestAlarm,
                     enabled = debug.canRingTestAlarm,
-                    modifier = Modifier.padding(vertical = DebugButtonVerticalPadding),
+                    // Owner request, 2026-10-02: as tall as the steppers' round buttons, to match them.
+                    modifier = Modifier.padding(vertical = DebugButtonVerticalPadding).height(StepperButtonSize),
                 )
             }
         }
