@@ -1,7 +1,7 @@
 package com.nikita.sleepcycle.night
 
 // File purpose: the bedtime media fade - owner request, 2026-10-02. Once media is playing after Start night the
-// media volume drops to the Settings screen's starting volume (default 25%, never raised; the fade can be switched off), holds for 10 minutes, then loses one volume step every 5 minutes down to the
+// media volume drops to the Settings screen's starting volume (default 25%; the fade can be switched off), holds for 10 minutes, then loses one volume step every 5 minutes down to the
 // Settings screen's ending volume (default 5%), where it stays until the band says the owner is asleep (MediaPauseOnSleep.kt then pauses
 // playback and the volume is parked at the starting volume - see below). Steps ride on the night's own ticks, which run every 5
 // minutes for the first hour while the owner is not yet asleep, so a late tick makes its step late too.
@@ -29,6 +29,10 @@ package com.nikita.sleepcycle.night
 // Phone test, 2026-10-02: until the morning alarm the fade only ever LOWERS the volume. Parking no longer
 // lifts a faded volume back up to the starting volume ([fadeParkStep]), and a tick leaves a volume the owner
 // turned down below the schedule where he put it ([fadeTickAction]).
+//
+// Owner decision, 2026-10-02 (phone log 22:03): the one exception is the START of a fade. Start night and
+// every awakening set the volume to exactly the starting volume, raising a quieter one too ([fadeStartStep]),
+// so a fade after waking no longer restarts from wherever the last one had got to.
 
 import android.content.Context
 import android.media.AudioManager
@@ -50,9 +54,13 @@ private val FADE_HOLD: Duration = Duration.ofMinutes(10)
 /** How often the volume loses one more step after the hold. */
 private val FADE_STEP_EVERY: Duration = Duration.ofMinutes(5)
 
-/** The volume step a fade starts at: [startPercent] of [maxStep] (the Settings screen's starting volume), or [currentStep] if that is already lower. */
-fun fadeStartStep(currentStep: Int, maxStep: Int, startPercent: Int): Int =
-    minOf(currentStep, (maxStep * startPercent / FULL_RANGE_PERCENT).roundToInt())
+/**
+ * The volume step a fade starts at: exactly [startPercent] of [maxStep] (the Settings screen's starting volume),
+ * whatever was playing, raising a quieter volume too - owner decision, 2026-10-02: Start night and every
+ * awakening begin at the starting volume, and a starting volume that feels too loud is changed in Settings.
+ */
+fun fadeStartStep(maxStep: Int, startPercent: Int): Int =
+    (maxStep * startPercent / FULL_RANGE_PERCENT).roundToInt()
 
 /**
  * The volume step a fade begun at [startStep] at [startedAt] should be at by [now]: [startStep] through the
@@ -144,7 +152,7 @@ fun startMediaFade(context: Context, nightStartedAt: Instant, now: Instant, star
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return
     val currentStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
     val originalStep = fadeOriginalStep(currentStep, parkedOriginalStep)
-    val startStep = fadeStartStep(currentStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), startPercent)
+    val startStep = fadeStartStep(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), startPercent)
     if (startStep != currentStep) audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, startStep, 0)
     // What the device reports right after the set, for the night log: shows a device that ignored the set.
     val actualStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
