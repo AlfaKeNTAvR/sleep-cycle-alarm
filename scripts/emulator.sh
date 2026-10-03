@@ -9,6 +9,7 @@
 #   scripts/emulator.sh ui             print each on-screen node: centre x, y, clickable, label
 #   scripts/emulator.sh tap "<label>"  tap the node with that exact label, then print the screen
 #   scripts/emulator.sh play | pause   start or pause the test player's looping tone (stands in for an audiobook)
+#   scripts/emulator.sh volume <step>  set the media volume step (volume keys move the ring volume when nothing plays)
 #   scripts/emulator.sh log [all]      the newest night log (without plan/data lines unless "all")
 #   scripts/emulator.sh <adb args>     plain adb against the emulator
 #
@@ -22,7 +23,8 @@ SDK="${ANDROID_HOME:-$HOME/android-dev/sdk}"
 export ANDROID_SERIAL="emulator-5554"
 ADB=("$SDK/platform-tools/adb")
 APP_PACKAGE="com.nikita.sleepcycle"
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# `pwd -W` gives Git Bash's Windows path (adb.exe cannot read /c/...); plain `pwd` elsewhere.
+ROOT_DIR="$(cd "$(dirname "$0")/.." && (pwd -W 2> /dev/null || pwd))"
 
 dump_nodes() {
     "${ADB[@]}" shell uiautomator dump /sdcard/ui.xml > /dev/null
@@ -80,8 +82,12 @@ tap)
 play | pause)
     "${ADB[@]}" shell am start-foreground-service -n com.nikita.testplayer/.PlayerService -a "$1" > /dev/null
     ;;
+volume)
+    # Sets the media volume step directly (volume keys change the ring volume while nothing plays).
+    "${ADB[@]}" shell cmd media_session volume --stream 3 --set "$2" > /dev/null
+    ;;
 log)
-    latest=$("${ADB[@]}" exec-out run-as "$APP_PACKAGE" ls -t files/nightlogs | grep night | head -1 | tr -d '\r')
+    latest=$("${ADB[@]}" exec-out run-as "$APP_PACKAGE" ls -t -1 files/nightlogs | grep night | head -1 | tr -d '\r')
     if [ "${2:-}" = "all" ]; then
         "${ADB[@]}" exec-out run-as "$APP_PACKAGE" cat "files/nightlogs/$latest"
     else
