@@ -92,7 +92,13 @@ fun NightScreen(
             // W11 (owner request): the simulated-clock banner sits UNDER the sync line and the debug button, not
             // above them - the sync line is the one thing worth reading first, and the banner only ever renders on
             // a simulated night anyway.
-            DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
+            // Owner pick, 2026-10-02 (option B): on a simulated night the banner IS the control block - clock,
+            // speed chips and Asleep - so the bottom keeps only the real buttons. Otherwise the plain banner.
+            if (debug.simulatedBandData) {
+                DebugQuickControls(state = debug, simulatedTimeValue = state.simulatedTimeValue, onSpeedChoice = onSpeedChoice, onSetSimulatedAsleep = onSetSimulatedAsleep)
+            } else {
+                DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
+            }
             // P1: while band data is not reaching the app, say so where it cannot be missed - see
             // NightUiState.bandNotSyncingWarning.
             if (state.bandNotSyncingWarning) BandNotSyncingWarning()
@@ -111,11 +117,6 @@ fun NightScreen(
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
-
-            // W7: the speed row and the Asleep toggle, right where a simulated night is actually watched - this
-            // screen is where the owner spends the whole simulation, and driving it meant a round trip to Debug
-            // for every change. Renders nothing at all on a real night.
-            DebugQuickControls(state = debug, onSpeedChoice = onSpeedChoice, onSetSimulatedAsleep = onSetSimulatedAsleep)
 
             // P3 (owner spec, 2026-09-30): "Nap for 20 min", a filled amber button stacked ABOVE the outlined
             // end-night button, offered only while the out-of-bed nudge is pending (NightUiState.napButtonMinutes).
