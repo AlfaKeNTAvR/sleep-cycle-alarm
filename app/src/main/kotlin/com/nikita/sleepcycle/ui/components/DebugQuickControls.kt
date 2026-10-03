@@ -20,6 +20,7 @@ package com.nikita.sleepcycle.ui.components
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -62,25 +63,7 @@ fun DebugQuickControls(
     modifier: Modifier = Modifier,
 ) {
     if (!state.simulatedBandData) return
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .border(CardBorderWidth, AmberAccent, RoundedCornerShape(CardCornerRadius))
-            .padding(horizontal = BlockHorizontalPadding, vertical = BlockVerticalPadding),
-        verticalArrangement = Arrangement.spacedBy(BlockRowGap),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.debug_switch_simulated_sleep_data),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = TitleLetterSpacing,
-                color = AmberAccent,
-            )
-            if (simulatedTimeValue != null) {
-                Text(text = simulatedTimeValue, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AmberAccent)
-            }
-        }
+    SimulatedBlock(simulatedTimeValue, modifier) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap)) {
             state.speedChoices.forEach { choice ->
                 val label = speedChoiceLabel(choice, state.autoRunningSpeed)
@@ -103,6 +86,36 @@ fun DebugQuickControls(
                 modifier = Modifier.weight(ASLEEP_CHIP_WEIGHT),
             )
         }
+    }
+}
+
+/**
+ * The amber-outlined simulation block: "SIMULATED" on the left, the clock ([simulatedTimeValue]) on the right,
+ * then [content] - the Night screen's controls. Before bed shows it on its own, without controls (owner
+ * request, 2026-10-02).
+ */
+@Composable
+fun SimulatedBlock(simulatedTimeValue: String?, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit = {}) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(CardBorderWidth, AmberAccent, RoundedCornerShape(CardCornerRadius))
+            .padding(horizontal = BlockHorizontalPadding, vertical = BlockVerticalPadding),
+        verticalArrangement = Arrangement.spacedBy(BlockRowGap),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.debug_switch_simulated_sleep_data),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = TitleLetterSpacing,
+                color = AmberAccent,
+            )
+            if (simulatedTimeValue != null) {
+                Text(text = simulatedTimeValue, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AmberAccent)
+            }
+        }
+        content()
     }
 }
 

@@ -78,10 +78,9 @@ simulated clock, the speed chips and an **Asleep** chip:
 - **End night** puts the clock back on real time, turns the switches off and empties the simulated sleep.
   There is no "set simulated time": a simulated night starts at the real time.
 
-**The banner**: once any control above is live, an amber banner reading **SIMULATED** and/or
-**HH:mm[, Nx]** appears on Before bed, the Night screen and the tracking notification. The time is
-the app's own current virtual time; the multiplier is left off at 1x, so a jump with no speed change just
-shows the time.
+**The banner**: once simulated band data is on, an amber-outlined block reads **SIMULATED** on the left
+and the app's own current virtual time on the right, on Before bed (without controls) and on the Night
+screen (with them). The tracking notification carries the same words as text.
 
 **Order of operations for a full simulated night**: turn on Simulated band data, start the night, then drive
 it entirely from the Night screen's Simulation card: Asleep on, then Auto (or 60x, a good balance to follow
@@ -102,8 +101,8 @@ Night screen, then tap **60x** again to carry on at that speed.
    all for this walkthrough - the checklist below no longer needs the band steps.
 4. Open **Setup** from Settings: only the phone-side items (Notifications, Full-screen alarms, Battery
    optimisation) should still be red. Grant any that are.
-5. Tap **Done** to reach **Before bed**. You should see the amber banner reading **SIMULATED SLEEP DATA  ·
-   SIMULATED HH:mm** (the current virtual time) and **Start night** enabled with no band connected. Pick
+5. Tap **Done** to reach **Before bed**. You should see the amber-outlined block reading **SIMULATED** with
+   the current time on the right and **Start night** enabled with no band connected. Pick
    **4.5 h** (3 cycles) on the "Sleep up to" row and leave the deadline switch off.
 6. Tap **Start night**. A **"This is a simulated night"** dialog appears - this confirmation exists so a
    simulated night can never start by accident at real bedtime. Tap **Start simulated night**.

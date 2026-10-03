@@ -16,7 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
-import com.nikita.sleepcycle.ui.components.DebugBanner
+import com.nikita.sleepcycle.ui.components.SimulatedBlock
 import com.nikita.sleepcycle.ui.components.MenuLinesButton
 import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.MediumTimeText
@@ -81,7 +81,7 @@ fun BeforeBedScreen(
         }
         Text(text = stringResource(R.string.before_bed_title), style = MaterialTheme.typography.headlineLarge)
 
-        DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
+        if (state.activeDebugSwitches.isNotEmpty()) SimulatedBlock(state.simulatedTimeValue)
 
         SettingsCard {
             ToggleRow(
