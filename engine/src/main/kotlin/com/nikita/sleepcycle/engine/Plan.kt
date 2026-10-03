@@ -170,11 +170,18 @@ internal fun describePlan(
         } else {
             "No full cycle fits before the deadline, alarm $alarmText."
         }
-        // Rule 7: a short nap after an awakening, capped by the deadline when there is one.
+        // Rule 7: a short nap after an awakening, capped by the deadline when there is one. deadline.md #6
+        // (2026-10-03): with nothing to arm (the morning alarm has rung, or its time has passed while awake) it
+        // used to read "alarm none, capped at HH:MM", a cap on an alarm that does not exist.
         AlarmMode.NAP -> {
-            val boundaryText = settings.deadline?.let { ", capped at ${formatTime(it, zone)}" } ?: ""
             val sleptText = if (sleptSoFar.isZero) "" else ", ${formatSleepDuration(sleptSoFar)} slept tonight"
-            "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText, alarm $alarmText$boundaryText."
+            val onsetText = "Nap mode, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText"
+            if (wakeAt == null) {
+                "$onsetText, no alarm left to arm: the morning alarm has rung or its time has passed."
+            } else {
+                val boundaryText = settings.deadline?.let { ", capped at ${formatTime(it, zone)}" } ?: ""
+                "$onsetText, alarm $alarmText$boundaryText."
+            }
         }
     }
 }

@@ -78,10 +78,14 @@ class ChooseModeTest {
         )
     }
 
-    @Test fun `rule 5 does not fire after an awakening, rule 7 or 4 takes over instead`() {
+    // Review 2026-10-03 (deadline.md test audit): this used to pass cycles = 0 with the onset's next cycle still
+    // ending before the deadline, a combination capCyclesByDeadline never produces, and expected FULL_CYCLES.
+    // The reachable case: back asleep at 07:30, the next cycle would end 09:00, after the 08:30 deadline, so no
+    // whole cycle fits - and after an awakening that is rule 7's nap, never rule 5's ring at the deadline.
+    @Test fun `rule 5 does not fire after an awakening - with no whole cycle left before the deadline it is a nap`() {
         assertEquals(
-            PlanRule.FULL_CYCLES,
-            rule(afterAwakening = true, cycles = 0, deadline = instant("2026-09-17T08:30"))
+            PlanRule.NAP,
+            rule(afterAwakening = true, cycles = 0, owedCycles = 5, referenceOnset = "2026-09-17T07:30", now = "2026-09-17T07:35", deadline = instant("2026-09-17T08:30"))
         )
     }
 
