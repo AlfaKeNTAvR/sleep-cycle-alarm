@@ -2,8 +2,9 @@ package com.nikita.sleepcycle.engine
 
 // File purpose: rule 2 as a TOTAL for the night (spec step 2, "Cycles still owed"). The picked sleep length
 // is the whole night's budget, not a fresh count from every onset: sleep already had is subtracted, the
-// remainder is rounded to the nearest whole cycle, and nothing owed turns a return to sleep into a nap even
-// with no deadline. Includes the owner's own two worked examples.
+// remainder is rounded UP to whole cycles (owner decision, 2026-10-03, after 10 min of forgiveness - see
+// OwedCyclesRoundUpTest; it was the nearest whole cycle until then), and nothing owed turns a return to sleep
+// into a nap even with no deadline. Includes the owner's own two worked examples.
 
 import java.time.Duration
 import java.time.Instant
@@ -140,8 +141,9 @@ class NightTotalCyclesTest {
         assertEquals("07:25", formatTime(result.wakeAt!!, testZone))
     }
 
-    @Test fun `just under half a cycle remaining rounds DOWN to nothing owed, which is a nap`() {
-        // 6 h 46 min slept leaves 44 min: less than half a cycle, so nothing whole is owed.
+    @Test fun `just under half a cycle remaining is one more whole cycle, not a nap`() {
+        // 6 h 46 min slept leaves 44 min. Until 2026-10-03 that rounded to nothing owed and a 20 min nap
+        // alarm mid-cycle; it now rounds up to one cycle from the 05:56 return to sleep.
         val segments = listOf(
             segment("2026-09-16T23:00", "2026-09-17T05:46", SegmentKind.LIGHT),
             segment("2026-09-17T05:46", "2026-09-17T05:56", SegmentKind.AWAKE),
@@ -150,8 +152,8 @@ class NightTotalCyclesTest {
 
         val result = plan(segments, settings(cycles = 5), "2026-09-17T05:57")
 
-        assertEquals(AlarmMode.NAP, result.mode)
-        assertEquals("06:16", formatTime(result.wakeAt!!, testZone))
+        assertEquals(AlarmMode.FULL_CYCLES, result.mode)
+        assertEquals("07:26", formatTime(result.wakeAt!!, testZone))
     }
 
     // ---- Nothing owed: nap with or without a deadline --------------------------------------------------------
@@ -268,11 +270,11 @@ class NightTotalCyclesTest {
         assertEquals(4, afterFirst.cycles)
         assertEquals("07:00", formatTime(afterFirst.wakeAt!!, testZone))
 
-        // 4 h slept, 3 h 30 still owed, which rounds to 2 cycles from the 04:00 onset.
+        // 4 h slept, 3 h 30 still owed, which rounds UP to 3 cycles from the 04:00 onset (2026-10-03).
         val afterSecond = plan(nightUpTo("2026-09-17T04:01"), setting, "2026-09-17T04:01", afterFirst)
         assertEquals(AlarmMode.FULL_CYCLES, afterSecond.mode)
-        assertEquals(2, afterSecond.cycles)
-        assertEquals("07:00", formatTime(afterSecond.wakeAt!!, testZone))
+        assertEquals(3, afterSecond.cycles)
+        assertEquals("08:30", formatTime(afterSecond.wakeAt!!, testZone))
 
         // 6 h slept, exactly 1 cycle still owed from the 06:15 onset - the case that used to become a nap.
         val afterThird = plan(nightUpTo("2026-09-17T06:16"), setting, "2026-09-17T06:16", afterSecond)

@@ -138,9 +138,9 @@ class SlidingAwakeNapSequenceTest {
     private fun at(text: String): Instant = Instant.parse("${text}Z")
     private fun seg(start: String, end: String, kind: SegmentKind) = SleepSegment(at(start), at(end), kind)
 
-    /** The one completed stretch every tick below shares: asleep from 02:15 to 06:30 (4 h 15 min, leaving the picked 3 * 90 min all but used up - owedCycles rounds to 0), then AWAKE from 06:30 onward, open-ended at `now`. */
+    /** The one completed stretch every tick below shares: asleep from 02:05 to 06:30 (4 h 25 min, leaving 5 min of the picked 3 * 90 min - inside the 10 min forgiveness, so owedCycles is 0; it was 02:15 until the owner's 2026-10-03 round-up rule, when 15 min left still rounded to 0), then AWAKE from 06:30 onward, open-ended at `now`. */
     private fun awakeSince0630(now: String) = listOf(
-        seg("2026-09-17T02:15:00", "2026-09-17T06:30:00", SegmentKind.LIGHT),
+        seg("2026-09-17T02:05:00", "2026-09-17T06:30:00", SegmentKind.LIGHT),
         seg("2026-09-17T06:30:00", now, SegmentKind.AWAKE)
     )
 

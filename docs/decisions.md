@@ -22,7 +22,7 @@ Why: the phone is already connected and tested there; no IDE needed. Install not
 ## Alarm rules
 
 1. **Always wake at the end of a cycle.** Never mid-cycle. Cycle length is 90 min for now, to be calibrated from exported data.
-2. **Sleep length picker: 4.5 h, 6 h, 7.5 h, 9 h.** Default 7.5 h. **This is a total for the whole night** (decided 2026-09-17): sleep already had is subtracted, so waking after 3 h of a 7.5 h night leaves 4.5 h, and the alarm is set 4.5 h after you fall back asleep. A remainder that is not a whole number of cycles rounds to the nearest cycle, so the total can land up to 45 min over.
+2. **Sleep length picker: 4.5 h, 6 h, 7.5 h, 9 h.** Default 7.5 h. **This is a total for the whole night** (decided 2026-09-17): sleep already had is subtracted, so waking after 3 h of a 7.5 h night leaves 4.5 h, and the alarm is set 4.5 h after you fall back asleep. A remainder that is not a whole number of cycles rounds up to the next whole cycle, once 10 min of it is forgiven (decided 2026-10-03, replacing "rounds to the nearest cycle": 40 min left rounded to nothing and a 20 min nap alarm woke the owner mid-cycle). With no deadline the night is at least the picked total; a deadline still cuts it to the whole cycles that fit.
 3. **No deadline:** alarm = latest sleep onset + whatever is still owed of the picked total (rule 2). On the first sleep of the night that is the full picked length.
 4. **With a deadline:** alarm = latest onset + the largest whole number of cycles that ends by the deadline, never more than what is still owed.
 5. **No full cycle fits before the deadline:** the alarm rings at the deadline.

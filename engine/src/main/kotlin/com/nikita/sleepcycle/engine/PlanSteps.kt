@@ -38,15 +38,20 @@ fun sumSleepAlreadyHad(stretches: List<SleepStretch>, state: SleepState): Durati
 
 /**
  * Whole cycles still owed of the night's total (spec step 2, "Cycles still owed"): the picked budget
- * (`pickedCycles * cycleLength`) minus [sleptSoFar], never below zero, divided by one cycle and rounded to the
- * NEAREST whole number - so a remainder that does not divide evenly lands as close to the picked total as
- * whole cycles allow, rather than always cutting one short. Exactly half a cycle rounds up.
+ * (`pickedCycles * cycleLength`) minus [sleptSoFar], less [EngineConfig.owedCycleForgiveness], ROUNDED UP to
+ * whole cycles, never below zero.
+ *
+ * Owner decision, 2026-10-03 (phone night 2026-10-03: 40 min owed rounded to 0, so a 20 min nap alarm woke him
+ * mid-cycle at 08:48): rounding up gives at least the picked sleep and ends on a cycle boundary; a deadline,
+ * where one is set, still cuts the count down to what fits ([capCyclesByDeadline]). The forgiveness keeps a few
+ * minutes over whole cycles from costing a whole extra cycle. Supersedes the 2026-09-17 nearest-whole-cycle rule.
  */
 fun countOwedCycles(sleptSoFar: Duration, settings: NightSettings, config: EngineConfig): Int {
     val budget = config.cycleLength.multipliedBy(settings.pickedCycles.toLong())
-    val remaining = budget.minus(sleptSoFar)
+    val remaining = budget.minus(sleptSoFar).minus(config.owedCycleForgiveness)
     if (remaining.isNegative || remaining.isZero) return 0
-    return Math.round(remaining.toNanos().toDouble() / config.cycleLength.toNanos().toDouble()).toInt()
+    val cycleNanos = config.cycleLength.toNanos()
+    return ((remaining.toNanos() + cycleNanos - 1) / cycleNanos).toInt()
 }
 
 /** Which of rules 1, 7, 5, or 3/4/6 [chooseMode] matched, before the pull-forward amendment in `computeWakeAlarm`. */
