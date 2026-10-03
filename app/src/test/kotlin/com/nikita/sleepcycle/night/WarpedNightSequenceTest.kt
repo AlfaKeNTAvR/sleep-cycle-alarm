@@ -32,6 +32,11 @@ package com.nikita.sleepcycle.night
 // two band-detected naps, the supersession, the pre-nudge check and the cap are gone from the post-alarm path,
 // and the owner's own Nap button and the ring-end nudge (PostAlarmCycle.kt's nextFollowUp) take their place.
 // The warp-invariance contract is unchanged, and now also covers the follow-up timing (TickTrace.followUp).
+//
+// Emulator audit, 2026-10-03: the warp replays above are gone. Each mapped every instant through
+// virtualNow(realInstantFor(...)), an identity SimulatedClockTest already pins, so they could never diverge from
+// the direct run and never touched scheduleTick or AppClock. Warped ticks are now driven for real by the
+// Robolectric scenario tests (app/src/test/.../scenario).
 
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
@@ -189,38 +194,5 @@ class WarpedNightSequenceTest {
     fun `driven directly (as if at 1x), the whole morning reaches every assertion inside driveMorning`() {
         val trace = driveMorning { virtualNow -> virtualNow }
         assertEquals(PendingFollowUp(FollowUpKind.NUDGE, Instant.parse("2026-09-18T03:52:00Z")), trace.last().followUp)
-    }
-
-    @Test
-    fun `a single continuous 60x warp reaches the IDENTICAL trace as the direct run`() {
-        val reference = driveMorning { virtualNow -> virtualNow }
-        val warp = ClockWarp(speed = 60, anchorReal = Instant.parse("2026-09-17T20:00:00Z"), anchorVirtual = Instant.parse("2026-09-17T21:00:00Z"))
-        val reconstructed = driveMorning { virtualNow -> virtualNow(warp, realInstantFor(warp, virtualNow)) }
-        assertEquals(reference, reconstructed)
-    }
-
-    @Test
-    fun `a 600x warp reaches the IDENTICAL trace as the direct run`() {
-        val reference = driveMorning { virtualNow -> virtualNow }
-        val warp = ClockWarp(speed = 600, anchorReal = Instant.parse("2026-09-17T20:00:00Z"), anchorVirtual = Instant.parse("2026-09-17T21:00:00Z"))
-        val reconstructed = driveMorning { virtualNow -> virtualNow(warp, realInstantFor(warp, virtualNow)) }
-        assertEquals(reference, reconstructed)
-    }
-
-    @Test
-    fun `a warp that CHANGES mid-sequence (60x, then dropped to 1x) still reaches the IDENTICAL trace - V5's own scenario`() {
-        val reference = driveMorning { virtualNow -> virtualNow }
-        val fastWarp = ClockWarp(speed = 60, anchorReal = Instant.parse("2026-09-17T20:00:00Z"), anchorVirtual = Instant.parse("2026-09-17T21:00:00Z"))
-        // Drops to 1x partway through the nap stretch - after the wake alarm and the pre-nudge check, before
-        // the second nap fires - exactly the "drop to 1x and watch by hand" desk session U2 describes.
-        // computeSpeedChangeWarp is the SAME function DebugScreenController.setSpeedChoice itself calls.
-        val switchVirtualInstant = bedtime.plus(Duration.ofHours(5))
-        val switchRealInstant = realInstantFor(fastWarp, switchVirtualInstant)
-        val slowWarp = computeSpeedChangeWarp(fastWarp, speed = 1, realNow = switchRealInstant)
-        val reconstructed = driveMorning { virtualNow ->
-            val warpAtThisPoint = if (virtualNow.isBefore(switchVirtualInstant)) fastWarp else slowWarp
-            virtualNow(warpAtThisPoint, realInstantFor(warpAtThisPoint, virtualNow))
-        }
-        assertEquals(reference, reconstructed)
     }
 }

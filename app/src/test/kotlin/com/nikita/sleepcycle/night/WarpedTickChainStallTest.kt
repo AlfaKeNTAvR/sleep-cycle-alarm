@@ -61,14 +61,16 @@ class WarpedTickChainStallTest {
         // virtual minutes at 60x). Every tick finishes well inside IN_PROCESS_TICK_MIN_DELAY of its own start,
         // which is exactly the shape FIX2's debounce refused to arm.
         val starts = warpedTickStarts(wantedTicks = 10, tickWorkMillis = 100, bookedRealDelayMillis = 15_000)
-        assertEquals(10, starts.size, "every arm request must be honoured, however fast the tick asking for it was")
+        // Emulator audit, 2026-10-03: the old check, 10 starts, held by construction. Each tick must start its
+        // booked 15 s after the last one's 100 ms of work, never held back to the floor or skipped.
+        val gaps = starts.zipWithNext { earlier, later -> Duration.between(earlier, later) }
+        assertTrue(gaps.all { it == Duration.ofMillis(15_100) }, "every arm request must be honoured as booked; gaps were $gaps")
     }
 
     @Test
     fun `an unbroken run of overdue targets still cannot make ticks start closer than the floor`() {
         // Every tick computes a target already 50 ms in the real past - the run FIX2 was trying to break up.
         val starts = warpedTickStarts(wantedTicks = 10, tickWorkMillis = 400, bookedRealDelayMillis = -50)
-        assertEquals(10, starts.size, "an overdue target delays the next tick, it never cancels the chain")
         val gaps = starts.zipWithNext { earlier, later -> Duration.between(earlier, later) }
         assertTrue(
             gaps.all { it >= IN_PROCESS_TICK_MIN_DELAY },

@@ -30,31 +30,8 @@ class TickSchedulingTest {
         assertTrue(shouldScheduleTickInProcess(warped = true))
     }
 
-    @Test
-    fun `at every offered speed, a live ClockWarp means in-process - 1x with no warp at all is the only case that does not`() {
-        val anchor = Instant.parse("2026-09-17T20:00:00Z")
-        // 1x with a genuine ClockWarp object (U2's jump-at-1x state) is STILL warped - AppClock.warp() != null
-        // is the honest test, not "is speed 1". Only warp == null (real time, never touched) stays off the
-        // in-process path.
-        for (speed in SIMULATION_SPEEDS) {
-            val warp: ClockWarp? = ClockWarp(speed, anchor, anchor)
-            assertTrue(shouldScheduleTickInProcess(warp != null), "speed $speed with a live warp must be in-process")
-        }
-        val noWarp: ClockWarp? = null
-        assertFalse(shouldScheduleTickInProcess(noWarp != null), "no warp at all must stay on AlarmManager")
-    }
-
-    @Test
-    fun `at 1x-unwarped, both real EngineConfig sync delays stay conceptually on the AlarmManager path`() {
-        // T6's own invariant, still pinned: at 1x unwarped (AppClock.warp() == null, since U1 guarantees a warp
-        // can only be live while simulatedBandData is on, and a real night never sets that), the predicate must
-        // be false regardless of how long either real sync delay is - the in-process path is dead code on a
-        // real night. EngineConfig's own delays are read here only to document that they are real numbers this
-        // invariant actually has to hold for, not because the (now duration-free) predicate consults them.
-        val config = EngineConfig()
-        check(config.frequentSyncDelay > Duration.ZERO && config.normalSyncDelay > Duration.ZERO)
-        assertFalse(shouldScheduleTickInProcess(warped = false))
-    }
+    // Emulator audit, 2026-10-03: two tests that passed the predicate its own answer ("a live warp", "no warp")
+    // were removed - they could not fail. The two above pin the predicate; the scenario tests drive real ticks.
 
     // ---- V3: the in-process delay floor -------------------------------------------------------------------
 

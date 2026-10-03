@@ -55,7 +55,7 @@ fun savePendingFollowUp(context: Context, followUp: PendingFollowUp): Boolean =
         val target = outOfBedNudgePendingFile(context)
         val temp = File(target.parentFile, "$OUT_OF_BED_NUDGE_PENDING_FILE_NAME.tmp")
         temp.writeText(formatPendingFollowUp(followUp))
-        if (!temp.renameTo(target)) throw java.io.IOException("renameTo failed for $temp -> $target")
+        replaceFileAtomically(temp, target)
         true
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to save the pending out-of-bed nudge instant", error)
