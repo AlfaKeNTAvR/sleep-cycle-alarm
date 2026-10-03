@@ -95,8 +95,12 @@ fun computeSpeedChangeWarp(currentWarp: ClockWarp?, speed: Int, realNow: Instant
 /** W1: how often the UI re-samples the clock on an unwarped night - the cadence the app has always used, one sample per half minute. */
 const val UI_TICKER_INTERVAL_MS: Long = 30_000L
 
-/** W1: the UI never re-samples faster than this, however fast the clock runs - twice a second already looks continuous and the rebuild is pure computation. */
-private const val UI_TICKER_MIN_INTERVAL_MS: Long = 500L
+/**
+ * W1: the UI never re-samples faster than this, however fast the clock runs - the rebuild is pure computation.
+ * Owner request, 2026-10-02: 100 ms (10 redraws a second), down from 500 ms, so Auto's 3600x moves the clock in
+ * 6-minute steps rather than half-hour ones. Only a warped (simulated) clock ever samples this fast.
+ */
+private const val UI_TICKER_MIN_INTERVAL_MS: Long = 100L
 
 /** W1: how much SIMULATED time the readout aims to advance per sample, which is what makes a warped clock look like it is moving rather than jumping. */
 private const val UI_TICKER_SIMULATED_STEP_MS: Long = 60_000L

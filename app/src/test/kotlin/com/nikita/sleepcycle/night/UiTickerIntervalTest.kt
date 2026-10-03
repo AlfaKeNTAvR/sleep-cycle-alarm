@@ -27,33 +27,33 @@ class UiTickerIntervalTest {
 
     @Test
     fun `a sample advances about a simulated minute, except where the floor binds`() {
-        // The floor exists so 600x does not spin twice as fast as the eye can read; at that speed a sample
-        // covers more than a simulated minute on purpose. Every slower speed hits the one-minute target.
+        // The floor exists so 3600x does not spin; at that speed a sample covers more than a simulated minute
+        // on purpose. Every slower speed hits the one-minute target.
         SIMULATION_SPEEDS.filter { it > 1 }.forEach { speed ->
             val interval = uiTickerIntervalMillis(speed)
             val simulatedMillisPerSample = interval * speed
             assertTrue(
-                simulatedMillisPerSample <= 60_000L || interval == 500L,
+                simulatedMillisPerSample <= 60_000L || interval == 100L,
                 "speed ${speed}x advances ${simulatedMillisPerSample}ms of simulated time per sample without being floored"
             )
         }
     }
 
     @Test
-    fun `no speed a night is watched at makes the readout jump by more than five simulated minutes`() {
-        // Auto's 3600x stage is exempt (owner spec, 2026-10-02): it exists to skip time, not to be read, and
-        // the readout moving in half-hour steps there is the honest picture of that.
-        SIMULATION_SPEEDS.filter { it > 1 && it != AUTO_FAR_SPEED }.forEach { speed ->
+    fun `no speed makes the readout jump by more than six simulated minutes`() {
+        // Owner request, 2026-10-02: at Auto's 3600x the clock used to move in half-hour steps; redrawn 10 times
+        // a second it moves in 6-minute ones.
+        SIMULATION_SPEEDS.filter { it > 1 }.forEach { speed ->
             assertTrue(
-                uiTickerIntervalMillis(speed) * speed <= 300_000L,
+                uiTickerIntervalMillis(speed) * speed <= 360_000L,
                 "speed ${speed}x jumps too far per sample to read"
             )
         }
     }
 
     @Test
-    fun `the fastest speed is floored rather than spinning`() {
-        assertTrue(uiTickerIntervalMillis(600) >= 500L)
+    fun `the readout never redraws more than 10 times a second, however fast the clock runs`() {
+        SIMULATION_SPEEDS.forEach { speed -> assertTrue(uiTickerIntervalMillis(speed) >= 100L, "speed ${speed}x redraws too often") }
     }
 
     @Test
