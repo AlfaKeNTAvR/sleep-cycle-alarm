@@ -121,5 +121,8 @@ private fun phoneAlarmPendingIntent(context: Context, requestCode: Int, at: Inst
         .putExtra(EXTRA_ALARM_IS_TEST, isTest)
         .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
         .putExtra(EXTRA_ALARM_LABEL, label.name)
+        // ISSUES.md #3 (2026-10-03): carried from arming, so PhoneAlarmReceiver can start the ring before it reads
+        // any night state. EngineConfig's own value: resolveEngineConfig never changes it for a night (T7).
+        .putExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, AUTO_STOP_AFTER.toMillis())
     return PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 }

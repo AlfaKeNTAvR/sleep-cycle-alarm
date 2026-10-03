@@ -94,6 +94,8 @@ class AlarmRingService : Service() {
     private var isRinging = false
     /** P3: which ring is sounding, so its end can re-time the nudge - never for the Debug screen's test ring. */
     private var ringingLabel: AlarmLabel = AlarmLabel.MORNING
+    /** ISSUES.md #4 (owner decision, 2026-10-03): the owner's alarm volume this ring raised, put back when it stops; null when it raised nothing. */
+    private var alarmVolumeBeforeRing: Int? = null
     private val stopHandler = Handler(Looper.getMainLooper())
     private val stopRunnable = Runnable { stopRinging(ALARM_STOP_REASON_AUTO) }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -154,9 +156,17 @@ class AlarmRingService : Service() {
             stopRingingArtifacts()
         }
         isRinging = true
+        // ISSUES.md #4 (owner decision, 2026-10-03): never quieter than half the alarm stream's range. Before the
+        // sound starts, and only once per ring sequence: a restart (F1) keeps the volume the FIRST ring replaced.
+        if (alarmVolumeBeforeRing == null) {
+            runGuarded("raise the alarm volume") { alarmVolumeBeforeRing = raiseAlarmVolumeToFloor(this) }
+        }
         appendToCurrentNightLog(
             this,
-            NightLogEvent(nowInstant(), "alarm_ring_started", mapOf("fullScreenIntentAllowed" to canUseFullScreenIntent(this).toString()))
+            NightLogEvent(
+                nowInstant(), "alarm_ring_started",
+                mapOf("fullScreenIntentAllowed" to canUseFullScreenIntent(this).toString(), "alarmVolumeRaisedFrom" to (alarmVolumeBeforeRing?.toString() ?: ""))
+            )
         )
         val chosen = startAlarmSound(this)
         mediaPlayer = chosen.player
@@ -209,6 +219,7 @@ class AlarmRingService : Service() {
             runGuarded("re-time the out-of-bed nudge after the ring ended") { rearmFollowUpAfterRingEnded(this, nowInstant()) }
         }
         stopRingingArtifacts()
+        restoreAlarmVolumeIfRaised()
         runGuarded("release the alarm wake lock") { releaseAlarmWakeLock() }
         isRinging = false
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -224,6 +235,13 @@ class AlarmRingService : Service() {
         runGuarded("release the alarm player") { player.release() }
     }
 
+    /** ISSUES.md #4: puts back the alarm volume this ring raised, once. Guarded like every other stop step. */
+    private fun restoreAlarmVolumeIfRaised() {
+        val volume = alarmVolumeBeforeRing ?: return
+        alarmVolumeBeforeRing = null
+        runGuarded("restore the alarm volume") { restoreAlarmVolume(this, volume) }
+    }
+
     private fun runGuarded(what: String, block: () -> Unit) {
         try {
             block()
@@ -236,6 +254,7 @@ class AlarmRingService : Service() {
         serviceScope.cancel()
         stopHandler.removeCallbacks(stopRunnable)
         stopPlayerSafely()
+        restoreAlarmVolumeIfRaised()
         runGuarded("release the alarm wake lock on destroy") { releaseAlarmWakeLock() }
         super.onDestroy()
     }

@@ -15,6 +15,7 @@ import android.content.Intent
 import androidx.annotation.StringRes
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.night.firedAlarmIsWakeAlarm
 import java.time.Instant
 
@@ -34,9 +35,18 @@ const val EXTRA_ALARM_LABEL = "alarmLabel"
  * `awakeNapTarget`), and that alarm must not ring calling itself a nap. Delegates to [firedAlarmIsWakeAlarm],
  * the same predicate PhoneAlarmReceiver attributes the firing with, so the name an alarm rings under and the
  * bookkeeping it lands in can never disagree.
+ *
+ * Owner decision, 2026-10-03 (deadline.md #3): a nap armed at or AFTER the latched morning time rings as the
+ * morning alarm too. From its firing on, the engine, the Night screen and I'm up already treat it as the morning
+ * alarm (WakeAlarm.kt's `morningAlarmHasRung`), so it must not ring calling itself a nap. Its firing is still
+ * counted as a nap by PhoneAlarmReceiver's attribution; only the name and night_summary follow the morning.
  */
 fun alarmLabelFor(mode: AlarmMode, armedFor: Instant, morningAlarmAt: Instant?): AlarmLabel =
-    if (firedAlarmIsWakeAlarm(mode, armedFor, morningAlarmAt)) AlarmLabel.MORNING else AlarmLabel.NAP
+    if (firedAlarmIsWakeAlarm(mode, armedFor, morningAlarmAt) || morningAlarmHasRung(null, morningAlarmAt, armedFor)) {
+        AlarmLabel.MORNING
+    } else {
+        AlarmLabel.NAP
+    }
 
 /** The alarm's own name, shown above the ring screen's headline and as the notification's title. */
 @StringRes

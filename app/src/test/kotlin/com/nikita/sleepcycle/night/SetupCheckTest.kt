@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.night
 // applies to setup anymore. [phoneLines] is always passed through unchanged; its own content is
 // AlarmNotificationReadiness's concern, not this file's.
 
+import com.nikita.sleepcycle.alarm.AlarmNotificationReadiness
 import com.nikita.sleepcycle.bridge.BandDataResult
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -57,6 +58,21 @@ class SetupCheckTest {
         val report = buildSuccessReport(success(newestSampleAt = NOW), NOW, phoneLines = phoneLines)
 
         assertEquals(phoneLines.single(), report.lines.last())
+    }
+
+    // ISSUES.md #4, owner decision 2026-10-03: a low alarm volume (under half its range) is a warning in Setup.
+    @Test
+    fun `a low alarm volume is a warning line that names the volume, and a sound one adds no warning`() {
+        val ready = AlarmNotificationReadiness(
+            canUseFullScreenIntent = true, notificationsEnabled = true, alarmChannelBlocked = false, alarmChannelDowngraded = false,
+            alarmVolume = 3, alarmVolumeMax = 7
+        )
+        val low = phoneAlarmReadinessLines(ready).single { it.text.contains("alarm volume", ignoreCase = true) }
+        assertEquals(SetupCheckLineSeverity.WARNING, low.severity)
+        assertTrue(low.text.contains("3 of 7"), low.text)
+
+        val loud = phoneAlarmReadinessLines(ready.copy(alarmVolume = 4))
+        assertTrue(loud.none { it.severity != SetupCheckLineSeverity.INFO }, loud.toString())
     }
 
     private fun success(newestSampleAt: Instant?) = BandDataResult.Success(

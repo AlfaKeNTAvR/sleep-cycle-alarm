@@ -49,12 +49,25 @@ private const val NAP_ALARMS_USED_FILE_NAME = "nap_alarms_used.txt"
 private const val LAST_NAP_ALARM_FIRED_AT_FILE_NAME = "last_nap_alarm_fired_at.txt"
 private const val LOG_TAG = "PhoneAlarmFiredStore"
 
-/** Persists [firedFor] as the phone alarm's fired instant. A single fast overwrite, not a read-modify-write, so it never races a concurrent tick's own state save. Returns whether the write succeeded. */
-fun savePhoneAlarmFiredFor(context: Context, firedFor: Instant): Boolean =
-    writeInstantFile(phoneAlarmFiredFile(context), firedFor)
+/**
+ * Round2 #7 (ISSUES.md #5, 2026-10-03): the last [savePhoneAlarmFiredFor] value, kept in memory too. If the file
+ * write fails (it only logs), the engine never learns the morning alarm rang, pulls its spent target to now + 2
+ * min and rings it again on every tick. Read back by [readPhoneAlarmFiredFor] alongside the file, so a failed
+ * write still marks the alarm fired for as long as this process lives; a process death in between loses it,
+ * which leaves only the logged write failure (a double failure the file alone already had).
+ */
+@Volatile
+private var phoneAlarmFiredForInMemory: Instant? = null
 
-/** The persisted fired instant, or null if the file is absent, empty, or unparsable (never throws). */
-fun readPhoneAlarmFiredFor(context: Context): Instant? = readInstantFile(phoneAlarmFiredFile(context))
+/** Persists [firedFor] as the phone alarm's fired instant. A single fast overwrite, not a read-modify-write, so it never races a concurrent tick's own state save. Returns whether the write succeeded. */
+fun savePhoneAlarmFiredFor(context: Context, firedFor: Instant): Boolean {
+    phoneAlarmFiredForInMemory = firedFor
+    return writeInstantFile(phoneAlarmFiredFile(context), firedFor)
+}
+
+/** The fired instant: the later of the persisted one and [phoneAlarmFiredForInMemory], or null if neither exists (never throws). */
+fun readPhoneAlarmFiredFor(context: Context): Instant? =
+    listOfNotNull(readInstantFile(phoneAlarmFiredFile(context)), phoneAlarmFiredForInMemory).maxOrNull()
 
 /** F6: persists [firedFor] as the MAIN wake alarm's fired instant - called only when the firing alarm's own plan was not a nap (see NightOrchestrator.firedAlarmIsWakeAlarm). Never called for a rule 7 pre-wake nap's own firing. */
 fun saveWakeAlarmFiredAt(context: Context, firedFor: Instant): Boolean =
@@ -105,6 +118,7 @@ fun readLastNapAlarmFiredAt(context: Context): Instant? = readInstantFile(lastNa
  * outlive it in the app's own files directory.
  */
 fun clearAlarmFiredStores(context: Context) {
+    phoneAlarmFiredForInMemory = null
     listOf(phoneAlarmFiredFile(context), wakeAlarmFiredFile(context), napAlarmsUsedFile(context), lastNapAlarmFiredAtFile(context))
         .forEach { file ->
             file.delete()

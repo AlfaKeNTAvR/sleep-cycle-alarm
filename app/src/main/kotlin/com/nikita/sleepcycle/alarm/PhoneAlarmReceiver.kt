@@ -45,7 +45,8 @@ package com.nikita.sleepcycle.alarm
 // F1: the ring's own auto-stop duration is resolved HERE (from the night's own debug options, via
 // resolveEngineConfig) and carried on the intent that starts AlarmRingService, since that service has no
 // state file of its own to read one from - see EngineConfig.ringAutoStopAfter's doc for why it must differ
-// from a fast debug night's outOfBedDelay.
+// from a fast debug night's outOfBedDelay. ISSUES.md #3 (2026-10-03) SUPERSEDES "resolved HERE": the arming
+// intent carries it (PhoneAlarmScheduler.kt), so the ring starts before this receiver reads anything.
 //
 // F2/F6/G8/H2: attributing a firing to the main wake alarm vs. a nap alarm (pre-wake rule 7 or post-wake D5
 // alike - G8 counts every nap alarm that fires, whichever rule armed it) is done HERE too, from the plan that
@@ -57,8 +58,6 @@ import android.content.Context
 import android.content.Intent
 import com.nikita.sleepcycle.engine.MAX_NAP_ALARMS
 import com.nikita.sleepcycle.engine.sameAlarmInstant
-import com.nikita.sleepcycle.night.AfterAlarmSettings
-import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.appendNightLog
@@ -67,12 +66,12 @@ import com.nikita.sleepcycle.night.clearOutOfBedNudgePendingAt
 import com.nikita.sleepcycle.night.firedAlarmIsWakeAlarm
 import com.nikita.sleepcycle.night.loadNightState
 import com.nikita.sleepcycle.night.nowInstant
-import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.night.saveLastNapAlarmFiredAt
 import com.nikita.sleepcycle.night.saveNapAlarmsUsed
 import com.nikita.sleepcycle.night.armFollowUpAfterAlarmFired
 import com.nikita.sleepcycle.night.savePhoneAlarmFiredFor
 import com.nikita.sleepcycle.night.saveWakeAlarmFiredAt
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -96,9 +95,24 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         val isOutOfBed = intent.getBooleanExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, false)
         // W18: wording only, carried forward to whatever ends up showing the ring - see AlarmLabel.kt.
         val label = intent.readAlarmLabel()
-        val state = if (isTest) null else loadNightState(context)
-        val ringAutoStopAfter = resolveEngineConfig(state?.debugOptions ?: DebugOptions(), state?.afterAlarm ?: AfterAlarmSettings()).ringAutoStopAfter
+        // Round2 #2 (ISSUES.md #3, 2026-10-03): the ring starts FIRST, before any disk read or write. The arming
+        // intent carries the auto-stop (PhoneAlarmScheduler.kt), so nothing has to be loaded to start ringing; an
+        // intent armed by an older build falls back to the real default, which is all any night uses (T7).
+        // Until now the fired markers, the nudge and the log were written first: a process kill in between left
+        // a night that believed its alarm had rung, so nothing re-armed it, and no sound.
+        val ringAutoStopAfter = Duration.ofMillis(intent.getLongExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, AUTO_STOP_AFTER.toMillis()))
         acquireAlarmWakeLock(context, ringAutoStopAfter)
+        try {
+            context.startForegroundService(
+                Intent(context, AlarmRingService::class.java)
+                    .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
+                    .putExtra(EXTRA_ALARM_LABEL, label.name)
+                    .putExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, ringAutoStopAfter.toMillis())
+            )
+        } catch (error: Exception) {
+            handleServiceStartFailure(context, if (isTest) null else loadNightState(context), isOutOfBed, label, error)
+        }
+        val state = if (isTest) null else loadNightState(context)
         if (isTest) {
             // T8: the test alarm is a daylight check of the ring path, never part of a simulated night - real time.
             appendSetupLog(context, NightLogEvent(Instant.now(), "debug_test_alarm_fired", emptyMap()))
@@ -109,21 +123,11 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             val now = nowInstant()
             // H5: the nudge's own pending-instant record is self-consuming REGARDLESS of whether night state
             // still exists - G1's FINISHED-bookkeeping can clear the state before an already-armed nudge fires
-            // (deliberately: the nudge still rings correctly either way, see startForegroundService below), and
+            // (deliberately: the nudge still rings correctly either way, see startForegroundService above), and
             // when that happens there is nothing left to log against, but the record must still be cleared here
             // or it outlives the night it belonged to, surviving until the next startNight overwrites it.
             if (isOutOfBed) clearOutOfBedNudgePendingAt(context)
             if (state != null) recordRealAlarmFired(context, state, intent, now, isOutOfBed)
-        }
-        try {
-            context.startForegroundService(
-                Intent(context, AlarmRingService::class.java)
-                    .putExtra(EXTRA_ALARM_IS_OUT_OF_BED_NUDGE, isOutOfBed)
-                    .putExtra(EXTRA_ALARM_LABEL, label.name)
-                    .putExtra(EXTRA_RING_AUTO_STOP_AFTER_MILLIS, ringAutoStopAfter.toMillis())
-            )
-        } catch (error: Exception) {
-            handleServiceStartFailure(context, state, isOutOfBed, label, error)
         }
     }
 

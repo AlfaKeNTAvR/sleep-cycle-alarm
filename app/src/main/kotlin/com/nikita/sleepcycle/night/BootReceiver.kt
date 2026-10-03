@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.engine.EngineConfig
+import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -73,7 +74,7 @@ class BootReceiver : BroadcastReceiver() {
         val plan = nonNullState.lastPlan
         // T4: virtual - compared against plan.wakeAt, which is night state.
         val now = nowInstant()
-        if (plan != null && shouldArmPhoneAlarm(plan.wakeAt, now, nonNullState.phoneAlarmFiredFor)) {
+        if (plan != null && shouldRearmPlanAlarmOnBoot(nonNullState, plan.wakeAt, now)) {
             val wakeAt = requireNotNull(plan.wakeAt)
             // J5 (reviewer note, 2026-09-21): schedulePhoneAlarm's own result was DISCARDED here, so a boot
             // while the exact-alarm permission is revoked left this receiver believing it had re-armed the
@@ -184,6 +185,16 @@ class BootReceiver : BroadcastReceiver() {
  * Context/AlarmManager plumbing.
  */
 internal fun shouldResumeNightServiceOnBoot(state: NightState?): Boolean = state != null
+
+/**
+ * Whether a boot re-arms the saved plan's [wakeAt]: [shouldArmPhoneAlarm]'s own three refusals, plus one of the
+ * boot path's own (validation.md, 2026-10-03, ISSUES.md #1): never once the morning alarm has rung. "I'm up"
+ * records itself as the morning alarm's firing and cancels the alarm, but leaves the saved plan's `wakeAt` as it
+ * was until the next tick re-plans, so a reboot in between used to put the cancelled alarm back.
+ */
+internal fun shouldRearmPlanAlarmOnBoot(state: NightState, wakeAt: Instant?, now: Instant): Boolean =
+    shouldArmPhoneAlarm(wakeAt, now, state.phoneAlarmFiredFor) &&
+        !morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
 
 /**
  * J5 (owner-reported, 2026-09-21): the instant a pending out-of-bed nudge should actually be re-armed at after

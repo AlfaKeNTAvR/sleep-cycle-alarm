@@ -20,6 +20,7 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.computeAlarmPlan
+import com.nikita.sleepcycle.engine.morningAlarmRangAt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -461,7 +462,11 @@ private fun logAlarmReadiness(context: Context, realStartedAt: Instant, now: Ins
                 "canUseFullScreenIntent" to readiness.canUseFullScreenIntent.toString(),
                 "notificationsEnabled" to readiness.notificationsEnabled.toString(),
                 "alarmChannelBlocked" to readiness.alarmChannelBlocked.toString(),
-                "alarmChannelDowngraded" to readiness.alarmChannelDowngraded.toString()
+                "alarmChannelDowngraded" to readiness.alarmChannelDowngraded.toString(),
+                // ISSUES.md #4 (2026-10-03): the ALARM stream's own volume, which nothing checked before.
+                "alarmVolume" to readiness.alarmVolume.toString(),
+                "alarmVolumeMax" to readiness.alarmVolumeMax.toString(),
+                "alarmVolumeLow" to readiness.alarmVolumeLow.toString()
             )
         ),
         debugNight
@@ -492,7 +497,9 @@ private suspend fun logNightClosingSummary(context: Context, state: NightState, 
         segments = state.lastSegments,
         endedAt = now,
         config = resolveEngineConfig(state),
-        wakeAlarmFiredAt = state.wakeAlarmFiredAt
+        // Owner decision, 2026-10-03 (deadline.md #3): a nap that rang at or after the morning time was the
+        // morning alarm, so "after the wake alarm" counts from it too, not from wakeAlarmFiredAt alone.
+        wakeAlarmFiredAt = morningAlarmRangAt(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
     )
     appendNightLog(
         context, state.realStartedAt,

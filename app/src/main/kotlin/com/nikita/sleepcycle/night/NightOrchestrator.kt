@@ -113,7 +113,8 @@ fun shouldArmPhoneAlarm(wakeAt: Instant?, now: Instant, phoneAlarmFiredFor: Inst
 // same absent marker that keeps the spent-target check false, so the next tick computes a NEW target and arms
 // it - a ring up to about 8 minutes late rather than silence. On a deadline-capped target the pull-forward caps
 // AT the deadline, which is already past, and rule 1 has by then already ended the night, so there is no later
-// tick left to recover. shouldKeepPreviousPlan's own stale-sync freeze refuses nothing by itself, but it
+// tick left to recover. (Owner decision, 2026-10-03: no longer true - rule 1 now waits for the morning alarm to
+// have rung, and a past deadline no longer caps the pull-forward, so this path recovers like the others.) shouldKeepPreviousPlan's own stale-sync freeze refuses nothing by itself, but it
 // GUARANTEES the unchanged-target half of this guard for exactly the window the guard fires in: the two
 // together mean a night whose syncs are failing can never arm in the last 2 minutes before its own target.
 //
@@ -279,7 +280,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // not change since the last successful sync" case, not only a genuine band fault), so "dead band" invited
     // the wrong mental model for anyone reading the night log - see shouldKeepPreviousPlan's own doc for the
     // full staleness-vs-fault distinction and why the behaviour itself is unchanged, only the name.
-    val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor, decisionNow)) {
+    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor, decisionNow, morningAlarmRang)) {
         // shouldKeepPreviousPlan only returns true when previousPlan?.wakeAt is non-null, so state.lastPlan
         // itself is guaranteed non-null here too.
         val keptPlan = checkNotNull(state.lastPlan)
@@ -815,9 +817,14 @@ internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult:
  * tolerant helper [shouldArmPhoneAlarm] now uses, for the same reason - see
  * [com.nikita.sleepcycle.engine.ALARM_INSTANT_TOLERANCE]'s own doc.
  */
-internal fun shouldKeepPreviousPlan(outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?, now: Instant): Boolean {
+internal fun shouldKeepPreviousPlan(
+    outcome: SyncOutcome, previousPlan: AlarmPlan?, phoneAlarmFiredFor: Instant?, now: Instant, morningAlarmRang: Boolean
+): Boolean {
     val wakeAt = previousPlan?.wakeAt ?: return false
-    return !outcome.syncOk && !sameAlarmInstant(wakeAt, phoneAlarmFiredFor) && wakeAt.isAfter(now)
+    // Validation.md, 2026-10-03 (ISSUES.md #1): once the morning alarm has rung there is no alarm left to protect -
+    // the engine arms nothing more (WakeAlarm.kt's morningAlarmHasRung). "I'm up" records itself as that ring but
+    // leaves the previous plan's wakeAt in place, so keeping that plan re-armed the very alarm I'm up cancelled.
+    return !morningAlarmRang && !outcome.syncOk && !sameAlarmInstant(wakeAt, phoneAlarmFiredFor) && wakeAt.isAfter(now)
 }
 
 /**
