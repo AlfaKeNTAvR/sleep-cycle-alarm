@@ -54,7 +54,7 @@ the phone alarm, the out-of-bed nudge and the night log all work without waiting
 
 ### How to use debug mode
 
-The Debug screen (Settings, then Debug) has two rows, laid out like Settings:
+The **Debug** section in Settings, just above More (debug builds only), has two controls:
 
 - **Simulated band data** (switch): sleep segments come from the **Asleep** switch on the Night screen
   instead of a real Gadgetbridge sync. Turn this on first - the speed chips are locked until it is, since a
@@ -63,8 +63,8 @@ The Debug screen (Settings, then Debug) has two rows, laid out like Settings:
 - **Ring phone alarm**: a standalone test alarm that rings straight away, always real time regardless of the
   simulated clock, for checking the ring screen in daylight with no night running.
 
-Once simulated band data is on, the Night screen shows a **Simulation** card with the speed chips and the
-**Asleep** switch:
+Once simulated band data is on, the Night screen's amber banner becomes the simulation controls: the
+simulated clock, the speed chips and an **Asleep** chip:
 
 - **1x / 60x / Auto**: the app's own idea of "now" runs this many times faster than the real clock.
   Everything the app computes - the plan, the log, the alarms - is measured against that virtual time; only
@@ -92,24 +92,23 @@ which means a simulated night dies if the app process is killed, unlike a real o
 
 ### Walkthrough
 
-Since 2026-10-02 the speed chips and the Asleep switch live only on the Night screen's Simulation card, and
+Since 2026-10-02 the speed chips and the Asleep chip live only in the Night screen's top banner, and
 switching Asleep drops the clock to 1x - so wherever a step below says to turn Asleep on or off, do it on the
 Night screen, then tap **60x** again to carry on at that speed.
 
 1. Install the **debug** build (`app-debug.apk`, per the Build section above - not the release one).
-2. Open the app, go to **Setup** (gear icon), scroll to the bottom, tap **Debug**.
+2. Open the app, go to **Settings** (gear icon) and scroll down to the **Debug** section.
 3. Turn on **Simulated band data**. With it on, the app never needs Gadgetbridge or the band configured at
    all for this walkthrough - the checklist below no longer needs the band steps.
-4. Tap back to **Setup**: only the phone-side items (Notifications, Full-screen alarms, Battery
+4. Open **Setup** from Settings: only the phone-side items (Notifications, Full-screen alarms, Battery
    optimisation) should still be red. Grant any that are.
 5. Tap **Done** to reach **Before bed**. You should see the amber banner reading **SIMULATED SLEEP DATA  ·
    SIMULATED HH:mm** (the current virtual time) and **Start night** enabled with no band connected. Pick
    **4.5 h** (3 cycles) on the "Sleep up to" row and leave the deadline switch off.
 6. Tap **Start night**. A **"This is a simulated night"** dialog appears - this confirmation exists so a
    simulated night can never start by accident at real bedtime. Tap **Start simulated night**.
-7. You land on the **Night screen**: amber banner, a gear icon top-right (only in a debug build) that takes
-   you back to the Debug screen without leaving the running night.
-8. Turn the **Asleep** switch on in the Simulation card, then tap **60x**. The Night screen shows **"Morning alarm"**, the alarm's own time as the big
+7. You land on the **Night screen**, with the simulation controls in the amber banner at the top.
+8. Tap the **Asleep** chip in the banner, then tap **60x**. The Night screen shows **"Morning alarm"**, the alarm's own time as the big
    number, and how long until it: 4.5 h away in virtual time, which at 60x is a few real minutes out. Since N1
    that is the whole screen, in every mode and whether you are asleep or awake - which alarm is coming, when
    it rings, how long until then.
@@ -196,7 +195,7 @@ Night screen, then tap **60x** again to carry on at that speed.
     recording how it ended. The same menu's **Delete** removes a
     night for good after one confirmation, which is how to clear desk-test logs out.
 15. Separately, any time no night is active (the button is disabled, with a reason shown underneath, while a
-    night is running - it must never be able to replace the real night's own alarm): from the Debug screen,
+    night is running - it must never be able to replace the real night's own alarm): from Settings' Debug section,
     tap **Ring phone alarm** to check the full-screen alarm activity, the sound and the notification's Stop
     button in daylight, straight away regardless of any simulated clock speed. This writes to
     `setup.jsonl`, not a night log - it is not a night.

@@ -171,7 +171,6 @@
 
     <!-- Debug entry point (Setup screen, debug build only) -->
     <string name="setup_debug_row_label">Debug</string>
-    <string name="content_description_open_debug">Open debug and simulation screen</string>
 
     <!-- Debug screen -->
     <string name="debug_title">Debug</string>

@@ -21,5 +21,7 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 - **Shared Settings look**: the section, switch row and button row moved from SettingsScreen into `ui/components/SettingsSection.kt`, used by Settings, Debug and the Night screen's Simulation card.
 - **Debug "Ring" is a small bordered button** on the right of the row, the same one Settings uses for "Ask at".
 
+- **Debug screen removed** (owner asked for a Debug section in Settings): the Night screen's Debug shortcut (sliders icon) went with it, since the controls it led to are in the banner and inert mid-night. The setup wizard's Debug button now opens Settings, so back from there goes to Before bed, not the wizard.
+
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.

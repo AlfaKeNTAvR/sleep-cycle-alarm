@@ -23,7 +23,6 @@ import com.nikita.sleepcycle.ui.NightViewModel
 import com.nikita.sleepcycle.ui.components.ErrorBanner
 import com.nikita.sleepcycle.ui.shareNightLogFile
 import com.nikita.sleepcycle.ui.screens.BeforeBedScreen
-import com.nikita.sleepcycle.ui.screens.DebugScreen
 import com.nikita.sleepcycle.ui.screens.LogsScreen
 import com.nikita.sleepcycle.ui.screens.PastNightScreen
 import com.nikita.sleepcycle.ui.screens.SettingsScreen
@@ -79,8 +78,10 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                             onAfterAlarmChange = viewModel::setAfterAlarmSettings,
                             onBedtimeAudioChange = viewModel::setBedtimeAudioSettings,
                             onSleepRatingChange = viewModel::setSleepRatingSettings,
+                            debug = uiState.debug,
+                            onSimulatedBandDataChange = viewModel::setSimulatedBandData,
+                            onRingTestAlarm = viewModel::ringDebugTestAlarm,
                             onOpenSetup = viewModel::openSetup,
-                            onOpenDebug = viewModel::openDebug,
                             onBack = viewModel::closeSettings,
                         )
                     }
@@ -95,7 +96,8 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                         onRunSetupAgain = viewModel::runSetupWizardAgain,
                         onExitWizard = viewModel::exitSetupWizard,
                         onBack = viewModel::closeSetup,
-                        onOpenDebug = viewModel::openDebug,
+                        // The wizard's Debug button: the Debug controls are a Settings section now (2026-10-02).
+                        onOpenDebug = viewModel::openSettings,
                     )
                     is Screen.BeforeBed -> BeforeBedScreen(
                         state = uiState.beforeBed,
@@ -125,7 +127,6 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                             onRateMorning = viewModel::rateMorning,
                             onSpeedChoice = viewModel::setSpeedChoice,
                             onSetSimulatedAsleep = viewModel::setSimulatedAsleep,
-                            onOpenDebug = viewModel::openDebug,
                         )
                     }
                     is Screen.Logs -> LogsScreen(
@@ -138,12 +139,6 @@ private fun SleepCycleApp(viewModel: NightViewModel = viewModel()) {
                     is Screen.PastNight -> pastNight?.let { night ->
                         PastNightScreen(state = night, onBack = viewModel::closePastNight, onRate = viewModel::ratePastNight)
                     }
-                    is Screen.Debug -> DebugScreen(
-                        state = uiState.debug,
-                        onSimulatedBandDataChange = viewModel::setSimulatedBandData,
-                        onRingTestAlarm = viewModel::ringDebugTestAlarm,
-                        onBack = viewModel::closeDebug,
-                    )
                 }
             }
         }

@@ -85,7 +85,6 @@ import com.nikita.sleepcycle.ui.state.buildUiState
 import com.nikita.sleepcycle.ui.state.canConfirmEndNight
 import com.nikita.sleepcycle.ui.state.canRequestEndNight
 import com.nikita.sleepcycle.ui.state.closeToNightOrBeforeBed
-import com.nikita.sleepcycle.ui.state.closeToNightOrSettings
 import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
@@ -512,12 +511,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeLogs() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
-
-    /** Reachable from Settings' Debug row AND from the Night screen (a debug build shows a Debug icon there too) - the simulator's buttons need to work while a simulated night is actually running, not just before it starts. */
-    fun openDebug() { screen.value = Screen.Debug }
-
-    /** X4/X5: back from Debug. See [closeToNightOrSettings] for why this is not simply "always Settings" - the night screen's own shortcut needs its way back too. */
-    fun closeDebug() { screen.value = closeToNightOrSettings(observedNightState.value != null) }
 
     // Setup wizard navigation. The wizard is entered either by resolveInitialScreen (fresh install) or by
     // runSetupWizardAgain (the checklist's "Run setup again"); openSetup/closeSetup/exitSetupWizard above
