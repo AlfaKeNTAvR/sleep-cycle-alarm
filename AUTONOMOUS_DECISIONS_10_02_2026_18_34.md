@@ -23,5 +23,7 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 
 - **Debug screen removed** (owner asked for a Debug section in Settings): the Night screen's Debug shortcut (sliders icon) went with it, since the controls it led to are in the banner and inert mid-night. The setup wizard's Debug button now opens Settings, so back from there goes to Before bed, not the wizard.
 
+- **Fade only lowers** (phone test, 20:50 night): parking now keeps a volume the fade already took below the starting volume (it lifted 3 back to 10), and a tick leaves a volume turned down below the schedule alone (it lifted 4 to 5). Tested at the pure seams `fadeParkStep` and `fadeTickAction`, the same seam as the earlier fade tests.
+
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.

@@ -82,6 +82,22 @@ class MediaFadeTest {
         assertEquals(FadeTickAction.None, tickAt(20, currentStep = 10))
     }
 
+    // Phone test, 2026-10-02: the owner turned the volume down below the schedule (4) and the next tick raised it
+    // back to the schedule's 5. The fade only ever lowers the volume.
+    @Test fun `a volume turned down below the fade is left there`() {
+        assertEquals(FadeTickAction.None, tickAt(20, currentStep = 4))
+    }
+
+    // Phone test, 2026-10-02: falling asleep at the faded 3 parked the volume back up at the starting 10, so
+    // waking played louder than the owner fell asleep to. Parking only ever lowers too.
+    @Test fun `falling asleep below the starting volume parks it where it is`() {
+        assertEquals(3, fadeParkStep(currentStep = 3, startStep = 10))
+    }
+
+    @Test fun `falling asleep above the starting volume parks it at the starting volume`() {
+        assertEquals(10, fadeParkStep(currentStep = 13, startStep = 10))
+    }
+
     @Test fun `a parked volume does not step down while the owner sleeps`() {
         assertEquals(FadeTickAction.None, tickAt(60, currentStep = 13, parked = true))
     }
