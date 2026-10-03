@@ -2,7 +2,8 @@ package com.nikita.sleepcycle.ui.screens
 
 // File purpose: the Settings screen. X1 made it a short navigation menu (Setup, Debug); owner spec 2026-10-02
 // (option A) adds the owner's own choices above that menu, in titled sections with no descriptions: After the
-// alarm, Bedtime audio, Sleep rating, then More (the old Setup and Debug rows). Every change is saved at once;
+// alarm, Bedtime audio, Sleep rating, then - debug builds only - Debug, which holds the two controls the Debug
+// screen used to (Simulated band data, Ring phone alarm), and last More (Setup). Every change is saved at once;
 // there is no Done button (W17). Limits and defaults live in night/UserSettings.kt.
 
 import androidx.compose.foundation.BorderStroke
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,11 +51,16 @@ import com.nikita.sleepcycle.ui.components.AppTimePickerDialog
 import com.nikita.sleepcycle.ui.components.BackArrowButton
 import com.nikita.sleepcycle.ui.components.CardDivider
 import com.nikita.sleepcycle.ui.components.ScreenContainer
+import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.SettingsCard
 import com.nikita.sleepcycle.ui.components.SettingsMenuRow
+import com.nikita.sleepcycle.ui.components.SettingsButtonRow
+import com.nikita.sleepcycle.ui.components.SettingsSection
+import com.nikita.sleepcycle.ui.components.SettingsSwitchRow
 import com.nikita.sleepcycle.ui.components.ToggleRow
-import com.nikita.sleepcycle.ui.state.SettingsMenuEntry
-import com.nikita.sleepcycle.ui.state.settingsMenuEntries
+import com.nikita.sleepcycle.ui.state.DebugUiState
+import com.nikita.sleepcycle.ui.state.SettingsGroup
+import com.nikita.sleepcycle.ui.state.settingsGroups
 import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.CardNarrowPadding
 import com.nikita.sleepcycle.ui.theme.MinTouchTarget
@@ -63,16 +70,13 @@ import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import com.nikita.sleepcycle.ui.theme.NightOutline
 import java.time.LocalTime
 
-private val SectionGap = 8.dp
-private val SectionTitleLetterSpacing = 1.sp
 private val StepperButtonSize = 40.dp
+private val DebugButtonVerticalPadding = 12.dp
 private val StepperValueMinWidth = 64.dp
-private val TimeButtonCornerRadius = 12.dp
-private val TimeButtonPadding = 10.dp
 
 /**
  * The Settings screen. [isDebugBuild] defaults to the real [BuildConfig.DEBUG] flag and is a parameter only so a
- * preview/test can force either list; [settingsMenuEntries] (X4) is what actually decides whether Debug shows.
+ * preview/test can force either list; [settingsGroups] (X4) is what actually decides whether Debug shows.
  * A row whose switch above it is off stays visible but dimmed and inert (Starting volume under a fade that is
  * off, and the fade rows under a pause that is off; Ask again later and Ask at under a rating that is off).
  *
@@ -90,8 +94,12 @@ fun SettingsScreen(
     onAfterAlarmChange: (AfterAlarmSettings) -> Unit,
     onBedtimeAudioChange: (BedtimeAudioSettings) -> Unit,
     onSleepRatingChange: (SleepRatingSettings) -> Unit,
+    debug: DebugUiState,
+    onSimulatedBandDataChange: (Boolean) -> Unit,
+    simulatedStartTime: LocalTime,
+    onSimulatedStartTimeChange: (LocalTime) -> Unit,
+    onRingTestAlarm: () -> Unit,
     onOpenSetup: () -> Unit,
-    onOpenDebug: () -> Unit,
     onBack: () -> Unit,
     isDebugBuild: Boolean = BuildConfig.DEBUG,
 ) {
@@ -123,13 +131,13 @@ fun SettingsScreen(
         }
 
         SettingsSection(stringResource(R.string.settings_section_bedtime_audio)) {
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_pause_when_asleep),
                 checked = bedtimeAudio.pauseWhenAsleep,
                 onCheckedChange = { onBedtimeAudioChange(bedtimeAudio.copy(pauseWhenAsleep = it)) },
             )
             CardDivider()
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_fade),
                 // Shown off while the pause is off (it cannot run then); the stored choice comes back with the pause.
                 checked = shouldFadeMedia(bedtimeAudio),
@@ -145,16 +153,25 @@ fun SettingsScreen(
                 onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeStartPercent = it)) },
                 enabled = shouldFadeMedia(bedtimeAudio),
             )
+            CardDivider()
+            StepperRow(
+                label = stringResource(R.string.settings_fade_end),
+                stepper = SettingStepper.FADE_END_PERCENT,
+                value = bedtimeAudio.fadeEndPercent,
+                valueText = stringResource(R.string.settings_percent_value, bedtimeAudio.fadeEndPercent),
+                onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeEndPercent = it)) },
+                enabled = shouldFadeMedia(bedtimeAudio),
+            )
         }
 
         SettingsSection(stringResource(R.string.settings_section_rating)) {
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_rate_night),
                 checked = sleepRating.enabled,
                 onCheckedChange = { onSleepRatingChange(sleepRating.copy(enabled = it)) },
             )
             CardDivider()
-            SwitchRow(
+            SettingsSwitchRow(
                 label = stringResource(R.string.settings_ask_again_later),
                 checked = sleepRating.askAgainLater,
                 onCheckedChange = { onSleepRatingChange(sleepRating.copy(askAgainLater = it)) },
@@ -169,43 +186,39 @@ fun SettingsScreen(
             )
         }
 
-        SettingsSection(stringResource(R.string.settings_section_more)) {
-            settingsMenuEntries(isDebugBuild).forEachIndexed { index, entry ->
-                if (index > 0) CardDivider()
-                SettingsMenuRow(
-                    text = stringResource(settingsMenuEntryLabelRes(entry)),
-                    onClick = settingsMenuEntryAction(entry, onOpenSetup, onOpenDebug),
+        // Owner request, 2026-10-02: Debug is a section in the same look, just before More, rather than a screen of its own.
+        if (SettingsGroup.DEBUG in settingsGroups(isDebugBuild)) {
+            SettingsSection(stringResource(R.string.debug_title)) {
+                SettingsSwitchRow(
+                    label = stringResource(R.string.debug_simulated_band_data_title),
+                    checked = debug.simulatedBandData,
+                    onCheckedChange = onSimulatedBandDataChange,
+                    enabled = debug.simulatedBandDataControlEnabled,
+                )
+                CardDivider()
+                // Owner request, 2026-10-03: where switching simulated band data on starts the clock. Always set (no
+                // Clear), and always editable: a new time only applies on the next switch-on, so it is harmless mid-night.
+                TimeRow(
+                    label = stringResource(R.string.debug_simulated_start),
+                    time = simulatedStartTime,
+                    onTimeChange = onSimulatedStartTimeChange,
+                    enabled = true,
+                )
+                CardDivider()
+                SecondaryActionButton(
+                    text = stringResource(R.string.debug_ring_test_alarm_button),
+                    onClick = onRingTestAlarm,
+                    enabled = debug.canRingTestAlarm,
+                    // Owner request, 2026-10-02: as tall as the steppers' round buttons, to match them.
+                    modifier = Modifier.padding(vertical = DebugButtonVerticalPadding).height(StepperButtonSize),
                 )
             }
         }
-    }
-}
 
-/** A small upper-case section title over one card holding that section's rows. */
-@Composable
-private fun SettingsSection(title: String, rows: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(SectionGap)) {
-        Text(
-            text = title.uppercase(),
-            style = MaterialTheme.typography.labelLarge,
-            letterSpacing = SectionTitleLetterSpacing,
-            color = NightOnSurfaceMuted,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        SettingsCard(contentPadding = CardNarrowPadding) { rows() }
+        SettingsSection(stringResource(R.string.settings_section_more)) {
+            SettingsMenuRow(text = stringResource(R.string.setup_title), onClick = onOpenSetup)
+        }
     }
-}
-
-@Composable
-private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    ToggleRow(
-        title = label,
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        contentDescription = label,
-        enabled = enabled,
-        modifier = Modifier.heightIn(min = MinTouchTarget),
-    )
 }
 
 /** A label, then minus / value / plus. A button that would not change the value (at the limit) is disabled. */
@@ -269,38 +282,6 @@ private fun StepperButton(text: String, contentDescription: String, enabled: Boo
 @Composable
 private fun TimeRow(label: String, time: LocalTime, onTimeChange: (LocalTime) -> Unit, enabled: Boolean) {
     var showPicker by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = label, style = MaterialTheme.typography.titleMedium, color = if (enabled) NightOnBackground else NightOnSurfaceMuted)
-        Text(
-            text = "%02d:%02d".format(time.hour, time.minute),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = if (enabled) AmberAccent else NightOnSurfaceDisabled,
-            modifier = Modifier
-                .clip(RoundedCornerShape(TimeButtonCornerRadius))
-                .border(BorderStroke(1.dp, NightOutline), RoundedCornerShape(TimeButtonCornerRadius))
-                .clickable(enabled = enabled, role = Role.Button) { showPicker = true }
-                .padding(TimeButtonPadding),
-        )
-    }
+    SettingsButtonRow(label = label, buttonText = "%02d:%02d".format(time.hour, time.minute), onClick = { showPicker = true }, enabled = enabled)
     if (showPicker) AppTimePickerDialog(time = time, onTimeChange = onTimeChange, onDismiss = { showPicker = false })
-}
-
-/** Row label per entry - reuses the same strings Setup and Debug already show as their own screen titles (X6), rather than adding near-duplicates. */
-private fun settingsMenuEntryLabelRes(entry: SettingsMenuEntry): Int = when (entry) {
-    SettingsMenuEntry.SETUP -> R.string.setup_title
-    SettingsMenuEntry.DEBUG -> R.string.setup_debug_row_label
-}
-
-private fun settingsMenuEntryAction(
-    entry: SettingsMenuEntry,
-    onOpenSetup: () -> Unit,
-    onOpenDebug: () -> Unit,
-): () -> Unit = when (entry) {
-    SettingsMenuEntry.SETUP -> onOpenSetup
-    SettingsMenuEntry.DEBUG -> onOpenDebug
 }

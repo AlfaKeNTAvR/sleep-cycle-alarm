@@ -17,6 +17,10 @@ package com.nikita.sleepcycle.night
 // derived from the warp - see DebugOptions.kt), which was the field that bug actually clobbered; this fix
 // still generalizes the write shape itself, so a future field added here cannot reintroduce the same class of
 // race.
+//
+// Owner request, 2026-10-03: also the Debug section's "Simulated start" time ([readSimulatedStartTime]), a
+// preference rather than a switch: its own key, outside [DebugOptions], so [resetDebugOptionsAndClock] never
+// touches it.
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
@@ -27,11 +31,14 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.nikita.sleepcycle.BuildConfig
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 
 private const val DATASTORE_NAME = "debug_settings"
 
@@ -43,9 +50,11 @@ private val KEY_SIMULATED_BAND_DATA = booleanPreferencesKey("simulated_band_data
 // any more, so a stray "speed" entry an old build left on a real device just sits there, inert, never decoded.
 private val KEY_SIMULATED_EVENTS = stringPreferencesKey("simulated_sleep_events")
 private val KEY_LAST_CHANGED_AT = stringPreferencesKey("debug_options_last_changed_at")
+private val KEY_AUTO_SPEED = booleanPreferencesKey("auto_speed")
 private val KEY_CLOCK_WARP_SPEED = intPreferencesKey("clock_warp_speed")
 private val KEY_CLOCK_WARP_ANCHOR_REAL = stringPreferencesKey("clock_warp_anchor_real")
 private val KEY_CLOCK_WARP_ANCHOR_VIRTUAL = stringPreferencesKey("clock_warp_anchor_virtual")
+private val KEY_SIMULATED_START = stringPreferencesKey("simulated_start_time")
 
 /**
  * Streams the persisted [DebugOptions], defaulting to all-off/speed 1/no warp. Callers must pass this through
@@ -66,7 +75,8 @@ fun readDebugOptions(context: Context): Flow<DebugOptions> =
 /** V6/V7: the one place that decodes [DebugOptions] (minus its derived `speed`) out of a preferences snapshot - shared by [readDebugOptions] and [updateDebugOptions]'s own read-modify-write, so both always see the SAME shape. */
 private fun debugOptionsFromPreferences(preferences: Preferences): DebugOptions = DebugOptions(
     simulatedBandData = preferences[KEY_SIMULATED_BAND_DATA] ?: false,
-    warp = readClockWarpFromPreferences(preferences)
+    warp = readClockWarpFromPreferences(preferences),
+    autoSpeed = preferences[KEY_AUTO_SPEED] ?: false,
 )
 
 /** A1: when the switches were last changed by [updateDebugOptions], for [shouldAutoResetDebugOptions]. Null before the first change. */
@@ -76,7 +86,7 @@ fun readDebugOptionsLastChangedAt(context: Context): Flow<Instant?> =
 /**
  * V6: applies [transform] to the CURRENTLY persisted [DebugOptions], inside DataStore's own `edit {}`
  * transaction - see this file's own header for the class of bug this fixes. [transform] receives [DebugOptions]
- * (including its live `warp`) so a caller reasoning about the whole value can, but only `simulatedBandData` is
+ * (including its live `warp`) so a caller reasoning about the whole value can, but only `simulatedBandData` and `autoSpeed` are
  * ever written back here: `warp` is [writeClockWarp]'s own separate keys (different keys, no conflict - a
  * caller that also wants to change the warp calls that too, same coroutine, per V5's own ordering rule), and
  * `speed` is derived and was never a real key to write (V7). Records [changedAt] for the idle auto-reset (A1)
@@ -86,6 +96,7 @@ suspend fun updateDebugOptions(context: Context, changedAt: Instant = Instant.no
     context.debugSettingsStore.edit { preferences ->
         val updated = transform(debugOptionsFromPreferences(preferences))
         preferences[KEY_SIMULATED_BAND_DATA] = updated.simulatedBandData
+        preferences[KEY_AUTO_SPEED] = updated.autoSpeed
         preferences[KEY_LAST_CHANGED_AT] = changedAt.toString()
     }
 }
@@ -143,6 +154,33 @@ suspend fun writeClockWarp(context: Context, warp: ClockWarp?) {
 suspend fun resetDebugOptionsAndClock(context: Context, changedAt: Instant) {
     updateDebugOptions(context, changedAt) { DebugOptions() }
     writeClockWarp(context, null)
+    // Owner spec, 2026-10-02: the simulated sleep timeline belongs to the run that made it - the Debug screen
+    // no longer has a Clear button, so it is emptied here, after the night's morning report is already saved.
+    writeSimulatedSleepEvents(context, clearedSimulatedSleepEvents())
+}
+
+/** Owner request, 2026-10-03: the "Simulated start" time, [DEFAULT_SIMULATED_START] until the owner picks one. A corrupt stored value reads as the default. */
+fun readSimulatedStartTime(context: Context): Flow<LocalTime> =
+    context.debugSettingsStore.data.map { preferences -> simulatedStartFromPreferences(preferences) }
+
+/** Saves the "Simulated start" time. Takes effect on the next switch-on of simulated band data, never on a clock already running. */
+suspend fun writeSimulatedStartTime(context: Context, time: LocalTime) {
+    context.debugSettingsStore.edit { preferences -> preferences[KEY_SIMULATED_START] = time.toString() }
+}
+
+private fun simulatedStartFromPreferences(preferences: Preferences): LocalTime =
+    preferences[KEY_SIMULATED_START]?.let { text -> runCatching { LocalTime.parse(text) }.getOrNull() } ?: DEFAULT_SIMULATED_START
+
+/**
+ * Owner request, 2026-10-03: switching simulated band data on starts the clock at the next "Simulated start"
+ * ([nextOccurrenceOf] after [realNow] in [zone]), at 1x. Clock first, then the switch: W4's order in
+ * [writeClockWarp], and the switch is what unlocks the controls that act on the clock (the same reason
+ * DebugScreenController.setSimulatedBandData's off path resets the clock before persisting the switch).
+ */
+suspend fun enableSimulatedBandData(context: Context, realNow: Instant, zone: ZoneId) {
+    val start = simulatedStartFromPreferences(context.debugSettingsStore.data.first())
+    writeClockWarp(context, normalizedWarp(1, anchorReal = realNow, anchorVirtual = nextOccurrenceOf(start, zone, realNow)))
+    updateDebugOptions(context, realNow) { it.copy(simulatedBandData = true) }
 }
 
 /** Streams the persisted simulated sleep event timeline, oldest first. A corrupt stored value decodes as empty rather than failing the read. */

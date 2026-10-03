@@ -98,14 +98,6 @@ class DebugOptionsTest {
         assertFalse(isSpeedSelectorAllowed(simulatedBandData = false))
     }
 
-    @Test
-    fun `the jump action requires simulated band data on AND no active night`() {
-        assertTrue(isJumpToTimeAllowed(simulatedBandData = true, nightActive = false))
-        assertFalse(isJumpToTimeAllowed(simulatedBandData = false, nightActive = false))
-        assertFalse(isJumpToTimeAllowed(simulatedBandData = true, nightActive = true))
-        assertFalse(isJumpToTimeAllowed(simulatedBandData = false, nightActive = true))
-    }
-
     // ---- V4: turning simulated band data off (or on) is refused outright while a night is active ------------
 
     @Test

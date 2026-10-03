@@ -136,7 +136,7 @@ private fun writeInstantFile(file: File, value: Instant): Boolean =
     try {
         val temp = tempSiblingOf(file)
         temp.writeText(value.toString())
-        if (!temp.renameTo(file)) throw java.io.IOException("renameTo failed for $temp -> $file")
+        replaceFileAtomically(temp, file)
         true
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to write ${file.name}", error)

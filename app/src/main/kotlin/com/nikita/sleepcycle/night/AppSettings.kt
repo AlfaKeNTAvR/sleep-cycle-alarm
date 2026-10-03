@@ -33,6 +33,7 @@ private val KEY_NUDGE_MINUTES = intPreferencesKey("nudge_minutes")
 private val KEY_NAP_MINUTES = intPreferencesKey("nap_minutes")
 private val KEY_FADE_ENABLED = booleanPreferencesKey("fade_enabled")
 private val KEY_FADE_START_PERCENT = intPreferencesKey("fade_start_percent")
+private val KEY_FADE_END_PERCENT = intPreferencesKey("fade_end_percent")
 private val KEY_PAUSE_WHEN_ASLEEP = booleanPreferencesKey("pause_when_asleep")
 private val KEY_RATING_ENABLED = booleanPreferencesKey("rating_enabled")
 private val KEY_RATING_ASK_AGAIN_LATER = booleanPreferencesKey("rating_ask_again_later")
@@ -82,6 +83,7 @@ private fun readBedtimeAudioSettings(preferences: Preferences): BedtimeAudioSett
     return BedtimeAudioSettings(
         fadeEnabled = preferences[KEY_FADE_ENABLED] ?: defaults.fadeEnabled,
         fadeStartPercent = clampSetting(SettingStepper.FADE_START_PERCENT, preferences[KEY_FADE_START_PERCENT] ?: defaults.fadeStartPercent),
+        fadeEndPercent = clampSetting(SettingStepper.FADE_END_PERCENT, preferences[KEY_FADE_END_PERCENT] ?: defaults.fadeEndPercent),
         pauseWhenAsleep = preferences[KEY_PAUSE_WHEN_ASLEEP] ?: defaults.pauseWhenAsleep,
     )
 }
@@ -115,6 +117,7 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         preferences[KEY_NAP_MINUTES] = settings.afterAlarm.napMinutes
         preferences[KEY_FADE_ENABLED] = settings.bedtimeAudio.fadeEnabled
         preferences[KEY_FADE_START_PERCENT] = settings.bedtimeAudio.fadeStartPercent
+        preferences[KEY_FADE_END_PERCENT] = settings.bedtimeAudio.fadeEndPercent
         preferences[KEY_PAUSE_WHEN_ASLEEP] = settings.bedtimeAudio.pauseWhenAsleep
         preferences[KEY_RATING_ENABLED] = settings.sleepRating.enabled
         preferences[KEY_RATING_ASK_AGAIN_LATER] = settings.sleepRating.askAgainLater

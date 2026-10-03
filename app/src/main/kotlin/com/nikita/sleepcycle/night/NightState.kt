@@ -16,6 +16,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 
@@ -396,6 +398,15 @@ private fun logCorruptStateToNewestNightLog(context: Context, cause: Exception) 
  * a crash mid-write cannot corrupt it, and a bad write still leaves yesterday's good state recoverable.
  * Returns true on success; callers are responsible for logging a failure to the night log.
  */
+/**
+ * Moves [source] over [target] in one step, for the temp-file-then-rename writes. Emulator audit, 2026-10-03:
+ * `File.renameTo` refuses to replace an existing file on Windows, so every save after the first failed in the
+ * Robolectric scenario tests; on Android both are the same atomic rename. Throws on failure.
+ */
+internal fun replaceFileAtomically(source: File, target: File) {
+    Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+}
+
 fun saveNightState(context: Context, state: NightState): Boolean {
     val file = nightStateFile(context)
     val tempFile = File(context.filesDir, "$NIGHT_STATE_FILE_NAME.tmp")
@@ -407,9 +418,8 @@ fun saveNightState(context: Context, state: NightState): Boolean {
             stream.fd.sync()
         }
         if (file.exists()) file.copyTo(backupFile, overwrite = true)
-        val renamed = tempFile.renameTo(file)
-        if (!renamed) Log.e(LOG_TAG, "failed to rename ${tempFile.path} to ${file.path}")
-        renamed
+        replaceFileAtomically(tempFile, file)
+        true
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to save night state to ${file.path}", error)
         false

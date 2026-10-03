@@ -9,6 +9,15 @@ import java.time.Instant
 
 class NightLogTest {
     @Test
+    fun `the Logs list is ordered by when each night started, so rating an old night does not move it to the top`() {
+        val dir = Files.createTempDirectory("logs").toFile()
+        val older = File(dir, "night-20260916-2340.jsonl").apply { writeText("{}"); setLastModified(Instant.parse("2026-10-02T15:02:00Z").toEpochMilli()) }
+        val newer = File(dir, "night-sim-20260918-0011.jsonl").apply { writeText("{}"); setLastModified(Instant.parse("2026-09-18T06:17:00Z").toEpochMilli()) }
+
+        assertEquals(listOf(newer, older), sortNightLogsNewestFirst(listOf(older, newer)))
+    }
+
+    @Test
     fun `formats an event as one JSON line with its type and fields`() {
         val event = NightLogEvent(
             at = Instant.parse("2026-09-17T00:30:00Z"),

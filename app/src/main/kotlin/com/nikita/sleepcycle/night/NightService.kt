@@ -48,12 +48,14 @@ private val NOTIFICATION_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPa
 class NightService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
+    private val mediaFadeWatcher by lazy { MediaFadeWatcher(this, serviceScope) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel(this)
+        mediaFadeWatcher.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -126,6 +128,7 @@ class NightService : Service() {
     }
 
     override fun onDestroy() {
+        mediaFadeWatcher.stop()
         serviceJob.cancel()
         super.onDestroy()
     }

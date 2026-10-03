@@ -65,7 +65,7 @@ fun scheduleOutOfBedAlarm(context: Context, at: Instant, label: AlarmLabel = Ala
 
 /**
  * T8: arms the Debug screen's daylight test alarm for the REAL instant [at] (D1) - a caller-computed
- * `Instant.now().plus(DEBUG_TEST_ALARM_LEAD)`, never converted through [AppClock]: the test alarm is a
+ * `Instant.now()`, never converted through [AppClock]: the test alarm is a
  * daylight check of the ring path, not part of a simulated night. Its own request code, entirely separate
  * PendingIntent identity from [schedulePhoneAlarm], so it can never replace the real night alarm - and marks
  * its broadcast intent as a test so [PhoneAlarmReceiver] never touches night state for it.

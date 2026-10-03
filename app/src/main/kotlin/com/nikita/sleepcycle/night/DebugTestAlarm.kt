@@ -7,23 +7,21 @@ package com.nikita.sleepcycle.night
 // active - the Debug screen also disables the button for that case (DebugScreenController.kt) - so even a
 // stale UI state can never let this reach schedulePhoneAlarm's request code.
 //
-// T8: [DEBUG_TEST_ALARM_LEAD] is REAL seconds, and [scheduleDebugTestAlarm]'s own [now] must be
-// `Instant.now()` on the real clock, never `nowInstant()` - this is a daylight check of the ring path, not
-// part of a simulated night, so it must ring 5 real seconds out regardless of any active clock warp.
+// T8: [scheduleDebugTestAlarm]'s own [now] must be `Instant.now()` on the real clock, never `nowInstant()` -
+// this is a daylight check of the ring path, not part of a simulated night, so it must ring at the real now
+// regardless of any active clock warp. Owner request, 2026-10-02: it rings straight away (it used to be 5 real
+// seconds out). It is still armed through AlarmManager, which fires an alarm set for now at once, so the press
+// still exercises the whole real path - AlarmManager, the receiver, the full-screen ring.
 
 import android.content.Context
 import com.nikita.sleepcycle.alarm.scheduleTestPhoneAlarm
-import java.time.Duration
 import java.time.Instant
-
-/** How far ahead the Debug screen's phone-alarm test button schedules the alarm - REAL seconds (T8), never warped. */
-val DEBUG_TEST_ALARM_LEAD: Duration = Duration.ofSeconds(5)
 
 /** True when the test alarm may be scheduled: never while a night is active (D1). Pure so it is JVM-testable without Android. */
 fun isDebugTestAlarmAllowed(nightActive: Boolean): Boolean = !nightActive
 
 /**
- * Arms the Debug screen's test alarm [DEBUG_TEST_ALARM_LEAD] ahead of [now], through [scheduleTestPhoneAlarm] -
+ * Arms the Debug screen's test alarm for [now], so it rings at once, through [scheduleTestPhoneAlarm] -
  * its own request code and intent extra, never the real night alarm's (D1). Refuses (and logs why) while a
  * night is active, as a second guard behind the disabled button. Returns whether arming succeeded.
  */
@@ -32,8 +30,7 @@ fun scheduleDebugTestAlarm(context: Context, now: Instant): Boolean {
         appendSetupLog(context, NightLogEvent(now, "debug_test_alarm", mapOf("refused" to "true", "cause" to "a night is active")))
         return false
     }
-    val at = now.plus(DEBUG_TEST_ALARM_LEAD)
-    val armed = scheduleTestPhoneAlarm(context, at)
-    appendSetupLog(context, NightLogEvent(now, "debug_test_alarm", mapOf("scheduledFor" to at.toString(), "armed" to armed.toString())))
+    val armed = scheduleTestPhoneAlarm(context, now)
+    appendSetupLog(context, NightLogEvent(now, "debug_test_alarm", mapOf("scheduledFor" to now.toString(), "armed" to armed.toString())))
     return armed
 }

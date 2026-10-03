@@ -1,0 +1,142 @@
+package com.nikita.sleepcycle.night
+
+// File purpose: the Auto simulation speed (owner spec, 2026-10-02) - which speed Auto runs at for where the
+// night is, and the tick it books so the slow-down lands on time.
+
+import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.engine.AlarmPlan
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+import java.time.Instant
+
+class AutoSimulationSpeedTest {
+    private val now = Instant.parse("2026-10-02T03:15:00Z")
+
+    @Test
+    fun `far from the next alarm Auto runs at 3600x`() {
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = null))
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:45:01Z"), followUpAt = null))
+    }
+
+    @Test
+    fun `from 30 simulated minutes before the next alarm Auto slows to 600x`() {
+        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:45:00Z"), followUpAt = null))
+        assertEquals(600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:01Z"), followUpAt = null))
+    }
+
+    @Test
+    fun `from 10 simulated minutes before the next alarm Auto slows to 60x`() {
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:25:00Z"), followUpAt = null))
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T03:17:00Z"), followUpAt = null))
+    }
+
+    @Test
+    fun `a pending nudge or own nap closer than the planned alarm is the one Auto slows down for`() {
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:20:00Z")))
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = Instant.parse("2026-10-02T03:20:00Z")))
+    }
+
+    @Test
+    fun `the next tick is pulled in to land on each slow-down, so every stage starts on time`() {
+        val alarm = Instant.parse("2026-10-02T07:35:00Z")
+        assertEquals(Instant.parse("2026-10-02T07:05:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T07:10:00Z"), Instant.parse("2026-10-02T07:00:00Z"), alarm, followUpAt = null))
+        assertEquals(Instant.parse("2026-10-02T07:25:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T07:30:00Z"), Instant.parse("2026-10-02T07:20:00Z"), alarm, followUpAt = null))
+    }
+
+    @Test
+    fun `the next tick is left alone when it already comes first, or both slow-downs have passed`() {
+        val alarm = Instant.parse("2026-10-02T07:35:00Z")
+        assertEquals(Instant.parse("2026-10-02T03:20:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T03:20:00Z"), now, alarm, followUpAt = null))
+        assertEquals(Instant.parse("2026-10-02T07:31:00Z"), autoSpeedTickAt(Instant.parse("2026-10-02T07:31:00Z"), Instant.parse("2026-10-02T07:26:00Z"), alarm, followUpAt = null))
+        assertEquals(null, autoSpeedTickAt(null, now, alarm, followUpAt = null))
+    }
+
+    @Test
+    fun `waking drops Auto to 1x without moving the simulated clock`() {
+        val anchorReal = Instant.parse("2026-10-02T14:00:00Z")
+        val auto = SimulationSpeed(ClockWarp(600, anchorReal, Instant.parse("2026-10-02T23:00:00Z")), auto = true)
+        val realNow = anchorReal.plusSeconds(30) // 30 real s at 600x = 5 simulated h
+
+        val dropped = dropToRealSpeed(auto, realNow)
+
+        assertEquals(false, dropped.auto)
+        assertEquals(1, dropped.warp?.speed)
+        assertEquals(Instant.parse("2026-10-03T04:00:00Z"), virtualNow(dropped.warp, realNow))
+        assertEquals(Instant.parse("2026-10-03T04:01:00Z"), virtualNow(dropped.warp, realNow.plusSeconds(60)))
+    }
+
+    @Test
+    fun `waking drops 60x to 1x too`() {
+        val anchorReal = Instant.parse("2026-10-02T14:00:00Z")
+        val fast = SimulationSpeed(ClockWarp(60, anchorReal, Instant.parse("2026-10-02T23:00:00Z")), auto = false)
+
+        val dropped = dropToRealSpeed(fast, anchorReal.plusSeconds(60))
+
+        // 60 real s at 60x = one simulated hour.
+        assertEquals(SimulationSpeed(ClockWarp(1, anchorReal.plusSeconds(60), Instant.parse("2026-10-03T00:00:00Z")), auto = false), dropped)
+    }
+
+    @Test
+    fun `choosing Auto starts at the speed Auto wants right now, and the chip shows Auto`() {
+        val realNow = Instant.parse("2026-10-02T14:00:00Z")
+        val chosen = chooseSimulationSpeed(SimulationSpeed(warp = null, auto = false), SpeedChoice.AUTO, realNow, autoSpeedNow = 60)
+
+        assertEquals(60, chosen.warp?.speed)
+        assertEquals(true, chosen.auto)
+        assertEquals(SpeedChoice.AUTO, speedChoiceOf(chosen))
+    }
+
+    @Test
+    fun `choosing 60x leaves Auto`() {
+        val realNow = Instant.parse("2026-10-02T14:00:00Z")
+        val auto = SimulationSpeed(ClockWarp(600, realNow, Instant.parse("2026-10-02T23:00:00Z")), auto = true)
+
+        val chosen = chooseSimulationSpeed(auto, SpeedChoice.FAST, realNow, autoSpeedNow = 3600)
+
+        assertEquals(SimulationSpeed(ClockWarp(60, realNow, Instant.parse("2026-10-02T23:00:00Z")), auto = false), chosen)
+        assertEquals(SpeedChoice.FAST, speedChoiceOf(chosen))
+    }
+
+    @Test
+    fun `a clock at real speed, or one left at 1x after a fast run, shows 1x`() {
+        assertEquals(SpeedChoice.REAL, speedChoiceOf(SimulationSpeed(warp = null, auto = false)))
+        val drifted = ClockWarp(1, Instant.parse("2026-10-02T14:00:00Z"), Instant.parse("2026-10-02T23:00:00Z"))
+        assertEquals(SpeedChoice.REAL, speedChoiceOf(SimulationSpeed(drifted, auto = false)))
+    }
+
+    @Test
+    fun `an alarm already behind the clock is not waited for`() {
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:10:00Z")))
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = null))
+    }
+
+    // Emulator test, 2026-10-03: with no sleep seen yet the planned alarm is projected from "now", so it stays
+    // the same distance ahead and Auto never slowed down - 36 simulated hours passed in 30 real seconds. Auto
+    // now waits for sleep at 60x, and only a fixed alarm (the deadline) counts as one to run towards.
+
+    private fun plan(wakeAt: Instant?, onsetIsProjected: Boolean) =
+        AlarmPlan(AlarmMode.FULL_CYCLES, wakeAt, cycles = 5, referenceOnset = now, onsetIsProjected = onsetIsProjected, reason = "")
+
+    @Test
+    fun `while waiting for sleep with no fixed alarm ahead Auto runs at 60x`() {
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = null, waitingForSleep = true))
+    }
+
+    @Test
+    fun `while waiting for sleep a deadline far ahead still runs at 3600x`() {
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:00:00Z"), followUpAt = null, waitingForSleep = true))
+    }
+
+    @Test
+    fun `a projected alarm is not one Auto runs towards, the deadline is`() {
+        val deadline = Instant.parse("2026-10-02T07:00:00Z")
+        assertEquals(deadline, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline))
+        assertEquals(null, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline = null))
+    }
+
+    @Test
+    fun `once sleep is seen the planned alarm is the one Auto runs towards`() {
+        val wakeAt = Instant.parse("2026-10-02T06:30:00Z")
+        assertEquals(wakeAt, autoSpeedAlarmAt(plan(wakeAt, onsetIsProjected = false), deadline = Instant.parse("2026-10-02T07:00:00Z")))
+    }
+}

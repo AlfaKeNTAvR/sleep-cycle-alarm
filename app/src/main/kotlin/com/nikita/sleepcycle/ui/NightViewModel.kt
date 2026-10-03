@@ -34,7 +34,9 @@ import com.nikita.sleepcycle.night.readAppSettings
 import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.readPendingFollowUp
 import com.nikita.sleepcycle.night.startManualNap
+import com.nikita.sleepcycle.night.SpeedChoice
 import com.nikita.sleepcycle.night.pressImUp
+import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
 import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.BedtimeAudioSettings
@@ -83,7 +85,6 @@ import com.nikita.sleepcycle.ui.state.buildUiState
 import com.nikita.sleepcycle.ui.state.canConfirmEndNight
 import com.nikita.sleepcycle.ui.state.canRequestEndNight
 import com.nikita.sleepcycle.ui.state.closeToNightOrBeforeBed
-import com.nikita.sleepcycle.ui.state.closeToNightOrSettings
 import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
@@ -209,6 +210,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         val ratings = target?.ratings
         if (ratings != null && settings?.sleepRating?.enabled == true) MorningRatingCard(ratings.afterEndNight?.rating) else null
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Owner request, 2026-10-03: the Debug section's "Simulated start" time, for the Settings screen. */
+    val simulatedStartTime: StateFlow<LocalTime> = debug.simulatedStartTime
 
     /** Which Setup wizard page (if any) is showing; null means the one-page checklist. See [setupWizardPageState]. */
     val setupWizardPage: StateFlow<SetupWizardPage?> = setupWizardPageState.asStateFlow()
@@ -511,12 +515,6 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeLogs() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
 
-    /** Reachable from Settings' Debug row AND from the Night screen (a debug build shows a Debug icon there too) - the simulator's buttons need to work while a simulated night is actually running, not just before it starts. */
-    fun openDebug() { screen.value = Screen.Debug }
-
-    /** X4/X5: back from Debug. See [closeToNightOrSettings] for why this is not simply "always Settings" - the night screen's own shortcut needs its way back too. */
-    fun closeDebug() { screen.value = closeToNightOrSettings(observedNightState.value != null) }
-
     // Setup wizard navigation. The wizard is entered either by resolveInitialScreen (fresh install) or by
     // runSetupWizardAgain (the checklist's "Run setup again"); openSetup/closeSetup/exitSetupWizard above
     // always clear it back to null so a later Settings-menu open defaults to the checklist.
@@ -707,7 +705,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     fun confirmImUp() {
         confirmingImUp.value = false
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { pressImUp(context, nowInstant()) }
+            withContext(Dispatchers.IO) {
+                // Owner spec, 2026-10-02: a simulated night drops to 1x first, so the nudge is armed at real speed.
+                dropSimulationToRealSpeed(context)
+                pressImUp(context, nowInstant())
+            }
             refreshPendingOutOfBedNudge()
             requestImmediateTick(context)
         }
@@ -780,11 +782,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     // Debug screen actions: thin delegates to DebugScreenController.kt, which owns the actual state.
     fun setSimulatedBandData(enabled: Boolean) = debug.setSimulatedBandData(enabled)
-    fun setSpeed(speed: Int) = debug.setSpeed(speed)
+    fun setSimulatedStartTime(time: LocalTime) = debug.setSimulatedStartTime(time)
+    fun setSpeedChoice(choice: SpeedChoice) = debug.setSpeedChoice(choice)
     fun setSimulatedAsleep(asleep: Boolean) = debug.setSimulatedAsleep(asleep)
-    fun clearSimulatedSleep() = debug.clearSimulatedSleep()
-    fun applyClockJump(time: LocalTime) = debug.applyClockJump(time)
-    fun resetClockToRealTime() = debug.resetToRealTime()
     fun ringDebugTestAlarm() = debug.ringTestAlarm()
 }
 

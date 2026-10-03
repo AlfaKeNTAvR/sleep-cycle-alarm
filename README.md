@@ -54,55 +54,60 @@ the phone alarm, the out-of-bed nudge and the night log all work without waiting
 
 ### How to use debug mode
 
-The Debug screen has three groups of controls, in the order they appear:
+The **Debug** section in Settings, just above More (debug builds only), has two controls:
 
-- **Simulated band data** (switch): sleep segments come from the **Asleep** toggle further down instead of a
-  real Gadgetbridge sync. Turn this on first - the two clock controls below are both locked until it is,
-  since a warped clock against real band data makes no sense (the band's timestamps would always read hours
-  stale against a virtual "now").
-- **Simulated clock speed** (1x / 10x / 60x / 600x) and **Set simulated time**: the app's own idea of "now"
-  runs this many times faster than the real clock, or jumps straight to a chosen hour and minute. Everything
-  the app computes - the plan, the log, the alarms - is measured against that virtual time; only the instant
-  actually handed to Android's alarm system is converted back to a real one, so alarms genuinely ring, just
-  sooner in real time than the virtual gap suggests. Both controls are locked until Simulated band data is on,
-  and the time jump is locked outright while a night is running - pick your speed and starting time before
-  tapping Start night, not during. Changing speed never itself moves the clock, only how fast it runs from
-  then on. **Reset to real time** is the only thing that discards a jump.
-- **Asleep** toggle and **Clear simulated sleep**: flips the simulator between asleep and awake, the same way
-  the band would report it. Locked until Simulated band data is on. **Ring phone alarm**, lower down, is
-  unrelated to all of this: a standalone test alarm 5 real seconds out, always real time regardless of the
+- **Simulated band data** (switch): sleep segments come from the **Asleep** switch on the Night screen
+  instead of a real Gadgetbridge sync. Turn this on first - the speed chips are locked until it is, since a
+  warped clock against real band data makes no sense (the band's timestamps would always read hours stale
+  against a virtual "now"). Locked while a night is running.
+- **Ring phone alarm**: a standalone test alarm that rings straight away, always real time regardless of the
   simulated clock, for checking the ring screen in daylight with no night running.
 
-**The banner**: once any control above is live, an amber banner reading **SIMULATED** and/or
-**HH:mm[, Nx]** appears on Before bed, the Night screen and the tracking notification. The time is
-the app's own current virtual time; the multiplier is left off at 1x, so a jump with no speed change just
-shows the time.
+Once simulated band data is on, the Night screen's amber banner becomes the simulation controls: the
+simulated clock, the speed chips and an **Asleep** chip:
 
-**Order of operations for a full simulated night**: turn on Simulated band data, pick a speed (60x is a good
-balance - a 4.5 h night finishes in a few minutes and the UI is still easy to follow), start the night, then
-drive it entirely from the Debug screen's Asleep toggle. Keep the app open throughout: below one real minute
+- **1x / 60x / Auto**: the app's own idea of "now" runs this many times faster than the real clock.
+  Everything the app computes - the plan, the log, the alarms - is measured against that virtual time; only
+  the instant handed to Android's alarm system is converted back to a real one, so alarms genuinely ring,
+  just sooner in real time. Changing speed never itself moves the clock, only how fast it runs from then on.
+- **Auto** runs at 3600x, then 600x from 30 simulated minutes before the next alarm (the planned one, or a pending
+  nudge or nap), then 60x from 10 minutes before. The chip shows the speed it is running at.
+- **Back to 1x**: switching **Asleep** either way, pressing **I'm up**, and any alarm starting to ring all
+  put the clock back to 1x and leave Auto, so whatever happens next is watched at real speed. Pick 60x or
+  Auto again to skip ahead.
+- **End night** puts the clock back on real time, turns the switches off and empties the simulated sleep.
+  There is no "set simulated time": a simulated night starts at the real time.
+
+**The banner**: once simulated band data is on, an amber-outlined block reads **SIMULATED** on the left
+and the app's own current virtual time on the right, on Before bed (without controls) and on the Night
+screen (with them). The tracking notification carries the same words as text.
+
+**Order of operations for a full simulated night**: turn on Simulated band data, start the night, then drive
+it entirely from the Night screen's Simulation card: Asleep on, then Auto (or 60x, a good balance to follow
+the plan as it moves). Keep the app open throughout: below one real minute
 of delay, a sync tick runs from a coroutine inside the app process rather than Android's alarm system, since
 the alarm system's own Doze throttling would otherwise swallow a tick that is only seconds away in real time -
 which means a simulated night dies if the app process is killed, unlike a real one.
 
 ### Walkthrough
 
+Since 2026-10-02 the speed chips and the Asleep chip live only in the Night screen's top banner, and
+switching Asleep drops the clock to 1x - so wherever a step below says to turn Asleep on or off, do it on the
+Night screen, then tap **60x** again to carry on at that speed.
+
 1. Install the **debug** build (`app-debug.apk`, per the Build section above - not the release one).
-2. Open the app, go to **Setup** (gear icon), scroll to the bottom, tap **Debug**.
+2. Open the app, go to **Settings** (gear icon) and scroll down to the **Debug** section.
 3. Turn on **Simulated band data**. With it on, the app never needs Gadgetbridge or the band configured at
-   all for this walkthrough - the checklist below no longer needs the band steps. Pick **60x** on the
-   Simulated clock speed row.
-4. Tap back to **Setup**: only the phone-side items (Notifications, Full-screen alarms, Battery
+   all for this walkthrough - the checklist below no longer needs the band steps.
+4. Open **Setup** from Settings: only the phone-side items (Notifications, Full-screen alarms, Battery
    optimisation) should still be red. Grant any that are.
-5. Tap **Done** to reach **Before bed**. You should see the amber banner reading **SIMULATED SLEEP DATA  ·
-   SIMULATED HH:mm, 60x** (the current virtual time) and **Start night** enabled with no band connected. Pick
+5. Tap **Done** to reach **Before bed**. You should see the amber-outlined block reading **SIMULATED** with
+   the current time on the right and **Start night** enabled with no band connected. Pick
    **4.5 h** (3 cycles) on the "Sleep up to" row and leave the deadline switch off.
 6. Tap **Start night**. A **"This is a simulated night"** dialog appears - this confirmation exists so a
    simulated night can never start by accident at real bedtime. Tap **Start simulated night**.
-7. You land on the **Night screen**: amber banner, a gear icon top-right (only in a debug build) that takes
-   you back to the Debug screen without leaving the running night.
-8. Tap that gear icon, then turn the **Asleep** toggle on. The **Simulated timeline** list grows a `LIGHT`
-   entry right there. Tap back - the Night screen shows **"Morning alarm"**, the alarm's own time as the big
+7. You land on the **Night screen**, with the simulation controls in the amber banner at the top.
+8. Tap the **Asleep** chip in the banner, then tap **60x**. The Night screen shows **"Morning alarm"**, the alarm's own time as the big
    number, and how long until it: 4.5 h away in virtual time, which at 60x is a few real minutes out. Since N1
    that is the whole screen, in every mode and whether you are asleep or awake - which alarm is coming, when
    it rings, how long until then.
@@ -189,10 +194,30 @@ which means a simulated night dies if the app process is killed, unlike a real o
     recording how it ended. The same menu's **Delete** removes a
     night for good after one confirmation, which is how to clear desk-test logs out.
 15. Separately, any time no night is active (the button is disabled, with a reason shown underneath, while a
-    night is running - it must never be able to replace the real night's own alarm): from the Debug screen,
+    night is running - it must never be able to replace the real night's own alarm): from Settings' Debug section,
     tap **Ring phone alarm** to check the full-screen alarm activity, the sound and the notification's Stop
-    button in daylight, 5 real seconds later regardless of any simulated clock speed. This writes to
+    button in daylight, straight away regardless of any simulated clock speed. This writes to
     `setup.jsonl`, not a night log - it is not a night.
+
+## Test on the emulator (no phone)
+
+A headless Android emulator (AVD `sca35`, API 35) runs the debug build on the PC, and the `testplayer` module is
+a stand-in for an audiobook app: a looping tone with a media session, so the bedtime fade and the pause on sleep
+behave as on a phone. `scripts/emulator.sh` drives both; its header lists every command and the one-time setup.
+
+```bash
+source scripts/env.sh
+./gradlew :app:assembleDebug :testplayer:assembleDebug
+scripts/emulator.sh start && scripts/emulator.sh install && scripts/emulator.sh open
+scripts/emulator.sh tap "Start night"     # after Setup and the Debug switch, as in the walkthrough
+scripts/emulator.sh play                  # media starts; the fade begins about 1 s later
+scripts/emulator.sh log                   # media_fade_start, media_fade_step, ...
+```
+
+It does not cover Bluetooth headphones or a real band.
+
+Whole-night scenarios that need no emulator run on Robolectric with the ordinary tests
+(`app/src/test/kotlin/com/nikita/sleepcycle/scenario/`): the real night code against a simulated Android.
 
 ## Known limits
 

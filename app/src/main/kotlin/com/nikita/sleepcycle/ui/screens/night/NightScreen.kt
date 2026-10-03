@@ -24,13 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.DebugQuickControls
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
-import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
@@ -39,6 +37,7 @@ import com.nikita.sleepcycle.ui.state.DebugUiState
 import com.nikita.sleepcycle.ui.state.NightScreenContent
 import com.nikita.sleepcycle.ui.state.NightUiState
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
+import com.nikita.sleepcycle.night.SpeedChoice
 import com.nikita.sleepcycle.night.SleepRating
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.heightIn
@@ -62,9 +61,8 @@ fun NightScreen(
     onDone: () -> Unit,
     morningRating: MorningRatingCard?,
     onRateMorning: (SleepRating) -> Unit,
-    onSpeedChange: (Int) -> Unit,
+    onSpeedChoice: (SpeedChoice) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
-    onOpenDebug: () -> Unit = {},
 ) {
     // P3 (owner request, 2026-09-30): the alarm block (label, big time, countdown) is centred against the WHOLE
     // screen, drawn over the chrome rather than inside the space the chrome leaves, so its position never
@@ -79,19 +77,19 @@ fun NightScreen(
                 // Owner request, 2026-09-30: "Not synced yet" is not good news, so no green dot - grey (null) until
                 // the first sync answers, then green or red.
                 StatusLine(text = statusLineText(state), ok = state.lastSyncOk)
-                // BuildConfig.DEBUG-gated, same as the Debug row Settings carries (SettingsScreen.kt): the
-                // simulator's buttons must be reachable while a simulated night runs, not just before it starts.
-                if (BuildConfig.DEBUG) {
-                    SlidersButton(
-                        contentDescription = stringResource(R.string.content_description_open_debug),
-                        onClick = onOpenDebug,
-                    )
-                }
+                // Owner spec, 2026-10-02: no Debug shortcut here any more - the simulator's controls are in the
+                // banner below, and the Debug screen it opened is now a Settings section, inert mid-night anyway.
             }
             // W11 (owner request): the simulated-clock banner sits UNDER the sync line and the debug button, not
             // above them - the sync line is the one thing worth reading first, and the banner only ever renders on
             // a simulated night anyway.
-            DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
+            // Owner pick, 2026-10-02 (option B): on a simulated night the banner IS the control block - clock,
+            // speed chips and Asleep - so the bottom keeps only the real buttons. Otherwise the plain banner.
+            if (debug.simulatedBandData) {
+                DebugQuickControls(state = debug, simulatedTimeValue = state.simulatedTimeValue, onSpeedChoice = onSpeedChoice, onSetSimulatedAsleep = onSetSimulatedAsleep)
+            } else {
+                DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
+            }
             // P1: while band data is not reaching the app, say so where it cannot be missed - see
             // NightUiState.bandNotSyncingWarning.
             if (state.bandNotSyncingWarning) BandNotSyncingWarning()
@@ -110,11 +108,6 @@ fun NightScreen(
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
-
-            // W7: the speed row and the Asleep toggle, right where a simulated night is actually watched - this
-            // screen is where the owner spends the whole simulation, and driving it meant a round trip to Debug
-            // for every change. Renders nothing at all on a real night.
-            DebugQuickControls(state = debug, onSpeedChange = onSpeedChange, onSetSimulatedAsleep = onSetSimulatedAsleep)
 
             // P3 (owner spec, 2026-09-30): "Nap for 20 min", a filled amber button stacked ABOVE the outlined
             // end-night button, offered only while the out-of-bed nudge is pending (NightUiState.napButtonMinutes).

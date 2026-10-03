@@ -24,14 +24,29 @@ class BuildLogsUiStateTest {
     }
 
     @Test
-    fun `names each row by the night's own date and time in the local zone`(@TempDir dir: Path) {
+    fun `names each row by when the night started, not when its log was last written`(@TempDir dir: Path) {
+        // Owner request, 2026-10-02: the start is what he remembers a night by.
         val file = logFile(dir, "night-20260918-0011.jsonl", sizeBytes = 10, modifiedAt = Instant.parse("2026-09-18T06:17:31Z"))
 
         val state = buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE)
 
         assertEquals(1, state.logs.size)
-        assertEquals("2026-09-18 08:17", state.logs.single().displayName)
+        assertEquals("2026-09-18 00:11", state.logs.single().displayName)
         assertEquals(file, state.logs.single().file)
+    }
+
+    @Test
+    fun `a simulated night is named by its start too`(@TempDir dir: Path) {
+        val file = logFile(dir, "night-sim-20261002-1830.jsonl", 10, Instant.parse("2026-10-02T17:00:00Z"))
+
+        assertEquals("2026-10-02 18:30", buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE).logs.single().displayName)
+    }
+
+    @Test
+    fun `a file whose name carries no start falls back to when it was last written`(@TempDir dir: Path) {
+        val file = logFile(dir, "night-unknown.jsonl", 10, Instant.parse("2026-09-18T06:17:31Z"))
+
+        assertEquals("2026-09-18 08:17", buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE).logs.single().displayName)
     }
 
     @Test
@@ -41,7 +56,7 @@ class BuildLogsUiStateTest {
 
         val state = buildLogsUiState(listOf(newest, oldest), emptyMap(), TEST_ZONE)
 
-        assertEquals(listOf("2026-09-18 08:17", "2026-09-16 23:40"), state.logs.map { it.displayName })
+        assertEquals(listOf("2026-09-18 00:11", "2026-09-16 23:40"), state.logs.map { it.displayName })
     }
 
     @Test

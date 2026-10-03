@@ -17,7 +17,7 @@ package com.nikita.sleepcycle.night
 //
 // V7 REVERSES T7's own storage choice: `speed` used to be its own persisted field, a SECOND record alongside
 // [ClockWarp] (in DebugSettingsStore.kt's readClockWarp/writeClockWarp), kept in sync by
-// DebugScreenController.setSpeed writing both in two separate, un-atomic coroutines. Process death between the
+// DebugScreenController.setSpeedChoice writing both in two separate, un-atomic coroutines. Process death between the
 // two writes could leave `speed = 60, warp = null` on disk: the 60x chip would show selected while the clock
 // actually ran at 1x, and the next jump would silently re-apply the stale 60x. [speed] is now DERIVED from
 // [warp] - the warp is the only place a speed lives, so the two can no longer disagree by construction.
@@ -42,6 +42,8 @@ data class DebugOptions(
     val simulatedBandData: Boolean = false,
     /** U3: the currently active [ClockWarp], or null when the clock is running at real time - see this file's own header for why this lives here rather than [isAnyEnabled] reading AppClock directly. */
     val warp: ClockWarp? = null,
+    /** Owner spec, 2026-10-02: the Night screen's Auto chip is selected - each tick sets the speed for where the night is (AutoSimulationSpeed.kt). Live, like [warp]; cleared with every other switch when a night ends. */
+    val autoSpeed: Boolean = false,
 ) {
     /** V7: derived, never its own persisted field - see this file's own header for why. 1 means real time, one of [SIMULATION_SPEEDS] otherwise. */
     val speed: Int
@@ -63,48 +65,23 @@ data class DebugOptions(
  * U1: the speed selector requires simulated band data - a warped clock together with REAL band data is
  * nonsense (the band's samples carry real timestamps, so an engine reading virtual `now` against them would
  * see data that looks hours stale and conclude the owner never slept). Pure so the Debug screen's enablement
- * and [com.nikita.sleepcycle.ui.DebugScreenController.setSpeed]'s own second guard can never disagree.
+ * and [com.nikita.sleepcycle.ui.DebugScreenController.setSpeedChoice]'s own second guard can never disagree.
  */
 fun isSpeedSelectorAllowed(simulatedBandData: Boolean): Boolean = simulatedBandData
 
 /**
- * U1 + T11: the jump-to-time action requires simulated band data (same reasoning as [isSpeedSelectorAllowed])
- * AND no active night - a jump mid-night would move time under alarms already armed at T5-converted real
- * instants, and under an engine that has already made decisions against the pre-jump timeline; not worth
- * supporting.
- */
-fun isJumpToTimeAllowed(simulatedBandData: Boolean, nightActive: Boolean): Boolean = simulatedBandData && !nightActive
-
-/**
- * V4: turning simulated band data OFF requires no active night, same disabled-with-reason pattern as
- * [isJumpToTimeAllowed]. T11's own reasoning ("moving time under already-armed alarms is not worth supporting")
- * applies to every warp mutation, not just the jump - turning this switch off calls the same
- * [com.nikita.sleepcycle.ui.DebugScreenController]'s clearClockWarp the jump's own "Reset to real time" does
- * (U1), so mid-night it would clear the warp out from under a running night's own FROZEN [NightState.debugOptions]
+ * V4: turning simulated band data OFF requires no active night ("moving time under already-armed alarms is
+ * not worth supporting") - turning this switch off clears the clock warp (U1), so mid-night it would clear
+ * the warp out from under a running night's own FROZEN [NightState.debugOptions]
  * snapshot: `nowInstant()` snaps back to real wall time while the frozen snapshot still routes ticks to the
  * simulator, extending the open simulated segment from (say) virtual 03:00 to real 14:30 - an 11-hour sleep
  * that never happened. Turning the switch ON is never refused: it has no effect on an ALREADY-frozen night's
  * own snapshot either way, so there is nothing unsafe about it - but the whole toggle is disabled mid-night
- * anyway (see [com.nikita.sleepcycle.ui.state.DebugUiState]) for the same reason the jump's own control is:
+ * anyway (see [com.nikita.sleepcycle.ui.state.DebugUiState]):
  * a switch that would do nothing to the running night, and something actively harmful in the one direction
  * that matters, is simplest disabled outright rather than half-guarded.
  */
 fun isSimulatedBandDataToggleAllowed(nightActive: Boolean): Boolean = !nightActive
-
-/**
- * W2 (owner decision, 2026-09-20): "Reset to real time" does NOT require simulated band data, unlike the
- * speed selector and the jump. U1's gate exists to stop a warp and real band data being live together; this
- * action is how a warp STOPS being live, so gating it on the same switch only traps the owner with a clock
- * they cannot put back - exactly the state left behind by turning that switch off first. A gate belongs on
- * the actions that create state, not on the ones that clear it. The same reasoning applies to clearing the
- * simulated sleep timeline (see [isSimulatedSleepControlAllowed]'s own note).
- *
- * It does still require no active night, which V4 missed here while guarding every other path that clears
- * the warp: clearing it mid-night snaps `nowInstant()` back to real wall time while the night's own frozen
- * options keep routing ticks to the simulator, so the open simulated segment is stretched from the virtual
- * hour to the real one - hours of "sleep" that never happened.
- */
-fun isResetToRealTimeAllowed(nightActive: Boolean): Boolean = !nightActive
 
 /**
  * The single seam between "what is stored" and "what the app may act on". Returns [stored] unchanged in a

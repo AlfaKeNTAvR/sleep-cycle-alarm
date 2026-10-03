@@ -14,13 +14,16 @@ package com.nikita.sleepcycle.night
 //
 // U2 adds [normalizedWarp]: the one place that decides whether a (speed, anchorReal, anchorVirtual) triple is
 // actually a live warp or the identity in disguise, so every writer of a [ClockWarp] (DebugScreenController's
-// setSpeed/applyClockJump) can route through it and never hand-roll the null-vs-ClockWarp choice differently.
+// setSpeedChoice, and Auto) can route through it and never hand-roll the null-vs-ClockWarp choice differently.
 // T12 adds [formatSimulatedTimeValue]: the live "HH:mm[, Nx]" reading shown on the debug banner/notification.
+// Owner request, 2026-10-03, adds [nextOccurrenceOf]: where switching simulated band data on starts the clock.
 
 import java.time.Duration
 import java.time.Instant
 import java.time.DateTimeException
+import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
@@ -39,8 +42,13 @@ data class ClockWarp(val speed: Int, val anchorReal: Instant, val anchorVirtual:
  * real seconds. 600x is also the practical ceiling: TickScheduling's own [IN_PROCESS_TICK_MIN_DELAY] floor is
  * 250 ms, and the engine's shortest sync gap is 5 simulated minutes, which at 600x is exactly 500 real ms - go
  * much faster and that floor starts binding, and the clock quietly stops keeping the speed it advertises.
+ *
+ * Owner spec, 2026-10-02: this is now every speed the clock can run at, not the chips. The chips are 1x, 60x
+ * and Auto (AutoSimulationSpeed.kt's SpeedChoice); Auto runs at 3600x, then 600x from 30 simulated minutes
+ * before an alarm and 60x from 10. No 10x (owner request). 3600x runs past the ceiling described above on
+ * purpose: Auto's 600x stage is what keeps the 60x slow-down landing on time.
  */
-val SIMULATION_SPEEDS: List<Int> = listOf(1, 60, 600)
+val SIMULATION_SPEEDS: List<Int> = (listOf(1) + AUTO_STAGES.map { it.speed } + AUTO_FAR_SPEED).distinct().sorted()
 
 /**
  * The current virtual instant, given the real wall-clock instant [realNow] - identity when [warp] is null.
@@ -79,7 +87,7 @@ fun normalizedWarp(speed: Int, anchorReal: Instant, anchorVirtual: Instant): Clo
     if (speed == 1 && anchorVirtual == anchorReal) null else ClockWarp(speed, anchorReal, anchorVirtual)
 
 /**
- * [com.nikita.sleepcycle.ui.DebugScreenController.setSpeed]'s own computation, extracted so a JVM test can call
+ * [com.nikita.sleepcycle.ui.DebugScreenController.setSpeedChoice]'s own computation, extracted so a JVM test can call
  * the SAME function the controller does rather than re-deriving equivalent arithmetic locally (V10's own
  * complaint about the test file this replaces). Re-anchors at the CURRENT virtual instant and [speed] in one
  * step, so changing speed never itself jumps the clock - only the rate it moves at from here on.
@@ -87,18 +95,30 @@ fun normalizedWarp(speed: Int, anchorReal: Instant, anchorVirtual: Instant): Clo
 fun computeSpeedChangeWarp(currentWarp: ClockWarp?, speed: Int, realNow: Instant): ClockWarp? =
     normalizedWarp(speed, anchorReal = realNow, anchorVirtual = virtualNow(currentWarp, realNow))
 
+/** Owner request, 2026-10-03: the Debug section's "Simulated start" until the owner picks another. */
+val DEFAULT_SIMULATED_START: LocalTime = LocalTime.of(23, 0)
+
 /**
- * [com.nikita.sleepcycle.ui.DebugScreenController.applyClockJump]'s own computation, extracted for the same
- * reason as [computeSpeedChangeWarp]. Keeps the current speed, re-anchoring virtual time at [newVirtual].
+ * Owner request, 2026-10-03: the instant switching simulated band data on jumps the clock to - [time] today in
+ * [zone] when that is not yet behind [realNow], else [time] tomorrow. Exactly now counts as today: it is not a
+ * jump at all, and a whole day ahead would be the surprise. A [time] the spring DST jump skips moves to just
+ * after the gap (ZonedDateTime.of's own rule), so 02:30 on that night is 03:30.
  */
-fun computeJumpWarp(currentWarp: ClockWarp?, newVirtual: Instant, realNow: Instant): ClockWarp? =
-    normalizedWarp(currentWarp?.speed ?: 1, anchorReal = realNow, anchorVirtual = newVirtual)
+fun nextOccurrenceOf(time: LocalTime, zone: ZoneId, realNow: Instant): Instant {
+    val today = realNow.atZone(zone).toLocalDate()
+    val todays = ZonedDateTime.of(today, time, zone).toInstant()
+    return if (!todays.isBefore(realNow)) todays else ZonedDateTime.of(today.plusDays(1), time, zone).toInstant()
+}
 
 /** W1: how often the UI re-samples the clock on an unwarped night - the cadence the app has always used, one sample per half minute. */
 const val UI_TICKER_INTERVAL_MS: Long = 30_000L
 
-/** W1: the UI never re-samples faster than this, however fast the clock runs - twice a second already looks continuous and the rebuild is pure computation. */
-private const val UI_TICKER_MIN_INTERVAL_MS: Long = 500L
+/**
+ * W1: the UI never re-samples faster than this, however fast the clock runs - the rebuild is pure computation.
+ * Owner request, 2026-10-02: 100 ms (10 redraws a second), down from 500 ms, so Auto's 3600x moves the clock in
+ * 6-minute steps rather than half-hour ones. Only a warped (simulated) clock ever samples this fast.
+ */
+private const val UI_TICKER_MIN_INTERVAL_MS: Long = 100L
 
 /** W1: how much SIMULATED time the readout aims to advance per sample, which is what makes a warped clock look like it is moving rather than jumping. */
 private const val UI_TICKER_SIMULATED_STEP_MS: Long = 60_000L
