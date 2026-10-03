@@ -111,8 +111,8 @@ fun DebugQuickControls(
 }
 
 /**
- * The amber-outlined simulation block: "SIMULATED" on the left, the clock ([simulatedTimeValue]) in the middle,
- * the live media volume on the right (owner request, 2026-10-02), then [content] - the Night screen's controls.
+ * The amber-outlined simulation block: "SIMULATED" on the left, the live media volume in the middle and the
+ * clock ([simulatedTimeValue]) on the right (owner request, 2026-10-02), then [content] - the Night screen's controls.
  * Before bed shows it on its own, without controls.
  */
 @Composable
@@ -136,12 +136,12 @@ fun SimulatedBlock(simulatedTimeValue: String?, modifier: Modifier = Modifier, c
             if (simulatedTimeValue != null) {
                 Text(
                     text = simulatedTimeValue, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AmberAccent,
-                    modifier = Modifier.align(Alignment.Center),
+                    modifier = Modifier.align(Alignment.CenterEnd),
                 )
             }
             val volumeText = stringResource(R.string.debug_media_volume_value, rememberMediaVolumePercent())
             Row(
-                modifier = Modifier.align(Alignment.CenterEnd),
+                modifier = Modifier.align(Alignment.Center),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(VolumeIconGap),
             ) {
