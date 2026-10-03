@@ -199,6 +199,23 @@ Night screen, then tap **60x** again to carry on at that speed.
     button in daylight, straight away regardless of any simulated clock speed. This writes to
     `setup.jsonl`, not a night log - it is not a night.
 
+## Test on the emulator (no phone)
+
+A headless Android emulator (AVD `sca35`, API 35) runs the debug build on the PC, and the `testplayer` module is
+a stand-in for an audiobook app: a looping tone with a media session, so the bedtime fade and the pause on sleep
+behave as on a phone. `scripts/emulator.sh` drives both; its header lists every command and the one-time setup.
+
+```bash
+source scripts/env.sh
+./gradlew :app:assembleDebug :testplayer:assembleDebug
+scripts/emulator.sh start && scripts/emulator.sh install && scripts/emulator.sh open
+scripts/emulator.sh tap "Start night"     # after Setup and the Debug switch, as in the walkthrough
+scripts/emulator.sh play                  # media starts; the fade begins about 1 s later
+scripts/emulator.sh log                   # media_fade_start, media_fade_step, ...
+```
+
+It does not cover Bluetooth headphones or a real band.
+
 ## Known limits
 
 - Reboot during the night (e.g. a system update): the phone alarm is restored only once the phone is unlocked once after the reboot (`BootReceiver` needs credential-protected storage). Direct Boot support, which would restore it before first unlock, is deferred - not fixed in this batch.

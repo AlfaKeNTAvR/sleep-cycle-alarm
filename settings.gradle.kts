@@ -18,3 +18,5 @@ rootProject.name = "sleep-cycle-alarm"
 
 include(":app")
 include(":engine")
+
+include(":testplayer")
