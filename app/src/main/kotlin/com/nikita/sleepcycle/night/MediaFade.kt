@@ -33,6 +33,12 @@ package com.nikita.sleepcycle.night
 // Owner decision, 2026-10-02 (phone log 22:03): the one exception is the START of a fade. Start night and
 // every awakening set the volume to exactly the starting volume, raising a quieter one too ([fadeStartStep]),
 // so a fade after waking no longer restarts from wherever the last one had got to.
+//
+// Emulator test, 2026-10-03 (owner decision): media started while the band still says asleep used to play at
+// the parked volume all night - the pause on sleep only fires on falling asleep, and a fresh fade waited for the
+// band to confirm an awakening, which it does late, or never when the owner lies still. Pressing play now starts
+// a fresh fade whatever the band says ([shouldStartWakeFade]), and if the band still says asleep once that fade
+// has run its course, the media is paused and the volume parked again ([shouldPauseFinishedFade]).
 
 import android.content.Context
 import android.media.AudioManager
@@ -72,18 +78,52 @@ fun fadeTargetStep(startStep: Int, maxStep: Int, startedAt: Instant, now: Instan
     val elapsed = Duration.between(startedAt, now)
     if (elapsed < FADE_HOLD) return startStep
     val stepsDown = 1 + elapsed.minus(FADE_HOLD).dividedBy(FADE_STEP_EVERY).toInt()
-    val floorStep = maxOf(1, (maxStep * endPercent / FULL_RANGE_PERCENT).roundToInt())
+    val floorStep = fadeFloorStep(maxStep, endPercent)
     return minOf(startStep, maxOf(floorStep, startStep - stepsDown))
 }
 
 /**
- * Whether this tick should start a fade: Start night or falling asleep armed it ([fadeRearmed]), the band
- * does not say ASLEEP (not yet asleep, or awake again), media is playing, the fade is switched on, and the morning
- * alarm has not rung (once up, the owner's media is left alone - the same rule the pause on sleep follows).
- * Not armed: a fade is already running (or parked) and carries on by itself.
+ * Whether this tick should start a fade: Start night or falling asleep armed it ([fadeRearmed]), media is
+ * playing, the fade is switched on, and the morning alarm has not rung (once up, the owner's media is left
+ * alone - the same rule the pause on sleep follows). Whatever the band says: media started while it still says
+ * asleep is faded too (see this file's header). Not armed: a fade is already running (or parked) and carries on by itself.
  */
-fun shouldStartWakeFade(fadeRearmed: Boolean, sleepState: SleepState, mediaPlaying: Boolean, fadeEnabled: Boolean, morningAlarmRang: Boolean): Boolean =
-    fadeRearmed && sleepState != SleepState.ASLEEP && mediaPlaying && fadeEnabled && !morningAlarmRang
+fun shouldStartWakeFade(fadeRearmed: Boolean, mediaPlaying: Boolean, fadeEnabled: Boolean, morningAlarmRang: Boolean): Boolean =
+    fadeRearmed && mediaPlaying && fadeEnabled && !morningAlarmRang
+
+/** The fade's floor step: the Settings screen's ending volume [endPercent] of [maxStep], at least one step. */
+private fun fadeFloorStep(maxStep: Int, endPercent: Int): Int = maxOf(1, (maxStep * endPercent / FULL_RANGE_PERCENT).roundToInt())
+
+/**
+ * When a fade begun at [startStep] at [startedAt] has run its course: the step that reaches its floor (see
+ * [fadeTargetStep]), or the hold's end for a fade that starts at or below the floor and never steps.
+ */
+fun fadeEndsAt(startStep: Int, maxStep: Int, startedAt: Instant, endPercent: Int): Instant {
+    val stepsAfterFirst = maxOf(0, startStep - fadeFloorStep(maxStep, endPercent) - 1).toLong()
+    return startedAt.plus(FADE_HOLD).plus(FADE_STEP_EVERY.multipliedBy(stepsAfterFirst))
+}
+
+/**
+ * The fade's next step after [now], so a tick lands on it (ticks come only every 15 minutes while asleep): the
+ * hold's end, then every [FADE_STEP_EVERY], up to [fadeEndsAt], where [shouldPauseFinishedFade] is decided;
+ * null once the fade has run its course.
+ */
+fun nextFadeStepAt(startStep: Int, maxStep: Int, startedAt: Instant, now: Instant, endPercent: Int): Instant? {
+    val endsAt = fadeEndsAt(startStep, maxStep, startedAt, endPercent)
+    if (!now.isBefore(endsAt)) return null
+    val holdEndsAt = startedAt.plus(FADE_HOLD)
+    if (now.isBefore(holdEndsAt)) return holdEndsAt
+    val stepsDone = Duration.between(holdEndsAt, now).dividedBy(FADE_STEP_EVERY)
+    return minOf(endsAt, holdEndsAt.plus(FADE_STEP_EVERY.multipliedBy(stepsDone + 1)))
+}
+
+/**
+ * Whether a running fade's media should be paused now (owner decision, 2026-10-03): the fade has run its course
+ * ([fadeEndsAt]) and the band still says ASLEEP with media playing - media started while asleep, the owner most
+ * likely drifted off again. Never after the morning alarm, like the pause on sleep.
+ */
+fun shouldPauseFinishedFade(sleepState: SleepState, mediaPlaying: Boolean, fadeEndsAt: Instant, now: Instant, morningAlarmRang: Boolean): Boolean =
+    sleepState == SleepState.ASLEEP && mediaPlaying && !now.isBefore(fadeEndsAt) && !morningAlarmRang
 
 /**
  * The original volume a new fade must restore at End night: the night's own, kept by a volume parked on
@@ -239,12 +279,39 @@ fun rearmMediaFadeForWake(context: Context) {
  * playing the audiobook again fades it again, from the Settings screen's starting volume [startPercent].
  */
 fun startWakeFadeIfDue(
-    context: Context, nightStartedAt: Instant, now: Instant, sleepState: SleepState,
+    context: Context, nightStartedAt: Instant, now: Instant,
     fadeEnabled: Boolean, startPercent: Int, morningAlarmRang: Boolean, debugNight: Boolean,
-) {
+): Boolean {
     val mediaPlaying = context.getSystemService(AudioManager::class.java)?.isMusicActive ?: false
-    if (!shouldStartWakeFade(wakeFadeRearmFile(context).exists(), sleepState, mediaPlaying, fadeEnabled, morningAlarmRang)) return
+    if (!shouldStartWakeFade(wakeFadeRearmFile(context).exists(), mediaPlaying, fadeEnabled, morningAlarmRang)) return false
     startMediaFade(context, nightStartedAt, now, startPercent, debugNight)
+    return true
+}
+
+/**
+ * Pauses the media of a fade that has run its course while the band still says asleep, then parks the volume
+ * and re-arms the fade like falling asleep does ([shouldPauseFinishedFade]). An app that ignores the pause keeps
+ * its faded volume and is tried again on the next tick.
+ */
+suspend fun pauseFinishedFadeIfDue(
+    context: Context, nightStartedAt: Instant, now: Instant, sleepState: SleepState, endPercent: Int, morningAlarmRang: Boolean, debugNight: Boolean,
+) {
+    val record = readMediaFade(context)?.takeUnless { it.parked } ?: return
+    val audioManager = context.getSystemService(AudioManager::class.java) ?: return
+    val endsAt = fadeEndsAt(record.startStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), record.startedAt, endPercent)
+    if (!shouldPauseFinishedFade(sleepState, audioManager.isMusicActive, endsAt, now, morningAlarmRang)) return
+    val result = pausePlayingMedia(context)
+    appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_pause_after_fade", mapOf("result" to result.name.lowercase())), debugNight)
+    if (result == MediaPauseResult.STILL_PLAYING) return
+    parkMediaFade(context, nightStartedAt, now, debugNight)
+    rearmMediaFadeForWake(context)
+}
+
+/** The running fade's next step ([nextFadeStepAt]) for the night's next tick, or null when no fade is running. */
+fun mediaFadeNextStepAt(context: Context, now: Instant, endPercent: Int): Instant? {
+    val record = readMediaFade(context)?.takeUnless { it.parked } ?: return null
+    val maxStep = context.getSystemService(AudioManager::class.java)?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: return null
+    return nextFadeStepAt(record.startStep, maxStep, record.startedAt, now, endPercent)
 }
 
 private fun wakeFadeRearmFile(context: Context): File = File(context.filesDir, WAKE_FADE_REARM_FILE_NAME)

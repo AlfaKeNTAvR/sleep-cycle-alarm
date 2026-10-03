@@ -140,28 +140,84 @@ class MediaFadeTest {
     // Owner request, 2026-10-02: waking in the night and playing the audiobook again fades it again.
 
     @Test fun `after falling asleep, waking with media playing starts a fresh fade`() {
-        assertTrue(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertTrue(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
     }
 
     @Test fun `waking with nothing playing waits until media plays`() {
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = false, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = false, fadeEnabled = true, morningAlarmRang = false))
     }
 
     @Test fun `the Start night fade begins once media is actually playing, before the first sleep`() {
         // Seen on the phone, 2026-10-02: setting the volume at the Start night tap, before the audiobook played,
         // changed a volume nobody heard, and the next tick read the playing device's own volume as an override.
-        assertTrue(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.NOT_YET_ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertTrue(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
     }
 
     @Test fun `no new fade once one has started, until the next sleep re-arms it`() {
         // Not armed: a fade is already running, or the owner turned the volume up himself and ended it.
-        assertFalse(shouldStartWakeFade(fadeRearmed = false, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
-        assertFalse(shouldStartWakeFade(fadeRearmed = false, sleepState = SleepState.NOT_YET_ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = false, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = false, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
     }
 
-    @Test fun `no fresh fade while asleep, with the fade switched off, or once the morning alarm has rung`() {
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = false, morningAlarmRang = false))
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = true))
+    @Test fun `no fresh fade with the fade switched off, or once the morning alarm has rung`() {
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = false, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = true))
+    }
+
+    // Emulator test, 2026-10-03 (owner decision): media started while the band still says asleep (it confirms
+    // an awakening late, or never when the owner lies still) used to play at the parked volume all night. It now
+    // gets a fresh fade like any awakening, and a pause once that fade has run its course if the band still says
+    // asleep ([shouldPauseFinishedFade]).
+
+    @Test fun `media started while the band still says asleep gets a fresh fade too`() {
+        // The decision no longer looks at the sleep state at all: armed, playing, switched on, before the alarm.
+        assertTrue(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+    }
+
+    // Starting step 8 of 15 with the ending volume at 5% (floor 1): the 10 minute hold, then 8 to 1 in 7 steps,
+    // the last at 10 + 6 * 5 = 40 minutes.
+    private fun endsAt(startStep: Int, endPercent: Int = 5) = fadeEndsAt(startStep, maxStep = 15, startedAt = nightStart, endPercent = endPercent)
+
+    @Test fun `a fade has run its course once it reaches the ending volume`() {
+        assertEquals(nightStart.plusSeconds(40 * 60), endsAt(startStep = 8))
+    }
+
+    @Test fun `a fade starting at or below the ending volume runs its course after the hold`() {
+        assertEquals(nightStart.plusSeconds(10 * 60), endsAt(startStep = 1))
+        assertEquals(nightStart.plusSeconds(10 * 60), endsAt(startStep = 4, endPercent = 45))
+    }
+
+    private fun pauseAt(minutes: Long, sleepState: SleepState = SleepState.ASLEEP, mediaPlaying: Boolean = true, morningAlarmRang: Boolean = false) =
+        shouldPauseFinishedFade(sleepState, mediaPlaying, fadeEndsAt = nightStart.plusSeconds(40 * 60), now = nightStart.plusSeconds(minutes * 60), morningAlarmRang = morningAlarmRang)
+
+    @Test fun `media still playing when the fade has run its course while the band says asleep is paused`() {
+        assertTrue(pauseAt(40))
+        assertTrue(pauseAt(55))
+    }
+
+    @Test fun `no pause before the fade has run its course`() {
+        assertFalse(pauseAt(39))
+    }
+
+    @Test fun `no pause once the band says awake, with nothing playing, or after the morning alarm`() {
+        assertFalse(pauseAt(40, sleepState = SleepState.AWAKE))
+        assertFalse(pauseAt(40, sleepState = SleepState.NOT_YET_ASLEEP))
+        assertFalse(pauseAt(40, mediaPlaying = false))
+        assertFalse(pauseAt(40, morningAlarmRang = true))
+    }
+
+    // Ticks come every 15 minutes while asleep, so a fade there would step late and pause late; each tick books
+    // the next one no later than the fade's next step, up to the instant it has run its course.
+    private fun nextStepAt(minutes: Long) = nextFadeStepAt(startStep = 8, maxStep = 15, startedAt = nightStart, now = nightStart.plusSeconds(minutes * 60), endPercent = 5)
+
+    @Test fun `the next fade step is the hold's end, then every 5 minutes`() {
+        assertEquals(nightStart.plusSeconds(10 * 60), nextStepAt(0))
+        assertEquals(nightStart.plusSeconds(15 * 60), nextStepAt(10))
+        assertEquals(nightStart.plusSeconds(20 * 60), nextStepAt(17))
+    }
+
+    @Test fun `the last fade step is the instant it has run its course, and none after`() {
+        assertEquals(nightStart.plusSeconds(40 * 60), nextStepAt(36))
+        assertEquals(null, nextStepAt(40))
     }
 }

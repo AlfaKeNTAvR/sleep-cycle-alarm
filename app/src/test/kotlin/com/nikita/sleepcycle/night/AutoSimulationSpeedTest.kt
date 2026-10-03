@@ -3,6 +3,8 @@ package com.nikita.sleepcycle.night
 // File purpose: the Auto simulation speed (owner spec, 2026-10-02) - which speed Auto runs at for where the
 // night is, and the tick it books so the slow-down lands on time.
 
+import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.engine.AlarmPlan
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -106,5 +108,35 @@ class AutoSimulationSpeedTest {
     fun `an alarm already behind the clock is not waited for`() {
         assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:35:00Z"), followUpAt = Instant.parse("2026-10-02T03:10:00Z")))
         assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = null))
+    }
+
+    // Emulator test, 2026-10-03: with no sleep seen yet the planned alarm is projected from "now", so it stays
+    // the same distance ahead and Auto never slowed down - 36 simulated hours passed in 30 real seconds. Auto
+    // now waits for sleep at 60x, and only a fixed alarm (the deadline) counts as one to run towards.
+
+    private fun plan(wakeAt: Instant?, onsetIsProjected: Boolean) =
+        AlarmPlan(AlarmMode.FULL_CYCLES, wakeAt, cycles = 5, referenceOnset = now, onsetIsProjected = onsetIsProjected, reason = "")
+
+    @Test
+    fun `while waiting for sleep with no fixed alarm ahead Auto runs at 60x`() {
+        assertEquals(60, autoClockSpeed(now, plannedAlarmAt = null, followUpAt = null, waitingForSleep = true))
+    }
+
+    @Test
+    fun `while waiting for sleep a deadline far ahead still runs at 3600x`() {
+        assertEquals(3600, autoClockSpeed(now, plannedAlarmAt = Instant.parse("2026-10-02T07:00:00Z"), followUpAt = null, waitingForSleep = true))
+    }
+
+    @Test
+    fun `a projected alarm is not one Auto runs towards, the deadline is`() {
+        val deadline = Instant.parse("2026-10-02T07:00:00Z")
+        assertEquals(deadline, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline))
+        assertEquals(null, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline = null))
+    }
+
+    @Test
+    fun `once sleep is seen the planned alarm is the one Auto runs towards`() {
+        val wakeAt = Instant.parse("2026-10-02T06:30:00Z")
+        assertEquals(wakeAt, autoSpeedAlarmAt(plan(wakeAt, onsetIsProjected = false), deadline = Instant.parse("2026-10-02T07:00:00Z")))
     }
 }

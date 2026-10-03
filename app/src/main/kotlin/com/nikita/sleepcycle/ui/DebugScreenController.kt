@@ -25,12 +25,12 @@ import com.nikita.sleepcycle.night.SIMULATED_AWAKE_RETICK_MARGIN
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import com.nikita.sleepcycle.night.SimulatedSleepEventKind
 import com.nikita.sleepcycle.night.SpeedChoice
-import com.nikita.sleepcycle.night.applySimulationSpeed
+import com.nikita.sleepcycle.night.changeSimulationSpeed
 import com.nikita.sleepcycle.night.autoClockSpeed
 import com.nikita.sleepcycle.night.chooseSimulationSpeed
 import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
 import com.nikita.sleepcycle.night.readPendingFollowUp
-import com.nikita.sleepcycle.night.readSimulationSpeed
+import com.nikita.sleepcycle.night.autoSpeedAlarmAt
 import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.appendSimulatedSleepEvent
 import com.nikita.sleepcycle.night.isDebugTestAlarmAllowed
@@ -133,8 +133,12 @@ class DebugScreenController(private val context: Context, private val scope: Cor
         if (!isSpeedSelectorAllowed(storedOptions.value.simulatedBandData)) return
         scope.launch {
             val now = nowInstant()
-            val autoSpeedNow = autoClockSpeed(now, observedNightState.value?.lastPlan?.wakeAt, readPendingFollowUp(context)?.at)
-            applySimulationSpeed(context, chooseSimulationSpeed(readSimulationSpeed(context), choice, Instant.now(), autoSpeedNow))
+            val night = observedNightState.value
+            val autoSpeedNow = autoClockSpeed(
+                now, autoSpeedAlarmAt(night?.lastPlan, night?.settings?.deadline), readPendingFollowUp(context)?.at,
+                waitingForSleep = night?.lastPlan?.onsetIsProjected == true,
+            )
+            changeSimulationSpeed(context) { current -> chooseSimulationSpeed(current, choice, Instant.now(), autoSpeedNow) }
             rearmAfterSpeedChange(context)
         }
     }

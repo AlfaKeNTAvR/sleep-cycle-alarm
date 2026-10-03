@@ -308,7 +308,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // Owner spec, 2026-10-02: Auto sets the clock's speed for where the night now is BEFORE anything below arms
     // an alarm or books the next tick, so all of them land under the new speed. Simulated nights only.
     val followUpAt = readPendingFollowUp(context)?.at
-    val autoSpeedOn = state.debugOptions.simulatedBandData && applyAutoSpeed(context, decisionNow, plan.wakeAt, followUpAt)
+    val autoAlarmAt = autoSpeedAlarmAt(plan, state.settings.deadline)
+    val autoSpeedOn = state.debugOptions.simulatedBandData && applyAutoSpeed(context, decisionNow, autoAlarmAt, followUpAt, waitingForSleep = plan.onsetIsProjected)
 
     val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, decisionNow)
     // H7.2/FIX4: right after arming (or not) the phone alarm for this tick's own plan - a nap the tick just
@@ -359,8 +360,9 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     scheduleNextTick(
         context, plan, decisionNow, config,
         watchingForSleepSince = state.startedAt.takeIf { sleepState == SleepState.NOT_YET_ASLEEP },
-        autoSpeedFollowUpAt = followUpAt.takeIf { autoSpeedOn }, autoSpeedOn = autoSpeedOn,
+        autoSpeedAlarmAt = autoAlarmAt, autoSpeedFollowUpAt = followUpAt.takeIf { autoSpeedOn }, autoSpeedOn = autoSpeedOn,
         simulatedAwakeSettlesAt = simulatedAwakeSettlesAt(simulatedEvents, decisionNow, config.minAwakening),
+        fadeStepAt = mediaFadeNextStepAt(context, decisionNow, appSettings.bedtimeAudio.fadeEndPercent),
     )
     // FIX1: published from INSIDE this same lock - the one seam every committed tick's result now reaches
     // observedNightState through, whether it ran from NightService's own tick or an immediate UI-requested
@@ -372,29 +374,37 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
 }
 
 /**
- * The bedtime fade's share of a tick, also run on its own by [runMediaFadeCheck]: awake again after a sleep
- * with media playing starts a fresh fade (owner request, 2026-10-02), then the running or parked fade takes
- * its step - every time, asleep or not, so a parked volume still comes back once the morning alarm has rung.
+ * The bedtime fade's share of a tick, also run on its own by [runMediaFadeCheck]: media playing again after a
+ * sleep starts a fresh fade (owner request, 2026-10-02), then the running or parked fade takes its step - every
+ * time, asleep or not, so a parked volume still comes back once the morning alarm has rung - and a fade that has
+ * run its course while the band still says asleep pauses its media (owner decision, 2026-10-03, MediaFade.kt).
+ * Returns whether a fresh fade started.
  */
-private fun stepMediaFadeForSleepState(context: Context, state: NightState, appSettings: AppSettings, sleepState: SleepState, now: Instant) {
+private suspend fun stepMediaFadeForSleepState(context: Context, state: NightState, appSettings: AppSettings, sleepState: SleepState, now: Instant): Boolean {
     val debugNight = state.debugOptions.isAnyEnabled
     val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
-    startWakeFadeIfDue(
-        context, state.startedAt, now, sleepState,
+    val endPercent = appSettings.bedtimeAudio.fadeEndPercent
+    val fadeStarted = startWakeFadeIfDue(
+        context, state.startedAt, now,
         fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = appSettings.bedtimeAudio.fadeStartPercent,
         morningAlarmRang = morningAlarmRang, debugNight = debugNight,
     )
-    stepMediaFade(context, state.startedAt, now, endPercent = appSettings.bedtimeAudio.fadeEndPercent, morningAlarmRang = morningAlarmRang, debugNight = debugNight)
+    stepMediaFade(context, state.startedAt, now, endPercent = endPercent, morningAlarmRang = morningAlarmRang, debugNight = debugNight)
+    if (appSettings.bedtimeAudio.pauseWhenAsleep) {
+        pauseFinishedFadeIfDue(context, state.startedAt, now, sleepState, endPercent, morningAlarmRang, debugNight)
+    }
+    return fadeStarted
 }
 
 /**
  * Phone test, 2026-10-02: the fade used to act only on ticks, up to 15 minutes after the owner pressed play or
  * turned the volume up. NightService now runs this the moment media starts or the volume changes. It is the
- * fade's share of a tick alone - no band sync, no plan, no pause - against the sleep state the last tick saw.
- * Does nothing when no night is in progress.
+ * fade's share of a tick alone - no band sync, no plan, no pause on sleep - against the sleep state the last tick
+ * saw. Does nothing when no night is in progress. Returns whether a fresh fade started: the caller then runs a
+ * tick, which books the next one on the fade's first step (ticks come every 15 minutes while asleep).
  */
-suspend fun runMediaFadeCheck(context: Context): Unit = withNightTransactionLock {
-    val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock
+suspend fun runMediaFadeCheck(context: Context): Boolean = withNightTransactionLock {
+    val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock false
     val now = nowInstant()
     val sleepState = detectSleepState(normalizeSegments(state.lastSegments, state.lastSyncAt ?: now, resolveEngineConfig(state)))
     stepMediaFadeForSleepState(context, state, readAppSettings(context).first(), sleepState, now)
@@ -1023,16 +1033,17 @@ internal fun nextTickAt(plan: AlarmPlan, decisionNow: Instant, config: EngineCon
 /**
  * null from [nextTickAt] means the engine considers the night over: stop scheduling ticks. [config] comes from [resolveEngineConfig], so a fast debug night's tick cadence matches its own EngineConfig.
  * [watchingForSleepSince] is the night's start while the band has seen no sleep yet tonight, null otherwise (see nextSyncDelay).
- * [autoSpeedOn] with [autoSpeedFollowUpAt]: Auto is driving the clock, and the pending nudge or own nap it also slows down for.
+ * [autoSpeedOn] with [autoSpeedAlarmAt] and [autoSpeedFollowUpAt]: Auto is driving the clock, and the alarms it slows down for.
  * [simulatedAwakeSettlesAt]: a fresh simulated awake mark first counts then, so a tick must land there.
+ * [fadeStepAt]: the running bedtime fade's next step (MediaFade.kt), so it steps on time while asleep too.
  */
 private fun scheduleNextTick(
     context: Context, plan: AlarmPlan, decisionNow: Instant, config: EngineConfig, watchingForSleepSince: Instant?,
-    autoSpeedFollowUpAt: Instant?, autoSpeedOn: Boolean, simulatedAwakeSettlesAt: Instant?,
+    autoSpeedAlarmAt: Instant?, autoSpeedFollowUpAt: Instant?, autoSpeedOn: Boolean, simulatedAwakeSettlesAt: Instant?, fadeStepAt: Instant?,
 ) {
-    val ordinaryAt = earliestTickAt(nextTickAt(plan, decisionNow, config, watchingForSleepSince), simulatedAwakeSettlesAt)
+    val ordinaryAt = earliestTickAt(earliestTickAt(nextTickAt(plan, decisionNow, config, watchingForSleepSince), simulatedAwakeSettlesAt), fadeStepAt)
     // Auto: a tick must land on the slow-down instant, or the ordinary sync gap can skip the 60x approach.
-    val at = if (autoSpeedOn) autoSpeedTickAt(ordinaryAt, decisionNow, plan.wakeAt, autoSpeedFollowUpAt) else ordinaryAt
+    val at = if (autoSpeedOn) autoSpeedTickAt(ordinaryAt, decisionNow, autoSpeedAlarmAt, autoSpeedFollowUpAt) else ordinaryAt
     if (at == null) {
         cancelTick(context)
     } else {

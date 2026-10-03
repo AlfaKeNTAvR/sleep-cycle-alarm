@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.night
 // fast as it can until shortly before the next alarm, then slows down in steps for the approach. Pure: the night tick
 // (NightOrchestrator.kt) applies it, the Night screen's Auto chip selects it.
 
+import com.nikita.sleepcycle.engine.AlarmPlan
 import java.time.Duration
 import java.time.Instant
 
@@ -13,6 +14,12 @@ import java.time.Instant
  * real second (owner request, 2026-10-02), so an 8 h night passes in about 8 real seconds.
  */
 const val AUTO_FAR_SPEED = 3600
+
+/**
+ * Auto's speed while no sleep has been seen yet and no fixed alarm is ahead (emulator test, 2026-10-03): the
+ * planned alarm is then projected from "now" and never comes closer, so running fast only skipped the night.
+ */
+const val AUTO_WAITING_FOR_SLEEP_SPEED = 60
 
 /** One step of Auto's slow-down: from [lead] (simulated time) before the next alarm, run at [speed]. */
 data class AutoStage(val lead: Duration, val speed: Int)
@@ -57,9 +64,14 @@ data class SimulationSpeed(val warp: ClockWarp?, val auto: Boolean)
 fun dropToRealSpeed(current: SimulationSpeed, realNow: Instant): SimulationSpeed =
     SimulationSpeed(computeSpeedChangeWarp(current.warp, 1, realNow), auto = false)
 
-/** The speed Auto runs at for [now], given the plan's next alarm [plannedAlarmAt] and the out-of-bed slot's pending alarm [followUpAt] (nudge or own nap). */
-fun autoClockSpeed(now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Int {
-    val nextAlarmAt = nextAlarmAhead(now, plannedAlarmAt, followUpAt) ?: return AUTO_FAR_SPEED
+/**
+ * The speed Auto runs at for [now], given the plan's next alarm [plannedAlarmAt] (see [autoSpeedAlarmAt]) and the
+ * out-of-bed slot's pending alarm [followUpAt] (nudge or own nap). [waitingForSleep]: no sleep seen yet, so with
+ * no alarm ahead Auto waits at [AUTO_WAITING_FOR_SLEEP_SPEED].
+ */
+fun autoClockSpeed(now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?, waitingForSleep: Boolean = false): Int {
+    val nextAlarmAt = nextAlarmAhead(now, plannedAlarmAt, followUpAt)
+        ?: return if (waitingForSleep) AUTO_WAITING_FOR_SLEEP_SPEED else AUTO_FAR_SPEED
     return AUTO_STAGES.firstOrNull { stage -> !nextAlarmAt.isAfter(now.plus(stage.lead)) }?.speed ?: AUTO_FAR_SPEED
 }
 
@@ -74,6 +86,13 @@ fun autoSpeedTickAt(ordinaryTickAt: Instant?, now: Instant, plannedAlarmAt: Inst
     val nextSlowDownAt = AUTO_STAGES.map { stage -> nextAlarmAt.minus(stage.lead) }.filter { it.isAfter(now) }.minOrNull()
     return if (nextSlowDownAt != null && nextSlowDownAt.isBefore(ordinaryTickAt)) nextSlowDownAt else ordinaryTickAt
 }
+
+/**
+ * The alarm Auto runs towards for [plan]: its own alarm once sleep has been seen, and only the night's
+ * [deadline] while the alarm is projected from "now" (it would stay the same distance ahead for ever).
+ */
+fun autoSpeedAlarmAt(plan: AlarmPlan?, deadline: Instant?): Instant? =
+    if (plan?.onsetIsProjected == true) deadline else plan?.wakeAt
 
 /** The earliest of the two alarms still ahead of [now], or null when neither is. */
 private fun nextAlarmAhead(now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Instant? =

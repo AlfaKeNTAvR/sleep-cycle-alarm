@@ -66,7 +66,8 @@ class MediaFadeWatcher(private val context: Context, private val scope: Coroutin
         pendingCheck = scope.launch {
             delay(SETTLE_DELAY_MS)
             try {
-                runMediaFadeCheck(context)
+                // A fresh fade needs a tick on its first step, which only a full tick books.
+                if (runMediaFadeCheck(context)) runImmediateTick(context)
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.e(LOG_TAG, "media fade check failed", error)

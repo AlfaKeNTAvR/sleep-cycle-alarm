@@ -34,5 +34,13 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 - **Phone-free testing** (owner approved): headless API 35 emulator (`scripts/emulator.sh`, AVD `sca35`) plus a `testplayer` module standing in for an audiobook app; verified on it: fade starts about 1 s after play, a raised volume is pulled back, the awake re-tick survives an extra sync, pause on sleep stops the player. Robolectric 4.16 (JUnit 4 via the vintage engine) runs whole-night scenarios with the ordinary tests; first one reproduces the lost awake re-tick (red without the fix, green with it).
 - **emulator.sh targets the emulator through ANDROID_SERIAL**, not `adb -s`: the repo's publish-safety test forbids `-s` in tracked files, and dropping it outright would let the script tap a plugged-in phone.
 
+- **Play while asleep** (emulator test 2026-10-03, owner decision): a fresh fade starts whatever the band says, at exactly the starting volume; once it has run its course (hold, then one step per 5 min to the ending volume) with the band still saying asleep, the media is paused, the volume parked and the fade re-armed. An app that ignores the pause is tried again on each tick. Each tick books the next one no later than the running fade's next step; the 1 s watcher runs a full tick after starting a fade so that booking happens at once.
+- **Auto speed lock**: every speed change (chips, Auto in the tick, the drops to 1x) reads and writes under one lock. Not the night lock, because the tick that applies Auto already holds it.
+- **Auto while waiting for sleep**: the alarm is projected from "now" until sleep is seen, so Auto ignores it and runs towards the deadline only; with no deadline it waits at 60x instead of 3600x.
+- **A night finishing on its own** puts the fade's original volume back, like End night.
+- **File writes use `Files.move` (replace, atomic)** instead of `File.renameTo` in the three temp-file writes: same atomic rename on Android, but `renameTo` cannot replace a file on Windows, so every night state save after the first failed under Robolectric.
+- **Test audit**: removed 2 TickScheduling tests and 3 warp replays that could not fail (identity inputs); the tick chain test now checks spacing instead of a count fixed by construction. New Robolectric scenarios: a whole night's fade, play while asleep, a 1x tap racing Auto ticks.
+- **Not tested**: the self-finishing night's restore (reaching FINISHED needs a long scripted night); the speed race test passes, but was not shown failing against the old code.
+
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.

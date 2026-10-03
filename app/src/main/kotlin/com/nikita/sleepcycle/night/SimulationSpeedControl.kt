@@ -8,21 +8,34 @@ package com.nikita.sleepcycle.night
 import android.content.Context
 import com.nikita.sleepcycle.BuildConfig
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
+
+/**
+ * Emulator test, 2026-10-03: a "1x" tap was lost while Auto ran at 3600x. The tick re-applying Auto read the
+ * speed between the tap's two writes (clock, then store) and put 3600x back. Every speed change now reads and
+ * writes under this one lock ([changeSimulationSpeed]). Not the night lock: the tick already holds that.
+ */
+private val simulationSpeedMutex = Mutex()
 
 /** The clock's speed as it is right now: the live warp, and whether Auto is driving it. */
 suspend fun readSimulationSpeed(context: Context): SimulationSpeed =
     SimulationSpeed(AppClock.warp(), readDebugOptions(context).first().autoSpeed)
 
 /**
- * Makes [next] the live speed: clock first, then the store (W4's order - see [writeClockWarp]), then the
- * pending nudge or own nap re-armed under the new mapping. Runs no tick: a caller outside a tick follows up
- * with one, so the wake alarm and the next tick move too.
+ * Reads the live speed and makes [change]'s answer the new one, as one step no other speed change can come
+ * between ([simulationSpeedMutex]); a null answer changes nothing. Writes the clock first, then the store (W4's
+ * order - see [writeClockWarp]), then re-arms the pending nudge or own nap under the new mapping. Runs no tick:
+ * a caller outside a tick follows up with one, so the wake alarm and the next tick move too. Returns whether
+ * the speed changed.
  */
-suspend fun applySimulationSpeed(context: Context, next: SimulationSpeed) {
+suspend fun changeSimulationSpeed(context: Context, change: (SimulationSpeed) -> SimulationSpeed?): Boolean = simulationSpeedMutex.withLock {
+    val next = change(readSimulationSpeed(context)) ?: return@withLock false
     writeClockWarp(context, next.warp)
     updateDebugOptions(context, Instant.now()) { it.copy(autoSpeed = next.auto) }
     rearmPendingFollowUp(context)
+    true
 }
 
 /**
@@ -32,23 +45,23 @@ suspend fun applySimulationSpeed(context: Context, next: SimulationSpeed) {
  */
 suspend fun dropSimulationToRealSpeed(context: Context): Boolean {
     if (!BuildConfig.DEBUG) return false
-    val current = readSimulationSpeed(context)
-    if (!current.auto && (current.warp?.speed ?: 1) == 1) return false
-    applySimulationSpeed(context, dropToRealSpeed(current, Instant.now()))
-    return true
+    return changeSimulationSpeed(context) { current ->
+        if (!current.auto && (current.warp?.speed ?: 1) == 1) null else dropToRealSpeed(current, Instant.now())
+    }
 }
 
 /**
  * Called by the night tick with the alarms it just planned: while Auto is on, moves the clock to the speed
  * [autoClockSpeed] wants for [now] (600x far from the next alarm, 60x on the approach). Returns whether Auto
- * is on, so the tick knows to pull its next tick in to the slow-down ([autoSpeedTickAt]).
+ * is on, so the tick knows to pull its next tick in to the slow-down ([autoSpeedTickAt]). [waitingForSleep]:
+ * see [autoClockSpeed].
  */
-suspend fun applyAutoSpeed(context: Context, now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Boolean {
-    val current = readSimulationSpeed(context)
-    if (!current.auto) return false
-    val wanted = autoClockSpeed(now, plannedAlarmAt, followUpAt)
-    if (current.warp?.speed != wanted) {
-        applySimulationSpeed(context, chooseSimulationSpeed(current, SpeedChoice.AUTO, Instant.now(), wanted))
+suspend fun applyAutoSpeed(context: Context, now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?, waitingForSleep: Boolean): Boolean {
+    var autoOn = false
+    changeSimulationSpeed(context) { current ->
+        autoOn = current.auto
+        val wanted = autoClockSpeed(now, plannedAlarmAt, followUpAt, waitingForSleep)
+        if (!current.auto || current.warp?.speed == wanted) null else chooseSimulationSpeed(current, SpeedChoice.AUTO, Instant.now(), wanted)
     }
-    return true
+    return autoOn
 }
