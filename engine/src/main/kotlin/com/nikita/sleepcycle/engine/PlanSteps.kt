@@ -57,7 +57,12 @@ fun countOwedCycles(sleptSoFar: Duration, settings: NightSettings, config: Engin
 /** Which of rules 1, 7, 5, or 3/4/6 [chooseMode] matched, before the pull-forward amendment in `computeWakeAlarm`. */
 enum class PlanRule { FINISHED, NAP, DEADLINE_ONLY, FULL_CYCLES }
 
-/** D5: at most this many naps are armed after the wake alarm has fired before the night is forced to FINISHED. */
+/**
+ * D5/G8: at most this many engine nap alarms may FIRE in a night, pre-wake (rule 7) or after the wake alarm
+ * alike; the next new return to sleep is then refused a nap (FINISHED with no deadline ahead, DEADLINE_ONLY
+ * with one). Counted at fire time (NightState.napAlarmsUsed). The owner's own Nap button (P3) rings on the
+ * out-of-bed slot and is never counted.
+ */
 const val MAX_NAP_ALARMS = 2
 
 /**

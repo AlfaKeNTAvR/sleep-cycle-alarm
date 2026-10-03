@@ -6,7 +6,7 @@ Branch `nikita/feat/debug-auto-speed`, from main.
 Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on the slow-down, the chip choice and which chip shows selected, the Auto chip's running speed. End night cleanup is DataStore only, so it is checked on the phone, not unit tested.
 
 ## Decisions
-- **Auto slows down for the nearest alarm ahead**: the planned alarm or a pending nudge or own nap, whichever is sooner. An alarm already behind the clock is ignored. No alarm at all: 600x.
+- **Auto slows down for the nearest alarm ahead**: the planned alarm or a pending nudge or own nap, whichever is sooner. An alarm already behind the clock is ignored. No alarm at all: 3600x (corrected 2026-10-03, this line used to say 600x), except while the alarm is projected from "now" with no fixed alarm ahead, when Auto waits at 60x (see "Auto while waiting for sleep" below).
 - **Stages** (owner changes after the first install): 3600x far off, 600x from 30 simulated min before the alarm, 60x from 10 (both boundaries inclusive). A tick is booked on each boundary.
 - **Screen redraw up to 10 times a second** (owner request): the UI refresh floor went from 500 ms to 100 ms, so the clock moves in 6-minute steps at 3600x and 1-minute steps at 600x. Only a simulated clock redraws that often.
 - **A tick is booked on the slow-down instant**, because the ordinary sync gap (5 to 15 simulated min) could otherwise skip the whole 10 min approach.
@@ -17,7 +17,7 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 - **Turning simulated band data off** also turns Auto off.
 - **End night** now also empties the simulated sleep timeline (the Clear button is gone, nothing else clears it). Same for the 2 h idle reset, which shares the code.
 - **Removed**: `computeJumpWarp`, `isJumpToTimeAllowed`, `isResetToRealTimeAllowed`, their 4 tests, 15 unused strings, and the timeline and jump fields of the debug UI state.
-- **SIMULATION_SPEEDS** now lists every speed the clock can run at (1, 10, 60, 600), not the chips.
+- **SIMULATION_SPEEDS** now lists every speed the clock can run at (1, 60, 600, 3600; corrected 2026-10-03, this line used to say 1, 10, 60, 600), not the chips.
 - **Shared Settings look**: the section, switch row and button row moved from SettingsScreen into `ui/components/SettingsSection.kt`, used by Settings, Debug and the Night screen's Simulation card.
 - **Debug "Ring" is a small bordered button** on the right of the row, the same one Settings uses for "Ask at".
 
@@ -36,7 +36,7 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 
 - **Play while asleep** (emulator test 2026-10-03, owner decision): a fresh fade starts whatever the band says, at exactly the starting volume; once it has run its course (hold, then one step per 5 min to the ending volume) with the band still saying asleep, the media is paused, the volume parked and the fade re-armed. An app that ignores the pause is tried again on each tick. Each tick books the next one no later than the running fade's next step; the 1 s watcher runs a full tick after starting a fade so that booking happens at once.
 - **Auto speed lock**: every speed change (chips, Auto in the tick, the drops to 1x) reads and writes under one lock. Not the night lock, because the tick that applies Auto already holds it.
-- **Auto while waiting for sleep**: the alarm is projected from "now" until sleep is seen, so Auto ignores it and runs towards the deadline only; with no deadline it waits at 60x instead of 3600x.
+- **Auto while waiting for sleep**: the alarm is projected from "now" until sleep is seen, so Auto ignores it and runs towards the deadline only; with no deadline it waits at 60x instead of 3600x. Superseded in part by the owner decision of 2026-10-03 (spec-audit.md #5): awake mid-night, Auto also slows down before the morning alarm H8 keeps (the earlier of that and the deadline), so it waits at 60x only when neither fixed alarm is ahead.
 - **A night finishing on its own** puts the fade's original volume back, like End night.
 - **File writes use `Files.move` (replace, atomic)** instead of `File.renameTo` in the three temp-file writes: same atomic rename on Android, but `renameTo` cannot replace a file on Windows, so every night state save after the first failed under Robolectric.
 - **Test audit**: removed 2 TickScheduling tests and 3 warp replays that could not fail (identity inputs); the tick chain test now checks spacing instead of a count fixed by construction. New Robolectric scenarios: a whole night's fade, play while asleep, a 1x tap racing Auto ticks.
@@ -47,4 +47,4 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 - **Cycles still owed round up** (owner decision 2026-10-03, after the phone night's 08:48 mid-cycle nap alarm): `owedCycles` = ceil((remaining - 10 min) / cycle), superseding the 2026-09-17 nearest rule. No deadline: at least the picked total, on a cycle boundary. Deadline: unchanged, the whole cycles that fit still cap it. The 10 min forgiveness is an `EngineConfig` field (`owedCycleForgiveness`), validated to be under a cycle. Two older tests changed with it: the 44 min case is now one more cycle (07:26) instead of a nap, and the sliding-nap app test's stretch starts 10 min earlier so its premise (nothing owed) still holds.
 
 ## Open questions
-- Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.
+- Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 3600x (corrected 2026-10-03, was "600x"). The chips only show on the Night screen, so this cannot happen today.

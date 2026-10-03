@@ -161,7 +161,7 @@
     <string name="alarm_notification_title">Wake up</string>
     <string name="alarm_notification_text">Sleep cycle alarm</string>
     <string name="alarm_notification_stop_action">Stop</string>
-    <!-- D4/H7.1: the out-of-bed nudge, 15 min after the wake alarm rings -->
+    <!-- D4/H7.1: the out-of-bed nudge; since P3, 10 min (Settings: 5 to 15) after the ring ends -->
     <string name="alarm_notification_out_of_bed_title">Time to get up</string>
     <string name="alarm_notification_out_of_bed_text">Sleep cycle alarm</string>
 
