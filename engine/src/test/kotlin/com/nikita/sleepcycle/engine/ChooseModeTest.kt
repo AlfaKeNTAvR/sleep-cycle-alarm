@@ -15,13 +15,26 @@ class ChooseModeTest {
         owedCycles: Int = 5,
         referenceOnset: String = "2026-09-17T00:30",
         now: String = "2026-09-17T01:00",
-        napAlarmsUsed: Int = 0
+        napAlarmsUsed: Int = 0,
+        morningAlarmRang: Boolean = false
     ) = chooseMode(
-        state, afterAwakening, deadline, cycles, owedCycles, instant(referenceOnset), instant(now), config, napAlarmsUsed
+        state, afterAwakening, deadline, cycles, owedCycles, instant(referenceOnset), instant(now), config, napAlarmsUsed,
+        morningAlarmRang
     )
 
-    @Test fun `rule 1 a deadline at or before now is FINISHED`() {
-        assertEquals(PlanRule.FINISHED, rule(deadline = instant("2026-09-17T01:00"), now = "2026-09-17T01:00"))
+    @Test fun `rule 1 a deadline at or before now is FINISHED once the morning alarm has rung`() {
+        assertEquals(PlanRule.FINISHED, rule(deadline = instant("2026-09-17T01:00"), now = "2026-09-17T01:00", morningAlarmRang = true))
+    }
+
+    // Owner decision, 2026-10-03: a deadline that passed with no morning alarm rung (phone off, alarms wiped by a
+    // force-stop) does not end the night - the alarm still rings, under the deadline's own rule.
+    @Test fun `rule 1 a passed deadline with no morning alarm rung still rings under the deadline rule`() {
+        assertEquals(PlanRule.DEADLINE_ONLY, rule(deadline = instant("2026-09-17T01:00"), now = "2026-09-17T01:00"))
+        assertEquals(PlanRule.DEADLINE_ONLY, rule(deadline = instant("2026-09-17T01:00"), now = "2026-09-17T02:00"))
+    }
+
+    @Test fun `rule 1 a deadline more than an hour past ends the night even with no morning alarm rung`() {
+        assertEquals(PlanRule.FINISHED, rule(deadline = instant("2026-09-17T01:00"), now = "2026-09-17T02:00:01"))
     }
 
     @Test fun `D3 waking at or after the previous alarm no longer FINISHES the night by itself`() {

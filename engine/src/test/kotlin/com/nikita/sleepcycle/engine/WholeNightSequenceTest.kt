@@ -67,7 +67,9 @@ class WholeNightSequenceTest {
                 segment("2026-09-17T06:30", "2026-09-17T06:36", SegmentKind.AWAKE),
                 segment("2026-09-17T06:36", "2026-09-17T06:45", SegmentKind.LIGHT)
             ),
-            setting, "2026-09-17T08:31", pulledForward
+            setting, "2026-09-17T08:31", pulledForward,
+            // The 08:09 alarm rang: owner decision, 2026-10-03, rule 1 ends the night only once it has.
+            wakeAlarmFiredAt = instant("2026-09-17T08:09"), phoneAlarmFiredFor = instant("2026-09-17T08:09")
         )
         assertEquals(AlarmMode.FINISHED, finished.mode)
         assertNull(finished.wakeAt)

@@ -139,10 +139,73 @@ class ComputeAlarmPlanTest {
         assertEquals("01:17", formatTime(result.wakeAt!!, testZone))
     }
 
-    @Test fun `deadline exactly at now is FINISHED without throwing`() {
-        val result = plan(listOf(segment("2026-09-17T00:30", "2026-09-17T01:00", SegmentKind.LIGHT)), settings("2026-09-17T08:31"), "2026-09-17T08:31")
+    @Test fun `deadline exactly at now, once the morning alarm rang, is FINISHED without throwing`() {
+        val result = plan(
+            listOf(segment("2026-09-17T00:30", "2026-09-17T01:00", SegmentKind.LIGHT)), settings("2026-09-17T08:31"), "2026-09-17T08:31",
+            wakeAlarmFiredAt = instant("2026-09-17T08:31")
+        )
         assertEquals(AlarmMode.FINISHED, result.mode)
         assertNull(result.wakeAt)
+    }
+
+    // Owner decision, 2026-10-03 (deadline.md #1, reproduced on the emulator): the phone was off or its alarms
+    // were wiped, so the 08:30 deadline alarm never rang. The deadline is past, but the alarm still rings: two
+    // minutes out (minAlarmLead), rounded up to the whole minute, never capped by the deadline already behind.
+    @Test fun `a deadline that passed with no alarm rung re-arms two minutes out instead of finishing`() {
+        val asleep = listOf(segment("2026-09-17T00:30", "2026-09-17T06:00", SegmentKind.LIGHT))
+        val deadlineAlarm = AlarmPlan(AlarmMode.DEADLINE_ONLY, instant("2026-09-17T08:30"), 0, instant("2026-09-17T00:30"), false, "r")
+        val result = plan(asleep, settings("2026-09-17T08:30"), "2026-09-17T08:36:20", previous = deadlineAlarm)
+        assertEquals(AlarmMode.DEADLINE_ONLY, result.mode)
+        assertEquals(instant("2026-09-17T08:39"), result.wakeAt)
+    }
+
+    @Test fun `a deadline exactly at now with no alarm rung re-arms at now plus minAlarmLead`() {
+        val result = plan(listOf(segment("2026-09-17T00:30", "2026-09-17T01:00", SegmentKind.LIGHT)), settings("2026-09-17T08:31"), "2026-09-17T08:31")
+        assertEquals(AlarmMode.DEADLINE_ONLY, result.mode)
+        assertEquals(instant("2026-09-17T08:33"), result.wakeAt)
+    }
+
+    @Test fun `once the recovered deadline alarm has rung the night is FINISHED`() {
+        val asleep = listOf(segment("2026-09-17T00:30", "2026-09-17T06:00", SegmentKind.LIGHT))
+        val recovered = AlarmPlan(AlarmMode.DEADLINE_ONLY, instant("2026-09-17T08:39"), 0, instant("2026-09-17T00:30"), false, "r")
+        val result = plan(
+            asleep, settings("2026-09-17T08:30"), "2026-09-17T08:41", previous = recovered,
+            phoneAlarmFiredFor = instant("2026-09-17T08:39")
+        )
+        assertEquals(AlarmMode.FINISHED, result.mode)
+        assertNull(result.wakeAt)
+    }
+
+    @Test fun `a deadline more than an hour past with no alarm rung ends the night silently`() {
+        val asleep = listOf(segment("2026-09-17T00:30", "2026-09-17T06:00", SegmentKind.LIGHT))
+        val result = plan(asleep, settings("2026-09-17T08:30"), "2026-09-17T09:31")
+        assertEquals(AlarmMode.FINISHED, result.mode)
+        assertNull(result.wakeAt)
+    }
+
+    // ISSUES.md tests: a rule 7 nap capped at the deadline rings AT the deadline; it rang at or after the latched
+    // morning time, so it was the morning alarm (owner decision, 2026-10-03), and the next tick is FINISHED.
+    @Test fun `a nap capped at the deadline rings there, and the next tick is FINISHED`() {
+        // Asleep 00:22 (morning alarm 07:52, five cycles), awake 07:30-07:40, asleep again with one cycle still
+        // owed of six: no cycle fits before the 07:55 deadline, so rule 7's nap (07:40 + 20 = 08:00) is capped
+        // at 07:55 - after the latched 07:52 morning time, so that nap took the morning alarm's place.
+        val segments = listOf(
+            segment("2026-09-17T00:22", "2026-09-17T07:30", SegmentKind.LIGHT),
+            segment("2026-09-17T07:30", "2026-09-17T07:40", SegmentKind.AWAKE),
+            segment("2026-09-17T07:40", "2026-09-17T07:50", SegmentKind.LIGHT)
+        )
+        val morning = AlarmPlan(AlarmMode.FULL_CYCLES, instant("2026-09-17T07:52"), 5, instant("2026-09-17T00:22"), false, "r")
+        val nap = plan(segments, settings("2026-09-17T07:55", cycles = 6), "2026-09-17T07:50", previous = morning)
+        assertEquals(AlarmMode.NAP, nap.mode)
+        assertEquals(instant("2026-09-17T07:55"), nap.wakeAt)
+
+        val after = plan(
+            segments + segment("2026-09-17T07:50", "2026-09-17T07:56", SegmentKind.LIGHT), settings("2026-09-17T07:55", cycles = 6),
+            "2026-09-17T07:56", previous = morning, napAlarmsUsed = 1, lastNapAlarmFiredAt = instant("2026-09-17T07:55"),
+            phoneAlarmFiredFor = instant("2026-09-17T07:55")
+        )
+        assertEquals(AlarmMode.FINISHED, after.mode)
+        assertNull(after.wakeAt)
     }
 
     @Test fun `a deadline 30 seconds away is pulled forward but still capped at the deadline`() {

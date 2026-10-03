@@ -56,4 +56,13 @@ class PostMorningAlarmTest {
 
         assertEquals(null, afterReturnToSleep.wakeAt)
     }
+
+    // Owner decision, 2026-10-03 (deadline.md #3): when the morning alarm rang, as the ring label and night_summary see it.
+    @Test fun `the morning alarm rang when it was attributed, or when a nap fired at or after the morning time`() {
+        val morning = instant("2026-09-17T07:00")
+        assertEquals(instant("2026-09-17T07:00"), morningAlarmRangAt(instant("2026-09-17T07:00"), morning, instant("2026-09-17T07:00")))
+        assertEquals(instant("2026-09-17T07:12"), morningAlarmRangAt(null, morning, instant("2026-09-17T07:12")))
+        assertEquals(null, morningAlarmRangAt(null, morning, instant("2026-09-17T06:40")))
+        assertEquals(null, morningAlarmRangAt(null, null, instant("2026-09-17T07:12")))
+    }
 }

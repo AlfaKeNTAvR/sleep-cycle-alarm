@@ -61,6 +61,13 @@ enum class PlanRule { FINISHED, NAP, DEADLINE_ONLY, FULL_CYCLES }
 const val MAX_NAP_ALARMS = 2
 
 /**
+ * Owner decision, 2026-10-03: how long past the deadline a night whose morning alarm never rang still keeps
+ * trying to ring it (rule 1, [chooseMode]). Past this the night ends silently: a ring hours after the wake-by
+ * time would belong to a morning that is already over.
+ */
+val DEADLINE_RECOVERY_WINDOW: Duration = Duration.ofHours(1)
+
+/**
  * Picks the matching rule for this round, first match wins (spec step 2, "Modes"). The pull-forward amendment
  * (an alarm landing too soon moving to `now + minAlarmLead`, capped by the deadline) is applied afterward, in
  * `computeWakeAlarm`, since it needs the alarm time this rule produces. It never changes the mode (D8).
@@ -79,10 +86,17 @@ fun chooseMode(
     referenceOnset: Instant,
     now: Instant,
     config: EngineConfig,
-    napAlarmsUsed: Int
+    napAlarmsUsed: Int,
+    /** Owner decision, 2026-10-03: whether the night's morning alarm has rung (WakeAlarm.kt's `morningAlarmHasRung`) - rule 1 ends the night only once it has. */
+    morningAlarmRang: Boolean
 ): PlanRule = when {
-    // Rule 1: the deadline has passed.
-    isPastDeadline(deadline, now) -> PlanRule.FINISHED
+    // Rule 1: the deadline has passed. Owner decision, 2026-10-03 (deadline.md #1: the phone off or its alarms
+    // wiped, the night ended at the first tick after the deadline with nothing ever rung): FINISHED only once the
+    // morning alarm has rung, or once the deadline is more than DEADLINE_RECOVERY_WINDOW behind. Until then the
+    // deadline alarm still rings - DEADLINE_ONLY, whose past target computeWakeAlarm pulls forward to
+    // now + minAlarmLead, uncapped by a deadline already behind now.
+    isPastDeadline(deadline, now) ->
+        if (morningAlarmRang || isDeadlineLongPast(checkNotNull(deadline), now)) PlanRule.FINISHED else PlanRule.DEADLINE_ONLY
     // D5/F4/G8 SUPERSEDES the original spec: the nap cap is already spent, and this is a genuinely NEW return
     // to sleep - see isPostWakeNapCapSpent. isPastDeadline above already ruled out a deadline at or before now,
     // so a deadline reaching here is still ahead of us, and it outranks the spent cap: the alarm rings at the
@@ -104,6 +118,9 @@ fun chooseMode(
 }
 
 private fun isPastDeadline(deadline: Instant?, now: Instant): Boolean = deadline != null && !deadline.isAfter(now)
+
+/** Owner decision, 2026-10-03: the deadline is more than [DEADLINE_RECOVERY_WINDOW] behind [now] - see [chooseMode]'s rule 1. */
+private fun isDeadlineLongPast(deadline: Instant, now: Instant): Boolean = now.isAfter(deadline.plus(DEADLINE_RECOVERY_WINDOW))
 
 /**
  * G2/G8 SUPERSEDE both the original spec's "incremented when armed" wording and this check's own earlier

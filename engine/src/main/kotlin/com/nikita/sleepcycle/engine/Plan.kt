@@ -77,7 +77,8 @@ fun computeAlarmPlan(
     val cycles = capCyclesByDeadline(owedCycles, reference.onset, settings, config)
 
     val rule = chooseMode(
-        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, now, config, napAlarmsUsed
+        state, afterAwakening, settings.deadline, cycles, owedCycles, reference.onset, now, config, napAlarmsUsed,
+        morningAlarmHasRung(wakeAlarmFiredAt, morningAlarmAt, phoneAlarmFiredFor)
     )
     // H1: the latched morningAlarmAt, alongside wakeAlarmFiredAt, is what lets computeWakeAlarm's AWAKE branch
     // (rule 7's sliding nap) tell that the morning's alarm time has already passed even when no firing was
@@ -162,8 +163,13 @@ internal fun describePlan(
                     "${formatSleepDuration(sleptSoFar)} slept tonight$fittingText, alarm $alarmText."
             }
         }
-        // Rule 5: no whole cycle fits before the deadline, so the alarm rings at the deadline.
-        AlarmMode.DEADLINE_ONLY -> "No full cycle fits before the deadline, alarm $alarmText."
+        // Rule 5: no whole cycle fits before the deadline, so the alarm rings at the deadline. Owner decision,
+        // 2026-10-03: an alarm AFTER the deadline is rule 1's recovery of a deadline that passed with nothing rung.
+        AlarmMode.DEADLINE_ONLY -> if (settings.deadline != null && wakeAt != null && wakeAt.isAfter(settings.deadline)) {
+            "The deadline ${formatTime(settings.deadline, zone)} passed with no alarm rung, alarm $alarmText."
+        } else {
+            "No full cycle fits before the deadline, alarm $alarmText."
+        }
         // Rule 7: a short nap after an awakening, capped by the deadline when there is one.
         AlarmMode.NAP -> {
             val boundaryText = settings.deadline?.let { ", capped at ${formatTime(it, zone)}" } ?: ""

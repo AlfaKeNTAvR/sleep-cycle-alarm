@@ -79,7 +79,20 @@ fun computeWakeAlarm(
  * count, so the morning alarm still rings after it - the pre-wake nap is left exactly as it was.
  */
 fun morningAlarmHasRung(wakeAlarmFiredAt: Instant?, morningAlarmAt: Instant?, phoneAlarmFiredFor: Instant?): Boolean =
-    wakeAlarmFiredAt != null || (morningAlarmAt != null && firedAtOrBefore(morningAlarmAt, phoneAlarmFiredFor))
+    morningAlarmRangAt(wakeAlarmFiredAt, morningAlarmAt, phoneAlarmFiredFor) != null
+
+/**
+ * When the night's morning alarm rang, by the same two ways [morningAlarmHasRung] counts it: [wakeAlarmFiredAt]
+ * when the firing was attributed to the morning alarm, otherwise the phone alarm that fired at or after the
+ * latched [morningAlarmAt]. Null while it has not rung.
+ *
+ * Owner decision, 2026-10-03 (deadline.md #3): a pre-wake nap that rings at or after the morning time IS the
+ * morning alarm - for its ring label and for night_summary's "in bed after the wake alarm", not only for the
+ * engine. The firing stays booked as a nap (PhoneAlarmReceiver's attribution is unchanged); this is the one
+ * place that says when the morning, as the owner lived it, began.
+ */
+fun morningAlarmRangAt(wakeAlarmFiredAt: Instant?, morningAlarmAt: Instant?, phoneAlarmFiredFor: Instant?): Instant? =
+    wakeAlarmFiredAt ?: phoneAlarmFiredFor?.takeIf { morningAlarmAt != null && firedAtOrBefore(morningAlarmAt, it) }
 
 /**
  * H8: whether the instant rules 3/4/5/6 just produced is one the MAIN wake alarm has already rung for
@@ -327,7 +340,8 @@ private fun asleepNapTarget(referenceOnset: Instant, lastNapAlarmFiredAt: Instan
  * minute (C1: the band used to only take hour:minute, and truncating down could drop the target inside
  * minAlarmLead by the time the write actually landed; the phone alarm has no such rounding need, but the
  * lead itself is still worth a clean whole-minute target). Still capped by the deadline when there is one, even
- * if that means landing closer than minAlarmLead - the deadline is the harder constraint of the two.
+ * if that means landing closer than minAlarmLead - the deadline is the harder constraint of the two - but only
+ * while that deadline is still ahead of [now] (owner decision, 2026-10-03, see the note at the bottom).
  *
  * J1.1 (owner-reported, 2026-09-21): [raw] still ahead of [now] is returned untouched, however close - the
  * lead only ever pulls forward a target that is AT OR BEFORE [now], i.e. already due or overdue. Before this,
@@ -344,7 +358,10 @@ private fun pullForwardIfTooSoon(raw: Instant, deadline: Instant?, now: Instant,
     if (raw.isAfter(now)) return raw
     val lead = now.plus(config.minAlarmLead)
     val pulled = ceilToWholeMinute(lead)
-    return if (deadline != null) minOf(pulled, deadline) else pulled
+    // Owner decision, 2026-10-03: a deadline already at or behind [now] no longer caps the pull-forward. That cap
+    // put the recovery of a deadline alarm that never rang back in the past, where nothing can arm it; rule 1
+    // (PlanSteps.kt's chooseMode) now keeps such a night going until the alarm has rung.
+    return if (deadline != null && deadline.isAfter(now)) minOf(pulled, deadline) else pulled
 }
 
 /** C1: rounds [instant] up to the next whole minute; an instant already exactly on a minute boundary is returned unchanged. */
