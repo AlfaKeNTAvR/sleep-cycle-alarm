@@ -5,10 +5,14 @@ package com.nikita.sleepcycle.night
 // floor of about 5%, where it stays until the band says the owner is asleep (MediaPauseOnSleep.kt then pauses
 // playback and the original volume is put back). Steps ride on the night's own ticks, which run every 5
 // minutes for the first hour while the owner is not yet asleep, so a late tick makes its step late too.
+//
+// Owner request, 2026-10-02: the fade runs again after a mid-night awakening. Falling asleep re-arms it, and
+// the first tick that sees the owner awake with media playing again starts a fresh fade ([shouldStartWakeFade]).
 
 import android.content.Context
 import android.media.AudioManager
 import android.util.Log
+import com.nikita.sleepcycle.engine.SleepState
 import java.io.File
 import java.time.Duration
 import java.time.Instant
@@ -47,6 +51,16 @@ fun fadeTargetStep(startStep: Int, maxStep: Int, startedAt: Instant, now: Instan
 }
 
 /**
+ * Whether this tick should start a fresh fade after a mid-night awakening: falling asleep re-armed it
+ * ([fadeRearmed]), the band now says AWAKE, media is playing again, the fade is switched on, and the morning
+ * alarm has not rung (once up, the owner's media is left alone - the same rule the pause on sleep follows).
+ * Not re-armed also covers the owner turning the volume up himself: that ends a fade and nothing restarts it
+ * until he falls asleep again.
+ */
+fun shouldStartWakeFade(fadeRearmed: Boolean, sleepState: SleepState, mediaPlaying: Boolean, fadeEnabled: Boolean, morningAlarmRang: Boolean): Boolean =
+    fadeRearmed && sleepState == SleepState.AWAKE && mediaPlaying && fadeEnabled && !morningAlarmRang
+
+/**
  * A fade in progress, persisted so it survives the process between ticks: the owner's own volume before the
  * fade ([originalStep], put back when it ends), where and when it began, and the step the app itself last set
  * ([lastSetStep]) - any other reading means the owner changed the volume, which ends the fade.
@@ -55,12 +69,16 @@ private data class MediaFadeRecord(val originalStep: Int, val startStep: Int, va
 
 private const val MEDIA_FADE_FILE_NAME = "media_fade.txt"
 
+/** Present once falling asleep has re-armed the fade for the next awakening; removed when a fade starts. */
+private const val WAKE_FADE_REARM_FILE_NAME = "media_fade_rearm.txt"
+
 /**
  * Starts the fade at Start night: lowers the media volume to [fadeStartStep] and records the original. A fade
  * left over from a night that never ended cleanly is finished first, so its original volume is not lost.
  */
 fun startMediaFade(context: Context, nightStartedAt: Instant, now: Instant, startPercent: Int, debugNight: Boolean) {
     endMediaFade(context, nightStartedAt, now, debugNight)
+    clearWakeFadeRearm(context)
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return
     val originalStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
     val startStep = fadeStartStep(originalStep, audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), startPercent)
@@ -109,6 +127,35 @@ fun endMediaFade(context: Context, nightStartedAt: Instant, now: Instant, debugN
         NightLogEvent(now, "media_fade_end", mapOf("restoredStep" to if (restored) record.originalStep.toString() else "none")),
         debugNight
     )
+}
+
+/** Falling asleep re-arms the fade for the next awakening (see [shouldStartWakeFade]). */
+fun rearmMediaFadeForWake(context: Context) {
+    try {
+        wakeFadeRearmFile(context).writeText("1")
+    } catch (error: Exception) {
+        Log.e(LOG_TAG, "failed to re-arm the media fade for the next awakening", error)
+    }
+}
+
+/**
+ * Starts a fresh fade once [shouldStartWakeFade] says so - owner request, 2026-10-02: waking in the night and
+ * playing the audiobook again fades it again, from the Settings screen's starting volume [startPercent].
+ */
+fun startWakeFadeIfDue(
+    context: Context, nightStartedAt: Instant, now: Instant, sleepState: SleepState,
+    fadeEnabled: Boolean, startPercent: Int, morningAlarmRang: Boolean, debugNight: Boolean,
+) {
+    val mediaPlaying = context.getSystemService(AudioManager::class.java)?.isMusicActive ?: false
+    if (!shouldStartWakeFade(wakeFadeRearmFile(context).exists(), sleepState, mediaPlaying, fadeEnabled, morningAlarmRang)) return
+    startMediaFade(context, nightStartedAt, now, startPercent, debugNight)
+}
+
+private fun wakeFadeRearmFile(context: Context): File = File(context.filesDir, WAKE_FADE_REARM_FILE_NAME)
+
+private fun clearWakeFadeRearm(context: Context) {
+    val file = wakeFadeRearmFile(context)
+    if (file.exists() && !file.delete()) Log.e(LOG_TAG, "failed to clear the media fade re-arm marker")
 }
 
 private fun mediaFadeFile(context: Context): File = File(context.filesDir, MEDIA_FADE_FILE_NAME)

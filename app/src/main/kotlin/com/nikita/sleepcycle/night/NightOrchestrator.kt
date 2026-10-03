@@ -324,6 +324,13 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     if (sleepState == SleepState.ASLEEP && appSettings.bedtimeAudio.pauseWhenAsleep) {
         pauseMediaIfJustFellAsleep(context, state, sleepState, config, decisionNow)
     } else {
+        // Owner request, 2026-10-02: awake again after a sleep with media playing - fade it again.
+        startWakeFadeIfDue(
+            context, state.startedAt, decisionNow, sleepState,
+            fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = appSettings.bedtimeAudio.fadeStartPercent,
+            morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
+            debugNight = debugNight,
+        )
         stepMediaFade(context, state.startedAt, decisionNow, debugNight)
     }
 
@@ -390,7 +397,11 @@ private suspend fun pauseMediaIfJustFellAsleep(context: Context, state: NightSta
         NightLogEvent(now, "media_pause_on_sleep", mapOf("result" to result.name.lowercase())),
         state.debugOptions.isAnyEnabled
     )
-    if (result != MediaPauseResult.STILL_PLAYING) endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
+    if (result != MediaPauseResult.STILL_PLAYING) {
+        endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
+        // The next awakening with media playing gets a fresh fade (startWakeFadeIfDue).
+        rearmMediaFadeForWake(context)
+    }
 }
 
 /**

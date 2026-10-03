@@ -3,7 +3,10 @@ package com.nikita.sleepcycle.night
 // File purpose: the pure decisions behind the bedtime media fade - where it starts and which volume step it
 // should be at by a given minute (see MediaFade.kt). Worked examples use the Pixel 10's 25-step media volume.
 
+import com.nikita.sleepcycle.engine.SleepState
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Instant
 
@@ -51,5 +54,27 @@ class MediaFadeTest {
 
     @Test fun `a muted volume stays muted`() {
         assertEquals(0, stepAt(20, startStep = 0))
+    }
+
+    // Owner request, 2026-10-02: waking in the night and playing the audiobook again fades it again.
+
+    @Test fun `after falling asleep, waking with media playing starts a fresh fade`() {
+        assertTrue(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+    }
+
+    @Test fun `waking with nothing playing waits until media plays`() {
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = false, fadeEnabled = true, morningAlarmRang = false))
+    }
+
+    @Test fun `no fresh fade before the first sleep, or once a fade has already started since`() {
+        // Not rearmed: the Start night fade is still the one running, or the owner turned the volume up himself.
+        assertFalse(shouldStartWakeFade(fadeRearmed = false, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.NOT_YET_ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+    }
+
+    @Test fun `no fresh fade while asleep, with the fade switched off, or once the morning alarm has rung`() {
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = false, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = true))
     }
 }
