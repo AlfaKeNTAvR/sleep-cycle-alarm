@@ -56,6 +56,17 @@ class MediaFadeTest {
         assertEquals(0, stepAt(20, startStep = 0))
     }
 
+    // Owner request, 2026-10-02: falling asleep parks the volume at the starting volume until End night, so a
+    // fade after waking must remember the volume the night began with, not the parked one.
+
+    @Test fun `a fade after a sleep keeps the night's own original volume for End night`() {
+        assertEquals(25, fadeOriginalStep(currentStep = 13, parkedOriginalStep = 25))
+    }
+
+    @Test fun `the night's first fade takes the volume playing at the time as the original`() {
+        assertEquals(20, fadeOriginalStep(currentStep = 20, parkedOriginalStep = null))
+    }
+
     // Owner request, 2026-10-02: waking in the night and playing the audiobook again fades it again.
 
     @Test fun `after falling asleep, waking with media playing starts a fresh fade`() {

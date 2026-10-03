@@ -398,7 +398,8 @@ private suspend fun pauseMediaIfJustFellAsleep(context: Context, state: NightSta
         state.debugOptions.isAnyEnabled
     )
     if (result != MediaPauseResult.STILL_PLAYING) {
-        endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
+        // Parked at the starting volume, not restored: media restarted on waking plays quietly (MediaFade.kt).
+        parkMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
         // The next awakening with media playing gets a fresh fade (startWakeFadeIfDue).
         rearmMediaFadeForWake(context)
     }
