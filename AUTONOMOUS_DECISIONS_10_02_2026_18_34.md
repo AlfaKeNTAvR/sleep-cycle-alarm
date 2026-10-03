@@ -25,5 +25,9 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 
 - **Fade only lowers** (phone test, 20:50 night): parking now keeps a volume the fade already took below the starting volume (it lifted 3 back to 10), and a tick leaves a volume turned down below the schedule alone (it lifted 4 to 5). Tested at the pure seams `fadeParkStep` and `fadeTickAction`, the same seam as the earlier fade tests.
 
+- **Fade reacts at once** (phone test, 21:10 night): NightService now watches media starting or stopping and media volume changes, and 1 s after the last one runs the fade's share of a tick (`runMediaFadeCheck`): no band sync, no plan, no pause, against the sleep state the last tick saw. The 1 s wait lets a held volume key finish instead of fighting it. The watcher itself has no unit test (Android callbacks, no Robolectric or coroutines-test in the project); the decisions it runs are the tested pure fade functions.
+- **Parked volume is capped too**: while parked (asleep, or awake before media plays), a volume turned above the starting volume is pulled back to it; one turned below stays.
+- **Before bed banner** (owner request): now the same amber-outlined block as the Night screen, "SIMULATED" left, clock right, no controls. Supersedes W7's no-clock banner. The clock re-reads every 30 s there, so it can lag the real minute by up to 30 s.
+
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.

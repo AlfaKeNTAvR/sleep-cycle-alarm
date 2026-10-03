@@ -102,6 +102,15 @@ class MediaFadeTest {
         assertEquals(FadeTickAction.None, tickAt(60, currentStep = 13, parked = true))
     }
 
+    // Phone test, 2026-10-02: a volume key held in the night took the parked 3 up to 15 before any media played.
+    @Test fun `a parked volume turned up above the starting volume is pulled back to it`() {
+        assertEquals(FadeTickAction.SetVolume(13), tickAt(60, currentStep = 22, parked = true))
+    }
+
+    @Test fun `a parked volume turned down stays where it is`() {
+        assertEquals(FadeTickAction.None, tickAt(60, currentStep = 4, parked = true))
+    }
+
     @Test fun `once the morning alarm has rung the owner's own volume comes back, parked or not`() {
         assertEquals(FadeTickAction.RestoreOriginal, tickAt(20, currentStep = 10, morningAlarmRang = true))
         assertEquals(FadeTickAction.RestoreOriginal, tickAt(60, currentStep = 13, parked = true, morningAlarmRang = true))

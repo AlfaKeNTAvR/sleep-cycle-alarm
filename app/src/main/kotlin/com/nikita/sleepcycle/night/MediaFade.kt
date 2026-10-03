@@ -98,7 +98,8 @@ sealed interface FadeTickAction {
 
 /**
  * One tick's decision for a fade begun at [startStep] at [startedAt] (owner spec, 2026-10-02): once the morning
- * alarm has rung, the owner's own volume comes back; while [parked] (asleep) nothing moves; otherwise the volume
+ * alarm has rung, the owner's own volume comes back; while [parked] (asleep, or awake with nothing playing yet)
+ * the volume never goes above [startStep] and never steps down; otherwise the volume
  * is wherever [fadeTargetStep] says, down to [endPercent] - a [currentStep] the owner turned up himself is
  * pulled back to it, while one he turned down below it stays where he put it (the fade only ever lowers).
  */
@@ -106,7 +107,7 @@ fun fadeTickAction(
     startStep: Int, startedAt: Instant, parked: Boolean, currentStep: Int, maxStep: Int, now: Instant, endPercent: Int, morningAlarmRang: Boolean,
 ): FadeTickAction {
     if (morningAlarmRang) return FadeTickAction.RestoreOriginal
-    if (parked) return FadeTickAction.None
+    if (parked) return if (currentStep > startStep) FadeTickAction.SetVolume(startStep) else FadeTickAction.None
     val targetStep = fadeTargetStep(startStep, maxStep, startedAt, now, endPercent)
     return if (targetStep >= currentStep) FadeTickAction.None else FadeTickAction.SetVolume(targetStep)
 }

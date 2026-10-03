@@ -323,21 +323,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // Settings: with "Pause media when asleep" off, playback carries on and the fade keeps stepping down to its floor.
     if (sleepState == SleepState.ASLEEP && appSettings.bedtimeAudio.pauseWhenAsleep) {
         pauseMediaIfJustFellAsleep(context, state, sleepState, config, decisionNow)
-    } else {
-        // Owner request, 2026-10-02: awake again after a sleep with media playing - fade it again.
-        startWakeFadeIfDue(
-            context, state.startedAt, decisionNow, sleepState,
-            fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = appSettings.bedtimeAudio.fadeStartPercent,
-            morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
-            debugNight = debugNight,
-        )
     }
-    // Every tick, asleep or not: a parked volume must still come back once the morning alarm has rung.
-    stepMediaFade(
-        context, state.startedAt, decisionNow, endPercent = appSettings.bedtimeAudio.fadeEndPercent,
-        morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
-        debugNight = debugNight,
-    )
+    stepMediaFadeForSleepState(context, state, appSettings, sleepState, decisionNow)
 
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are
     // PhoneAlarmReceiver's own bookkeeping (see PhoneAlarmFiredStore.kt) - a tick only ever reads them
@@ -381,6 +368,35 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // reason the segment/plan mismatch above could commit out of order.
     publishNightState(newState)
     return newState
+}
+
+/**
+ * The bedtime fade's share of a tick, also run on its own by [runMediaFadeCheck]: awake again after a sleep
+ * with media playing starts a fresh fade (owner request, 2026-10-02), then the running or parked fade takes
+ * its step - every time, asleep or not, so a parked volume still comes back once the morning alarm has rung.
+ */
+private fun stepMediaFadeForSleepState(context: Context, state: NightState, appSettings: AppSettings, sleepState: SleepState, now: Instant) {
+    val debugNight = state.debugOptions.isAnyEnabled
+    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    startWakeFadeIfDue(
+        context, state.startedAt, now, sleepState,
+        fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = appSettings.bedtimeAudio.fadeStartPercent,
+        morningAlarmRang = morningAlarmRang, debugNight = debugNight,
+    )
+    stepMediaFade(context, state.startedAt, now, endPercent = appSettings.bedtimeAudio.fadeEndPercent, morningAlarmRang = morningAlarmRang, debugNight = debugNight)
+}
+
+/**
+ * Phone test, 2026-10-02: the fade used to act only on ticks, up to 15 minutes after the owner pressed play or
+ * turned the volume up. NightService now runs this the moment media starts or the volume changes. It is the
+ * fade's share of a tick alone - no band sync, no plan, no pause - against the sleep state the last tick saw.
+ * Does nothing when no night is in progress.
+ */
+suspend fun runMediaFadeCheck(context: Context): Unit = withNightTransactionLock {
+    val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock
+    val now = nowInstant()
+    val sleepState = detectSleepState(normalizeSegments(state.lastSegments, state.lastSyncAt ?: now, resolveEngineConfig(state)))
+    stepMediaFadeForSleepState(context, state, readAppSettings(context).first(), sleepState, now)
 }
 
 /**
