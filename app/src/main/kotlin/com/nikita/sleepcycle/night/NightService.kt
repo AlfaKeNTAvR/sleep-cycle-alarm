@@ -42,7 +42,8 @@ private const val OPEN_APP_REQUEST_CODE = 4001
 
 /** Longer than the worst case a tick can take: the sync (60 s) and export (60 s) waits, plus time to copy and read the database. */
 private val WAKE_LOCK_TIMEOUT: Duration = Duration.ofMinutes(5)
-private val NOTIFICATION_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+/** Zone-less on purpose: the zone is the phone's at each update (round2.md #9), not the one at class load. */
+private val NOTIFICATION_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /** Foreground service (type `specialUse`) that owns the overnight tracking lifetime: one tick per start command. */
 class NightService : Service() {
@@ -199,7 +200,7 @@ private fun buildNotification(
     plannedWake: Instant?,
     debugOptions: DebugOptions = DebugOptions(),
 ): Notification {
-    val wakeLine = plannedWake?.let { "Planned wake time: ${NOTIFICATION_TIME_FORMAT.format(it)}" } ?: "Waiting for first sync"
+    val wakeLine = plannedWakeLine(plannedWake)
     return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
         .setContentTitle("Tracking your sleep")
         .setContentText(debugBannerPrefix(context, debugOptions) + wakeLine)
@@ -209,6 +210,14 @@ private fun buildNotification(
         .setSilent(true)
         .build()
 }
+
+/**
+ * The tracking notification's planned-wake line, [plannedWake] in the phone's time zone as it is now. Round2 #9
+ * (ISSUES.md #15, 2026-10-03): the zone used to be captured at class load, so after a time zone change mid-night
+ * the notification showed the old zone's time until the process restarted.
+ */
+internal fun plannedWakeLine(plannedWake: Instant?): String =
+    plannedWake?.let { "Planned wake time: ${NOTIFICATION_TIME_FORMAT.withZone(ZoneId.systemDefault()).format(it)}" } ?: "Waiting for first sync"
 
 /**
  * T12: SIMULATED_TIME's own notification label carries the live clock reading, so the tracking notification

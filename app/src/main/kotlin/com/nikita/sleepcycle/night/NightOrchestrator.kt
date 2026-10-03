@@ -310,7 +310,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // Owner spec, 2026-10-02: Auto sets the clock's speed for where the night now is BEFORE anything below arms
     // an alarm or books the next tick, so all of them land under the new speed. Simulated nights only.
     val followUpAt = readPendingFollowUp(context)?.at
-    val autoAlarmAt = autoSpeedAlarmAt(plan, state.settings.deadline)
+    val autoAlarmAt = autoSpeedAlarmAt(plan, state.settings.deadline, state.morningAlarmAt)
     val autoSpeedOn = state.debugOptions.simulatedBandData && applyAutoSpeed(context, decisionNow, autoAlarmAt, followUpAt, waitingForSleep = plan.onsetIsProjected)
 
     val napAlarmArmed = armPhoneAlarmIfNeeded(context, state, state.lastPlan, plan, decisionNow)

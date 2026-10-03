@@ -352,10 +352,16 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      */
     private fun watchNightStateClearedWhileViewing() {
         viewModelScope.launch {
-            observedNightState.collectLatest { state ->
+            // ISSUES.md #10 (deadline.md #2, 2026-10-03): collect, not collectLatest - a later emission used to
+            // cancel the restore half way, leaving the dead Night screen up until the app was reopened.
+            observedNightState.collect { state ->
                 if (state == null && screen.value == Screen.Night && !showingMorningReport.value && !endingNight.value) {
                     restoreMorningReportFromDiskIfAny(nightStateFromDisk = null)
                 }
+                // ISSUES.md #11: a new night state (an alarm that just fired, a tick) usually comes with a new
+                // pending nudge or nap; read it now rather than on the next ticker round, so the screen swaps
+                // "I'm up" for "Nap" in one step.
+                refreshPendingOutOfBedNudge()
             }
         }
     }

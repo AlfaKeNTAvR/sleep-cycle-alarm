@@ -42,10 +42,20 @@ private val nightStateFlow = MutableStateFlow<NightState?>(null)
 /** The current night state for the UI to observe; updated by every call in this file. */
 val observedNightState: StateFlow<NightState?> = nightStateFlow.asStateFlow()
 
-/** Loads the persisted night state into [observedNightState] off the main thread; call once when the UI (re)attaches, e.g. after process death. */
+/**
+ * Loads the persisted night state into [observedNightState] off the main thread; call when the UI (re)attaches,
+ * e.g. after process death, and after anything that changed the state's files outside a tick (an alarm firing).
+ *
+ * ISSUES.md #10 (deadline.md #2, 2026-10-03): read and published under the night transaction lock, like every
+ * other publisher, so it can never publish a state some commit has since replaced. Opening the app runs this next
+ * to an immediate tick; when that tick finished the night (cleared the state, published null), this refresh,
+ * which had read the disk first, published the finished night again and the Night screen sat on it.
+ */
 fun refreshNightStateFromDisk(context: Context) {
     controllerScope.launch {
-        nightStateFlow.value = withContext(Dispatchers.IO) { loadNightState(context) }
+        withNightTransactionLock {
+            nightStateFlow.value = withContext(Dispatchers.IO) { loadNightState(context) }
+        }
     }
 }
 

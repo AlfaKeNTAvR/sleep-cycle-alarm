@@ -112,4 +112,21 @@ class AlarmFiringScenarioTest {
         runImmediateTick(context)
         assertNull("the morning alarm that already rang is not armed again", armedPhoneAlarmAt(context))
     }
+
+    // ISSUES.md #12 (deadline.md #5): a force-stop as the alarm fired once delivered a firing for 1970-01-01, which
+    // was saved as the fired marker and overwrote the real one.
+    @Test
+    fun `a firing for an instant before the night started is rung but not booked as fired`() = runBlocking {
+        val onset = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+        startNightAsleepSince(onset)
+        val alarm = checkNotNull(armedAlarmIntent(context))
+        val corrupt = Intent(alarm).putExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, 0L)
+
+        val watching = RingWatchingContext(context)
+        firePhoneAlarm(watching, corrupt)
+
+        assertTrue("it still rings", watching.ringIntent != null)
+        assertNull("1970-01-01 is not saved as the fired marker", readPhoneAlarmFiredFor(context))
+        assertTrue(nightLogText(context).contains("implausible_alarm_scheduled_for"))
+    }
 }

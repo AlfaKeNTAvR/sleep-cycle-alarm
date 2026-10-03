@@ -79,7 +79,7 @@ fun readWakeAlarmFiredAt(context: Context): Instant? = readInstantFile(wakeAlarm
 /** F2/G8 SUPERSEDE the original spec: persists [count] as how many nap alarms have FIRED this night, pre-wake (rule 7) or post-wake (D5) alike, already clamped to [com.nikita.sleepcycle.engine.MAX_NAP_ALARMS] by the caller. */
 fun saveNapAlarmsUsed(context: Context, count: Int): Boolean =
     try {
-        napAlarmsUsedFile(context).writeText(count.toString())
+        writeTextAtomically(napAlarmsUsedFile(context), count.toString())
         true
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to save napAlarmsUsed", error)

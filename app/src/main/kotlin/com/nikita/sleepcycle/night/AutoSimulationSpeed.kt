@@ -5,7 +5,9 @@ package com.nikita.sleepcycle.night
 // fast as it can until shortly before the next alarm, then slows down in steps for the approach. Pure: the night tick
 // (NightOrchestrator.kt) applies it, the Night screen's Auto chip selects it.
 
+import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
+import com.nikita.sleepcycle.engine.sameAlarmInstant
 import java.time.Duration
 import java.time.Instant
 
@@ -16,8 +18,9 @@ import java.time.Instant
 const val AUTO_FAR_SPEED = 3600
 
 /**
- * Auto's speed while no sleep has been seen yet and no fixed alarm is ahead (emulator test, 2026-10-03): the
- * planned alarm is then projected from "now" and never comes closer, so running fast only skipped the night.
+ * Auto's speed while no sleep has been seen yet (or while awake mid-night) and no fixed alarm is ahead (emulator
+ * test, 2026-10-03): the planned alarm is then projected from "now" and never comes closer, so running fast only
+ * skipped the night.
  */
 const val AUTO_WAITING_FOR_SLEEP_SPEED = 60
 
@@ -88,11 +91,19 @@ fun autoSpeedTickAt(ordinaryTickAt: Instant?, now: Instant, plannedAlarmAt: Inst
 }
 
 /**
- * The alarm Auto runs towards for [plan]: its own alarm once sleep has been seen, and only the night's
- * [deadline] while the alarm is projected from "now" (it would stay the same distance ahead for ever).
+ * The alarm Auto runs towards for [plan]: its own alarm once sleep has been seen, and only the fixed alarms
+ * while the alarm is projected from "now" (a projected one would stay the same distance ahead for ever): the
+ * night's [deadline], and the latched [morningAlarmAt] when the plan keeps it (H8, awake mid-night before it).
+ *
+ * Owner decision, 2026-10-03 (spec-audit.md #5): awake mid-night Auto slows down before the planned morning
+ * alarm or the deadline, whichever comes first, like any other alarm - it used to run at 3600x towards the
+ * deadline straight past H8's morning alarm.
  */
-fun autoSpeedAlarmAt(plan: AlarmPlan?, deadline: Instant?): Instant? =
-    if (plan?.onsetIsProjected == true) deadline else plan?.wakeAt
+fun autoSpeedAlarmAt(plan: AlarmPlan?, deadline: Instant?, morningAlarmAt: Instant?): Instant? {
+    if (plan?.onsetIsProjected != true) return plan?.wakeAt
+    val keptMorningAlarm = plan.wakeAt?.takeIf { plan.mode == AlarmMode.NAP && sameAlarmInstant(it, morningAlarmAt) }
+    return listOfNotNull(deadline, keptMorningAlarm).minOrNull()
+}
 
 /** The earliest of the two alarms still ahead of [now], or null when neither is. */
 private fun nextAlarmAhead(now: Instant, plannedAlarmAt: Instant?, followUpAt: Instant?): Instant? =

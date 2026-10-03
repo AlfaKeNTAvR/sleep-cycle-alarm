@@ -430,6 +430,23 @@ internal fun replaceFileAtomically(source: File, target: File) {
     Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
 }
 
+/**
+ * Writes [text] to [target] whole or not at all: to a temp sibling first, fsynced, then renamed over [target]
+ * ([replaceFileAtomically]). Round2 #5 (ISSUES.md #13, 2026-10-03): the small stores written in place (the media
+ * fade record, its re-arm marker, the fired-nap count, the morning report) could be left truncated by a kill
+ * mid-write; for the fade that meant the owner's own volume was never put back. Throws on failure, leaving the
+ * previous content of [target] as it was.
+ */
+internal fun writeTextAtomically(target: File, text: String) {
+    val temp = File(target.parentFile, "${target.name}.tmp")
+    FileOutputStream(temp).use { stream ->
+        stream.write(text.toByteArray(Charsets.UTF_8))
+        stream.flush()
+        stream.fd.sync()
+    }
+    replaceFileAtomically(temp, target)
+}
+
 fun saveNightState(context: Context, state: NightState): Boolean {
     val file = nightStateFile(context)
     val tempFile = File(context.filesDir, "$NIGHT_STATE_FILE_NAME.tmp")

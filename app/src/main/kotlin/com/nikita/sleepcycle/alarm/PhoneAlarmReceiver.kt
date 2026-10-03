@@ -66,6 +66,7 @@ import com.nikita.sleepcycle.night.clearOutOfBedNudgePendingAt
 import com.nikita.sleepcycle.night.firedAlarmIsWakeAlarm
 import com.nikita.sleepcycle.night.loadNightState
 import com.nikita.sleepcycle.night.nowInstant
+import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.saveLastNapAlarmFiredAt
 import com.nikita.sleepcycle.night.saveNapAlarmsUsed
 import com.nikita.sleepcycle.night.armFollowUpAfterAlarmFired
@@ -88,6 +89,15 @@ import java.time.Instant
  * (see OutOfBedNudgeSupersessionTest.kt's own L1 section).
  */
 internal fun firedAlarmRecordsPlanBookkeeping(isOutOfBed: Boolean): Boolean = !isOutOfBed
+
+/**
+ * ISSUES.md #12 (deadline.md #5, 2026-10-03): whether a firing's scheduled-for instant [firedFor] can belong to
+ * the night that started at [nightStartedAt] (virtual, like every alarm instant). Every phone alarm a night
+ * arms is after its start, so an earlier one is a corrupt extra - seen once as 1970-01-01 after a force-stop
+ * at 60x - and saving it as the fired marker overwrote the real one: the night then believed its morning alarm
+ * had not rung. Such a firing still rings and still arms the nudge; only its fired-alarm bookkeeping is skipped.
+ */
+internal fun isPlausibleFiredFor(firedFor: Instant, nightStartedAt: Instant): Boolean = !firedFor.isBefore(nightStartedAt)
 
 class PhoneAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -127,7 +137,13 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             // when that happens there is nothing left to log against, but the record must still be cleared here
             // or it outlives the night it belonged to, surviving until the next startNight overwrites it.
             if (isOutOfBed) clearOutOfBedNudgePendingAt(context)
-            if (state != null) recordRealAlarmFired(context, state, intent, now, isOutOfBed)
+            if (state != null) {
+                recordRealAlarmFired(context, state, intent, now, isOutOfBed)
+                // ISSUES.md #11 (deadline.md #4, 2026-10-03): the Night screen draws from the published state,
+                // which only a tick used to update - at 1x no tick follows a firing, so the screen kept offering
+                // "I'm up" next to the nudge's Nap until one did. Publish the fired markers now.
+                refreshNightStateFromDisk(context)
+            }
         }
     }
 
@@ -153,8 +169,16 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
             val scheduledForMillis = intent.getLongExtra(EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI, -1L)
             if (scheduledForMillis >= 0) {
                 val firedFor = Instant.ofEpochMilli(scheduledForMillis)
-                markPhoneAlarmFired(context, state, firedFor)
-                recordWakeOrNapFired(context, state, firedFor)
+                if (isPlausibleFiredFor(firedFor, state.startedAt)) {
+                    markPhoneAlarmFired(context, state, firedFor)
+                    recordWakeOrNapFired(context, state, firedFor)
+                } else {
+                    appendNightLog(
+                        context, state.realStartedAt,
+                        NightLogEvent(now, "implausible_alarm_scheduled_for", mapOf("scheduledFor" to firedFor.toString(), "nightStartedAt" to state.startedAt.toString())),
+                        state.debugOptions.isAnyEnabled
+                    )
+                }
             }
         }
         armOutOfBedNudge(context, state, now, isOutOfBed, intent.readAlarmLabel())
