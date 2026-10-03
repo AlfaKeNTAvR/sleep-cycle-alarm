@@ -98,6 +98,17 @@ class MediaFadeTest {
         assertEquals(10, fadeParkStep(currentStep = 13, startStep = 10))
     }
 
+    // Owner request, 2026-10-02: the simulation block shows the media volume as a percent of the phone's range.
+    @Test fun `the media volume reads as a whole percent of the range`() {
+        assertEquals(52, mediaVolumePercent(currentStep = 13, maxStep = pixelMaxStep))
+        assertEquals(100, mediaVolumePercent(currentStep = 25, maxStep = pixelMaxStep))
+        assertEquals(0, mediaVolumePercent(currentStep = 0, maxStep = pixelMaxStep))
+    }
+
+    @Test fun `a phone reporting no volume range reads as 0 percent`() {
+        assertEquals(0, mediaVolumePercent(currentStep = 3, maxStep = 0))
+    }
+
     @Test fun `a parked volume does not step down while the owner sleeps`() {
         assertEquals(FadeTickAction.None, tickAt(60, currentStep = 13, parked = true))
     }

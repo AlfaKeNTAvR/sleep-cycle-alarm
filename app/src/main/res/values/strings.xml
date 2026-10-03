@@ -180,6 +180,7 @@
     <string name="debug_speed_auto">Auto</string>
     <string name="debug_speed_auto_running">Auto\n%1$s</string>
     <string name="debug_asleep_toggle_title">Asleep</string>
+    <string name="debug_media_volume_value">%1$d%%</string>
     <string name="debug_ring_test_alarm_button">Ring phone alarm</string>
 
     <!-- Debug warning banner (Before bed and Night screens): names every switch that is currently live. SIMULATED_TIME carries the live "HH:mm[, Nx]" reading (T12 amendment) - see com.nikita.sleepcycle.night.formatSimulatedTimeValue. -->

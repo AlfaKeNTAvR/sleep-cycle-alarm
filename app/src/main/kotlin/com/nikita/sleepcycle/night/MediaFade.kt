@@ -83,6 +83,10 @@ fun shouldStartWakeFade(fadeRearmed: Boolean, sleepState: SleepState, mediaPlayi
  */
 fun fadeOriginalStep(currentStep: Int, parkedOriginalStep: Int?): Int = parkedOriginalStep ?: currentStep
 
+/** The media volume [currentStep] as a whole percent of the phone's range [maxStep] (0 when it reports none), for the simulation block. */
+fun mediaVolumePercent(currentStep: Int, maxStep: Int): Int =
+    if (maxStep <= 0) 0 else (currentStep * FULL_RANGE_PERCENT / maxStep).roundToInt()
+
 /** The volume parked on falling asleep: the fade's [startStep], or [currentStep] if the fade already took it lower. */
 fun fadeParkStep(currentStep: Int, startStep: Int): Int = minOf(currentStep, startStep)
 
