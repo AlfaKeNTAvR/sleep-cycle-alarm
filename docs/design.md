@@ -31,7 +31,7 @@ One screen whose content depends on the moment you look at it. Opening it syncs 
 Section titles, no descriptions. Every change is saved at once.
 
 - **After the alarm:** Out-of-bed nudge, 5, 10 or 15 min (default 10), measured from the ring's end. Nap length, 10 to 30 min in 5 min steps (default 20), used by both the Nap button and the engine's naps between cycles. Both apply from the next Start night.
-- **Bedtime audio:** Pause media when asleep (on/off), Fade media volume (on/off), Starting volume 10 to 50% in 5% steps (default 25%). The fade's 10 min hold and 5 min step stay hidden. The fade runs from Start night, and again each time you wake in the night with media playing (owner request, 2026-10-02); it never runs after the morning alarm.
+- **Bedtime audio:** Pause media when asleep (on/off), Fade media volume (on/off), Starting volume 10 to 50% in 5% steps (default 25%). The fade's 10 min hold and 5 min step stay hidden. The fade starts on the first sync after Start night that finds media playing (up to 5 min after you press play), and again each time you wake in the night with media playing (owner request, 2026-10-02); it never runs after the morning alarm.
 - **Sleep rating:** Rate the night (on/off), Ask again later (on/off), Ask at (default 15:00).
 - **More:** Setup, Debug.
 

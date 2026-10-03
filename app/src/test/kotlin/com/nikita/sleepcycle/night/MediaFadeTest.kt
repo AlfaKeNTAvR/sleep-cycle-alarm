@@ -66,10 +66,16 @@ class MediaFadeTest {
         assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.AWAKE, mediaPlaying = false, fadeEnabled = true, morningAlarmRang = false))
     }
 
-    @Test fun `no fresh fade before the first sleep, or once a fade has already started since`() {
-        // Not rearmed: the Start night fade is still the one running, or the owner turned the volume up himself.
+    @Test fun `the Start night fade begins once media is actually playing, before the first sleep`() {
+        // Seen on the phone, 2026-10-02: setting the volume at the Start night tap, before the audiobook played,
+        // changed a volume nobody heard, and the next tick read the playing device's own volume as an override.
+        assertTrue(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.NOT_YET_ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+    }
+
+    @Test fun `no new fade once one has started, until the next sleep re-arms it`() {
+        // Not armed: a fade is already running, or the owner turned the volume up himself and ended it.
         assertFalse(shouldStartWakeFade(fadeRearmed = false, sleepState = SleepState.AWAKE, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, sleepState = SleepState.NOT_YET_ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStartWakeFade(fadeRearmed = false, sleepState = SleepState.NOT_YET_ASLEEP, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
     }
 
     @Test fun `no fresh fade while asleep, with the fade switched off, or once the morning alarm has rung`() {
