@@ -18,8 +18,9 @@ set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
 SDK="${ANDROID_HOME:-$HOME/android-dev/sdk}"
-SERIAL="emulator-5554"
-ADB=("$SDK/platform-tools/adb" -s "$SERIAL")
+# adb reads its target from ANDROID_SERIAL, so no call here can reach a phone that is plugged in too.
+export ANDROID_SERIAL="emulator-5554"
+ADB=("$SDK/platform-tools/adb")
 APP_PACKAGE="com.nikita.sleepcycle"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 

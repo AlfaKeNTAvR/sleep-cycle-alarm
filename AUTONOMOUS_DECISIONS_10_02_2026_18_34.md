@@ -31,5 +31,8 @@ Auto speed rule, waking sets 1x, End night cleanup, plus: the tick that lands on
 
 - **Awake re-tick survives other ticks** (phone test, 21:45 night): coming back to the app after starting media ran an immediate tick that replaced the re-tick booked for when the awake mark passes the 1 min floor, so the awakening (and the wake fade) was never seen. Every tick now books its next one no later than that instant (`simulatedAwakeSettlesAt`, `earliestTickAt`). Simulated nights only.
 
+- **Phone-free testing** (owner approved): headless API 35 emulator (`scripts/emulator.sh`, AVD `sca35`) plus a `testplayer` module standing in for an audiobook app; verified on it: fade starts about 1 s after play, a raised volume is pulled back, the awake re-tick survives an extra sync, pause on sleep stops the player. Robolectric 4.16 (JUnit 4 via the vintage engine) runs whole-night scenarios with the ordinary tests; first one reproduces the lost awake re-tick (red without the fix, green with it).
+- **emulator.sh targets the emulator through ANDROID_SERIAL**, not `adb -s`: the repo's publish-safety test forbids `-s` in tracked files, and dropping it outright would let the script tap a plugged-in phone.
+
 ## Open questions
 - Auto with no night running (Before bed) has no alarm to slow down for, so it would sit at 600x. The chips only show on the Night screen, so this cannot happen today.

@@ -23,6 +23,10 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     buildFeatures {
         compose = true
         // Exposes BuildConfig.DEBUG, the compile-time flag DebugOptions.kt/resolveDebugOptions and the Setup
@@ -56,6 +60,13 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.org.json)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // Robolectric: whole-night scenario tests against the real Android code on the JVM (see
+    // app/src/test/kotlin/com/nikita/sleepcycle/scenario). Robolectric runs on JUnit 4, so the vintage engine
+    // runs those tests alongside the JUnit 5 ones in the same `test` task.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.junit4)
+    testImplementation(libs.androidx.test.core)
+    testRuntimeOnly(libs.junit.vintage.engine)
 }
 
 tasks.withType<Test> {

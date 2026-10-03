@@ -216,6 +216,9 @@ scripts/emulator.sh log                   # media_fade_start, media_fade_step, .
 
 It does not cover Bluetooth headphones or a real band.
 
+Whole-night scenarios that need no emulator run on Robolectric with the ordinary tests
+(`app/src/test/kotlin/com/nikita/sleepcycle/scenario/`): the real night code against a simulated Android.
+
 ## Known limits
 
 - Reboot during the night (e.g. a system update): the phone alarm is restored only once the phone is unlocked once after the reboot (`BootReceiver` needs credential-protected storage). Direct Boot support, which would restore it before first unlock, is deferred - not fixed in this batch.
