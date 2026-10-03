@@ -27,8 +27,19 @@ class MediaFadeTest {
     }
 
     private val nightStart = Instant.parse("2026-10-02T23:00:00Z")
-    private fun stepAt(minutes: Long, startStep: Int = 6) =
-        fadeTargetStep(startStep, pixelMaxStep, nightStart, nightStart.plusSeconds(minutes * 60))
+    private fun stepAt(minutes: Long, startStep: Int = 6, endPercent: Int = 5) =
+        fadeTargetStep(startStep, pixelMaxStep, nightStart, nightStart.plusSeconds(minutes * 60), endPercent)
+
+    // Owner request, 2026-10-02: the ending volume is a Settings choice (5% to 45%), not a fixed 5%.
+
+    @Test fun `the fade stops at the ending volume chosen in Settings`() {
+        // 20% of 25 steps is 5.
+        assertEquals(5, stepAt(90, startStep = 13, endPercent = 20))
+    }
+
+    @Test fun `an ending volume at or above the starting volume never lowers it`() {
+        assertEquals(6, stepAt(60, startStep = 6, endPercent = 45))
+    }
 
     @Test fun `the volume holds for the first 10 minutes`() {
         assertEquals(6, stepAt(0))

@@ -151,6 +151,15 @@ fun SettingsScreen(
                 onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeStartPercent = it)) },
                 enabled = shouldFadeMedia(bedtimeAudio),
             )
+            CardDivider()
+            StepperRow(
+                label = stringResource(R.string.settings_fade_end),
+                stepper = SettingStepper.FADE_END_PERCENT,
+                value = bedtimeAudio.fadeEndPercent,
+                valueText = stringResource(R.string.settings_percent_value, bedtimeAudio.fadeEndPercent),
+                onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeEndPercent = it)) },
+                enabled = shouldFadeMedia(bedtimeAudio),
+            )
         }
 
         SettingsSection(stringResource(R.string.settings_section_rating)) {

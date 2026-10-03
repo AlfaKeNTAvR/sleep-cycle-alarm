@@ -331,7 +331,11 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
             morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
             debugNight = debugNight,
         )
-        stepMediaFade(context, state.startedAt, decisionNow, debugNight)
+        stepMediaFade(
+            context, state.startedAt, decisionNow, endPercent = appSettings.bedtimeAudio.fadeEndPercent,
+            morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor),
+            debugNight = debugNight,
+        )
     }
 
     // F2/F6/H2: phoneAlarmFiredFor, wakeAlarmFiredAt, napAlarmsUsed and lastNapAlarmFiredAt are

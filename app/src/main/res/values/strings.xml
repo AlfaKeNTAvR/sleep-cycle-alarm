@@ -235,6 +235,7 @@
     <string name="settings_nap_length">Nap length</string>
     <string name="settings_section_bedtime_audio">Bedtime audio</string>
     <string name="settings_fade">Fade media volume</string>
+    <string name="settings_fade_end">Ending volume</string>
     <string name="settings_fade_start">Starting volume</string>
     <string name="settings_pause_when_asleep">Pause media when asleep</string>
     <string name="settings_section_rating">Sleep rating</string>

@@ -9,6 +9,7 @@ import java.time.LocalTime
 private const val DEFAULT_NUDGE_MINUTES = 10
 private const val DEFAULT_NAP_MINUTES = 20
 private const val DEFAULT_FADE_START_PERCENT = 25
+private const val DEFAULT_FADE_END_PERCENT = 5
 private val DEFAULT_RATING_ASK_AT: LocalTime = LocalTime.of(15, 0)
 
 /**
@@ -26,6 +27,8 @@ data class BedtimeAudioSettings(
     val fadeEnabled: Boolean = true,
     /** Where the fade starts, as a percent of the media volume range - never louder than what was already playing. */
     val fadeStartPercent: Int = DEFAULT_FADE_START_PERCENT,
+    /** Where the fade stops, as a percent of the media volume range (owner request, 2026-10-02). At or above [fadeStartPercent] the fade simply holds the starting volume. */
+    val fadeEndPercent: Int = DEFAULT_FADE_END_PERCENT,
     val pauseWhenAsleep: Boolean = true,
 )
 
@@ -44,6 +47,7 @@ enum class SettingStepper(val range: IntRange, val step: Int) {
     NUDGE_MINUTES(5..15, 5),
     NAP_MINUTES(10..30, 5),
     FADE_START_PERCENT(10..50, 5),
+    FADE_END_PERCENT(5..45, 5),
 }
 
 /** [current] moved one step in [direction] (+1 or -1), held inside the stepper's range. */

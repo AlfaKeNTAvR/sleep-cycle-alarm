@@ -21,7 +21,7 @@ class SettingsLimitsTest {
     @Test
     fun `defaults are the agreed ones`() {
         assertEquals(AfterAlarmSettings(nudgeMinutes = 10, napMinutes = 20), AfterAlarmSettings())
-        assertEquals(BedtimeAudioSettings(fadeEnabled = true, fadeStartPercent = 25, pauseWhenAsleep = true), BedtimeAudioSettings())
+        assertEquals(BedtimeAudioSettings(fadeEnabled = true, fadeStartPercent = 25, fadeEndPercent = 5, pauseWhenAsleep = true), BedtimeAudioSettings())
         assertEquals(SleepRatingSettings(enabled = true, askAgainLater = true, askAt = LocalTime.of(15, 0)), SleepRatingSettings())
     }
 
@@ -45,6 +45,14 @@ class SettingsLimitsTest {
         assertEquals(30, stepSetting(SettingStepper.FADE_START_PERCENT, 25, +1))
         assertEquals(50, stepSetting(SettingStepper.FADE_START_PERCENT, 50, +1))
         assertEquals(10, stepSetting(SettingStepper.FADE_START_PERCENT, 10, -1))
+    }
+
+    @Test
+    fun `the fade ending volume steps five percent at a time between 5 and 45`() {
+        // Owner request, 2026-10-02: a Settings choice in multiples of 5, below the starting volume's 50% top.
+        assertEquals(10, stepSetting(SettingStepper.FADE_END_PERCENT, 5, +1))
+        assertEquals(5, stepSetting(SettingStepper.FADE_END_PERCENT, 5, -1))
+        assertEquals(45, stepSetting(SettingStepper.FADE_END_PERCENT, 45, +1))
     }
 
     @Test
