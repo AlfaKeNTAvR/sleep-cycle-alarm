@@ -13,20 +13,34 @@ import androidx.core.content.getSystemService
 /** Must match the channel id AlarmRingService creates and posts to. */
 const val ALARM_NOTIFICATION_CHANNEL_ID = "alarm"
 
-/** Everything that could silently stop the alarm from showing over the lock screen. */
+/**
+ * Everything that could silently stop the alarm from showing over the lock screen - and, since ISSUES.md #4
+ * (2026-10-03), from being heard: the alarm stream's volume ([alarmVolume] of [alarmVolumeMax], -1 for both when
+ * the phone has no AudioManager to ask).
+ */
 data class AlarmNotificationReadiness(
     val canUseFullScreenIntent: Boolean,
     val notificationsEnabled: Boolean,
     val alarmChannelBlocked: Boolean,
-    val alarmChannelDowngraded: Boolean
-)
+    val alarmChannelDowngraded: Boolean,
+    val alarmVolume: Int,
+    val alarmVolumeMax: Int
+) {
+    /** Owner decision, 2026-10-03: under half the range (AlarmVolume.kt). Unknown counts as fine: nothing to tell the owner. */
+    val alarmVolumeLow: Boolean get() = alarmVolumeMax > 0 && isAlarmVolumeLow(alarmVolume, alarmVolumeMax)
+}
 
-fun readAlarmNotificationReadiness(context: Context): AlarmNotificationReadiness = AlarmNotificationReadiness(
-    canUseFullScreenIntent = canUseFullScreenIntent(context),
-    notificationsEnabled = notificationsAreEnabled(context),
-    alarmChannelBlocked = alarmChannelIsBlocked(context),
-    alarmChannelDowngraded = alarmChannelIsDowngraded(context)
-)
+fun readAlarmNotificationReadiness(context: Context): AlarmNotificationReadiness {
+    val (alarmVolume, alarmVolumeMax) = readAlarmVolume(context) ?: (-1 to -1)
+    return AlarmNotificationReadiness(
+        canUseFullScreenIntent = canUseFullScreenIntent(context),
+        notificationsEnabled = notificationsAreEnabled(context),
+        alarmChannelBlocked = alarmChannelIsBlocked(context),
+        alarmChannelDowngraded = alarmChannelIsDowngraded(context),
+        alarmVolume = alarmVolume,
+        alarmVolumeMax = alarmVolumeMax
+    )
+}
 
 /** True when the OS will let a full-screen intent take over the lock screen; the permission does not exist below API 34, where it is always allowed. */
 fun canUseFullScreenIntent(context: Context): Boolean {

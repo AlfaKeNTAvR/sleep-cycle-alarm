@@ -36,29 +36,29 @@ class StaleSyncPlanTest {
 
     @Test
     fun `a failed sync with a real armed alarm still pending keeps the previous plan`() {
-        assertTrue(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = now))
+        assertTrue(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = now, morningAlarmRang = false))
     }
 
     @Test
     fun `a successful sync never keeps the previous plan, even with a real armed alarm`() {
-        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = true), armedPlan, phoneAlarmFiredFor = null, now = now))
+        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = true), armedPlan, phoneAlarmFiredFor = null, now = now, morningAlarmRang = false))
     }
 
     @Test
     fun `a failed sync with no previous plan at all does not keep anything - there is nothing to keep`() {
-        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), previousPlan = null, phoneAlarmFiredFor = null, now = now))
+        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), previousPlan = null, phoneAlarmFiredFor = null, now = now, morningAlarmRang = false))
     }
 
     @Test
     fun `a failed sync with a FINISHED previous plan (no real alarm) does not keep it - normal re-planning still runs`() {
-        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), finishedPlan, phoneAlarmFiredFor = null, now = now))
+        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), finishedPlan, phoneAlarmFiredFor = null, now = now, morningAlarmRang = false))
     }
 
     @Test
     fun `a failed sync stops keeping the plan once its own alarm has already fired`() {
         // The protected alarm already rang - PhoneAlarmReceiver fires independently of tick logic, so there
         // is nothing left here to protect by freezing further.
-        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt, now = now))
+        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt, now = now, morningAlarmRang = false))
     }
 
     @Test
@@ -69,7 +69,7 @@ class StaleSyncPlanTest {
         // reaches this guard as syncOk=false, identically to an outright failed sync, so there is nothing left
         // for a second copy of this same call to verify.
         assertTrue(
-            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.minusSeconds(3600), now = now)
+            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.minusSeconds(3600), now = now, morningAlarmRang = false)
         )
     }
 
@@ -83,20 +83,20 @@ class StaleSyncPlanTest {
         // now is AFTER wakeAt here, unlike every case above - the exact shape of the bug: a real alarm was
         // armed, the phone died before it could fire, and by the time a tick runs again the target is spent.
         // Freezing further would mean the night never re-plans and the alarm never rings, at all, for good.
-        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt.plusSeconds(3960)))
+        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt.plusSeconds(3960), morningAlarmRang = false))
     }
 
     @Test
     fun `J2 must-fix 1 - a failed sync still keeps a plan one instant before its own alarm time`() {
         // The boundary: wakeAt strictly after now still counts as pending, right up to the last nanosecond.
-        assertTrue(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt.minusNanos(1)))
+        assertTrue(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt.minusNanos(1), morningAlarmRang = false))
     }
 
     @Test
     fun `J2 must-fix 1 - a failed sync releases the freeze exactly AT the instant the alarm was due`() {
         // now == wakeAt is "come and gone", not merely pending - shouldArmPhoneAlarm treats the same boundary
         // the same way (wakeAt.isAfter(now), not isAfterOrEqual), so this guard must agree with it.
-        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt))
+        assertFalse(shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = null, now = wakeAt, morningAlarmRang = false))
     }
 
     // ---- M3 (owner-reported, 2026-09-21): wakeAt != phoneAlarmFiredFor is now !sameAlarmInstant(wakeAt,
@@ -105,14 +105,14 @@ class StaleSyncPlanTest {
     @Test
     fun `M3 a failed sync stops keeping the plan once its own alarm has fired a fraction of a second off wakeAt`() {
         assertFalse(
-            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.plusMillis(900), now = now)
+            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.plusMillis(900), now = now, morningAlarmRang = false)
         )
     }
 
     @Test
     fun `M3 a failed sync still keeps the plan when the fired marker is a full second off wakeAt - a different target`() {
         assertTrue(
-            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.plusSeconds(1), now = now)
+            shouldKeepPreviousPlan(outcome(syncOk = false), armedPlan, phoneAlarmFiredFor = wakeAt.plusSeconds(1), now = now, morningAlarmRang = false)
         )
     }
 }

@@ -15,6 +15,9 @@ internal fun validateConfig(config: EngineConfig) {
     require(config.outOfBedDelay > Duration.ZERO) { "outOfBedDelay must be positive" }
     require(config.ringAutoStopAfter > Duration.ZERO) { "ringAutoStopAfter must be positive" }
     require(config.preNudgeCheckLead > Duration.ZERO) { "preNudgeCheckLead must be positive" }
+    require(config.owedCycleForgiveness >= Duration.ZERO && config.owedCycleForgiveness < config.cycleLength) {
+        "owedCycleForgiveness must be at least zero and shorter than a cycle"
+    }
     // F1's outOfBedDelay > ringAutoStopAfter rule is gone (owner spec, 2026-10-02): since P3 the nudge is
     // measured from the ring's END, so it can no longer land while the ring is still sounding, and the Settings
     // screen offers nudges from 5 min, shorter than the 9 min auto-stop.

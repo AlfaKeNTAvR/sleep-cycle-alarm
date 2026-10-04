@@ -10,7 +10,7 @@ Settings limits and engine timing, which nights are rateable, both ratings kept,
 - **Nudge steps**: 5 min (5, 10, 15), owner request after the first install. **Volume steps**: 5% (10 to 50).
 - **Phone back button** does what the screen's own back arrow does (owner request). Before bed and Night have no arrow, so back there still leaves the app.
 - **Nudge and nap apply from the next Start night**, not to a night already running: a night freezes them at start, like debug options. Reason: the alarm receivers and boot restore read them from the night state, with no settings read on those paths.
-- **Bedtime audio applies at once**: the fade reads its switch and start volume at Start night; the pause switch is read live on every tick.
+- **Bedtime audio applies at once**: the fade reads its switch and start volume at Start night; the pause switch is read live on every tick. (Superseded 2026-10-03, owner decision: the fade's settings are read live too, see docs/app-spec.md.)
 - **Pause off means no fade** (owner request after install): the fade exists to lead into the pause, so with "Pause media when asleep" off the fade rows are dimmed, the fade switch shows off, and no fade starts. Your fade choice is kept and comes back when the pause is switched on. A fade already running when the pause is switched off mid-night keeps stepping down and ends at End night.
 - **Fade switched off**: a fade left over from a night that never ended is still finished at Start night, so that old volume comes back.
 - **Rateable marker**: `night_start` gets `rateable=true`. A night started on the old build and ended on this one is not rateable (no morning card).

@@ -36,7 +36,7 @@ fun decodeMorningReportSnapshot(text: String): MorningReportSnapshot {
 /** Saves [snapshot], overwriting whatever was there before. A failure is logged; the morning report simply will not survive a restart. */
 fun saveMorningReport(context: Context, snapshot: MorningReportSnapshot) {
     try {
-        morningReportFile(context).writeText(encodeMorningReportSnapshot(snapshot))
+        writeTextAtomically(morningReportFile(context), encodeMorningReportSnapshot(snapshot))
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to save the morning report snapshot", error)
     }

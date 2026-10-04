@@ -107,6 +107,28 @@ class NightStateTest {
     }
 
     @Test
+    fun `a simulated night keeps the real time it was started at`() {
+        val state = baseState().copy(realStartedAt = Instant.parse("2026-09-16T12:05:00Z"))
+
+        assertEquals(Instant.parse("2026-09-16T12:05:00Z"), decodeNightState(encodeNightState(state)).realStartedAt)
+    }
+
+    @Test
+    fun `a night saved before the real start was recorded keeps its log under the start it already has`() {
+        val json = fullStateJson()
+        json.remove("realStartedAt")
+
+        val state = decodeNightState(json.toString())
+
+        assertEquals(state.startedAt, state.realStartedAt)
+    }
+
+    @Test
+    fun `a real night's real start is its start`() {
+        assertEquals(baseState().startedAt, baseState().realStartedAt)
+    }
+
+    @Test
     fun `decodes a state saved before debugOptions existed as all-off, same as a normal night`() {
         val json = fullStateJson()
         json.remove("debugOptions")

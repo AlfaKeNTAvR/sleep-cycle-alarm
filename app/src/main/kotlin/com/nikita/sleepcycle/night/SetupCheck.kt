@@ -91,8 +91,11 @@ private fun freshnessLine(newestSampleAt: Instant?, isFresh: Boolean): String = 
     else -> "newest heart-rate sample at $newestSampleAt, which is stale"
 }
 
-/** Full-screen intent and notifications block the alarm outright, so a problem there is prominent too; the phone alarm still has the exact-alarm safety net either way, so neither blocks [SetupCheckReport.isReady]. */
-private fun phoneAlarmReadinessLines(readiness: AlarmNotificationReadiness): List<SetupCheckLine> = buildList {
+/**
+ * Full-screen intent and notifications block the alarm outright, so a problem there is prominent too; the phone alarm still has the exact-alarm safety net either way, so neither blocks [SetupCheckReport.isReady].
+ * ISSUES.md #4 (owner decision, 2026-10-03): a low alarm volume is a warning - the ring raises it to half while it sounds, so it never blocks either. `internal` for SetupCheckTest.
+ */
+internal fun phoneAlarmReadinessLines(readiness: AlarmNotificationReadiness): List<SetupCheckLine> = buildList {
     add(
         if (readiness.canUseFullScreenIntent) SetupCheckLine("Full-screen alarms are allowed.", SetupCheckLineSeverity.INFO)
         else SetupCheckLine("Full-screen alarms are blocked in Settings; the alarm will not show over the lock screen.", SetupCheckLineSeverity.ACTION_NEEDED)
@@ -106,5 +109,13 @@ private fun phoneAlarmReadinessLines(readiness: AlarmNotificationReadiness): Lis
     }
     if (readiness.alarmChannelDowngraded) {
         add(SetupCheckLine("The alarm notification channel was downgraded; it may not sound or show full screen.", SetupCheckLineSeverity.WARNING))
+    }
+    if (readiness.alarmVolumeLow) {
+        add(
+            SetupCheckLine(
+                "The alarm volume is low (${readiness.alarmVolume} of ${readiness.alarmVolumeMax}); the alarm raises it to half while it rings, but turn it up to be sure.",
+                SetupCheckLineSeverity.WARNING
+            )
+        )
     }
 }

@@ -1,5 +1,6 @@
 package com.nikita.sleepcycle.engine
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -39,6 +40,16 @@ class DescribePlanTest {
         )
         assertTrue(reason.contains("Nap mode"))
         assertTrue(reason.contains("01:00"))
+    }
+
+    // deadline.md #6 (ISSUES.md #16): the emulator's night 2 logged "Nap mode, ..., alarm none, capped at 11:00."
+    // once the morning alarm had rung - a cap on an alarm that does not exist.
+    @Test fun `NAP with nothing left to arm says so, and names no cap`() {
+        val reason = describePlan(
+            AlarmMode.NAP, ReferenceOnset(instant("2026-09-17T09:49"), projected = false),
+            settings("2026-09-17T11:00"), 0, null, testZone
+        )
+        assertEquals("Nap mode, Asleep since 09:49, no alarm left to arm: the morning alarm has rung or its time has passed.", reason)
     }
 
     @Test fun `FINISHED with a deadline names it`() {

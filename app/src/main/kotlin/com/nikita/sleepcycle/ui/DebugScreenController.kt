@@ -144,7 +144,7 @@ class DebugScreenController(private val context: Context, private val scope: Cor
             val now = nowInstant()
             val night = observedNightState.value
             val autoSpeedNow = autoClockSpeed(
-                now, autoSpeedAlarmAt(night?.lastPlan, night?.settings?.deadline), readPendingFollowUp(context)?.at,
+                now, autoSpeedAlarmAt(night?.lastPlan, night?.settings?.deadline, night?.morningAlarmAt), readPendingFollowUp(context)?.at,
                 waitingForSleep = night?.lastPlan?.onsetIsProjected == true,
             )
             changeSimulationSpeed(context) { current -> chooseSimulationSpeed(current, choice, Instant.now(), autoSpeedNow) }

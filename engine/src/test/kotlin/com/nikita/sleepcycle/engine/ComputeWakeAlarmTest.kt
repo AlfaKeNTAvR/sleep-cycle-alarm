@@ -15,14 +15,6 @@ class ComputeWakeAlarmTest {
         assertNull(result)
     }
 
-    @Test fun `rule 5 DEADLINE_ONLY sets the alarm exactly at the deadline`() {
-        val result = computeWakeAlarm(
-            PlanRule.DEADLINE_ONLY, SleepState.NOT_YET_ASLEEP, instant("2026-09-17T00:40"),
-            instant("2026-09-17T00:50"), 0, instant("2026-09-17T00:40"), config, wakeAlarmFiredAt = null, morningAlarmAt = null, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null
-        )
-        assertEquals(instant("2026-09-17T00:50"), result)
-    }
-
     @Test fun `rule 4 FULL_CYCLES adds the picked cycles to the onset`() {
         val result = computeWakeAlarm(
             PlanRule.FULL_CYCLES, SleepState.ASLEEP, instant("2026-09-17T00:30"), null, 5,

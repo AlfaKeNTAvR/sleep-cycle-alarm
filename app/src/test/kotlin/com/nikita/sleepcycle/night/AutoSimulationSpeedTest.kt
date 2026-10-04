@@ -5,9 +5,15 @@ package com.nikita.sleepcycle.night
 
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
+import com.nikita.sleepcycle.engine.EngineConfig
+import com.nikita.sleepcycle.engine.NightSettings
+import com.nikita.sleepcycle.engine.SegmentKind
+import com.nikita.sleepcycle.engine.SleepSegment
+import com.nikita.sleepcycle.engine.computeAlarmPlan
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import java.time.Instant
+import java.time.ZoneOffset
 
 class AutoSimulationSpeedTest {
     private val now = Instant.parse("2026-10-02T03:15:00Z")
@@ -130,13 +136,39 @@ class AutoSimulationSpeedTest {
     @Test
     fun `a projected alarm is not one Auto runs towards, the deadline is`() {
         val deadline = Instant.parse("2026-10-02T07:00:00Z")
-        assertEquals(deadline, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline))
-        assertEquals(null, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline = null))
+        assertEquals(deadline, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline, morningAlarmAt = null))
+        assertEquals(null, autoSpeedAlarmAt(plan(Instant.parse("2026-10-02T11:00:00Z"), onsetIsProjected = true), deadline = null, morningAlarmAt = null))
     }
 
     @Test
     fun `once sleep is seen the planned alarm is the one Auto runs towards`() {
         val wakeAt = Instant.parse("2026-10-02T06:30:00Z")
-        assertEquals(wakeAt, autoSpeedAlarmAt(plan(wakeAt, onsetIsProjected = false), deadline = Instant.parse("2026-10-02T07:00:00Z")))
+        assertEquals(wakeAt, autoSpeedAlarmAt(plan(wakeAt, onsetIsProjected = false), deadline = Instant.parse("2026-10-02T07:00:00Z"), morningAlarmAt = wakeAt))
+    }
+
+    // Owner decision, 2026-10-03 (spec-audit.md #5): awake mid-night the onset is projected again, so Auto used to
+    // run towards the deadline only and skipped the slow-down before the morning alarm H8 keeps armed.
+    @Test
+    fun `awake mid-night Auto slows down for the morning alarm H8 keeps, not only for the deadline`() {
+        // 6 cycles picked, deadline 09:00, asleep 00:30: 5 cycles fit, so the morning alarm is 08:00 (latched).
+        // Awake from 07:39: from 07:40 one more cycle no longer fits before 09:00, and H8 keeps the 08:00 alarm.
+        val deadline = Instant.parse("2026-10-02T09:00:00Z")
+        val morningAlarmAt = Instant.parse("2026-10-02T08:00:00Z")
+        val now = Instant.parse("2026-10-02T07:40:00Z")
+        val segments = listOf(
+            SleepSegment(Instant.parse("2026-10-02T00:30:00Z"), Instant.parse("2026-10-02T07:39:00Z"), SegmentKind.LIGHT),
+            SleepSegment(Instant.parse("2026-10-02T07:39:00Z"), now, SegmentKind.AWAKE),
+        )
+        val awakePlan = computeAlarmPlan(
+            segments, NightSettings(deadline, pickedCycles = 6), now, morningAlarmAt, ZoneOffset.UTC, EngineConfig(),
+            wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null, phoneAlarmFiredFor = null,
+        )
+        assertEquals(true, awakePlan.onsetIsProjected)
+
+        val autoAlarmAt = autoSpeedAlarmAt(awakePlan, deadline, morningAlarmAt)
+
+        assertEquals(morningAlarmAt, autoAlarmAt)
+        // 20 simulated minutes before 08:00: the 600x approach, where the deadline alone left it at 3600x.
+        assertEquals(600, autoClockSpeed(now, autoAlarmAt, followUpAt = null, waitingForSleep = awakePlan.onsetIsProjected))
     }
 }

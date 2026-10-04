@@ -119,5 +119,10 @@ data class EngineConfig(
      * [validateConfig] can enforce it stays strictly less than [outOfBedDelay] - the check must land strictly
      * between the nudge being armed and it firing, never before or after either.
      */
-    val preNudgeCheckLead: Duration = Duration.ofMinutes(2)
+    val preNudgeCheckLead: Duration = Duration.ofMinutes(2),
+    /**
+     * Owner decision, 2026-10-03: how much of the night's picked total may go unslept rather than owe one more
+     * whole cycle (see countOwedCycles): 3 cycles and up to 10 min still owed is 3 cycles, not 4.
+     */
+    val owedCycleForgiveness: Duration = Duration.ofMinutes(10)
 )

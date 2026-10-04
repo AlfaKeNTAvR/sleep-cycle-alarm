@@ -22,14 +22,17 @@ import com.nikita.sleepcycle.night.endNight
 import com.nikita.sleepcycle.night.listNightLogs
 import com.nikita.sleepcycle.night.loadNightState
 import com.nikita.sleepcycle.night.nowInstant
+import com.nikita.sleepcycle.night.readAppSettings
 import com.nikita.sleepcycle.night.runImmediateTick
 import com.nikita.sleepcycle.night.runMediaFadeCheck
 import com.nikita.sleepcycle.night.startNight
 import com.nikita.sleepcycle.night.updateSimulatedSleepEvents
+import com.nikita.sleepcycle.night.writeAppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -87,9 +90,9 @@ class MediaFadeScenarioTest {
 
     private fun nightLog(): String = listNightLogs(context).first().readText()
 
-    private fun startSimulatedNight(startedAt: Instant) = runBlocking {
+    private fun startSimulatedNight(startedAt: Instant, deadline: Instant? = null) = runBlocking {
         startNight(
-            context, NightSettings(deadline = null, pickedCycles = 5), startedAt,
+            context, NightSettings(deadline = deadline, pickedCycles = 5), startedAt,
             AfterAlarmSettings(), BedtimeAudioSettings(), DebugOptions(simulatedBandData = true),
         )
         withTimeout(10_000) { while (loadNightState(context) == null) delay(20) }
@@ -158,5 +161,71 @@ class MediaFadeScenarioTest {
 
         endNight(context, nowInstant())
         assertEquals("End night puts back the volume the night's first fade started from", 2, volume)
+    }
+
+    // Emulator audit, 2026-10-03 (spec-audit.md test gaps): a night that finishes on its own, with no End night,
+    // used to keep the faded volume until the next Start night. Reached here by the deadline passing more than an
+    // hour ago with nothing rung (the phone alarm is never delivered under Robolectric), which ends the night at
+    // the next tick with no out-of-bed nudge to defer it.
+    @Test
+    fun `a night that finishes on its own puts back the volume its fade lowered`() = runBlocking {
+        val now = Instant.now()
+        val deadline = now.plus(Duration.ofMinutes(30))
+        startSimulatedNight(now.minus(Duration.ofMinutes(10)), deadline)
+        setVolume(10)
+        play()
+        runMediaFadeCheck(context)
+        assertEquals("the fade starts at the starting volume", startStep, volume)
+
+        AppClock.setWarp(ClockWarp(1, Instant.now(), deadline.plus(Duration.ofMinutes(61))))
+        runImmediateTick(context)
+
+        assertEquals("the night finished on its own", null, loadNightState(context))
+        assertEquals("the night's own volume is back", 10, volume)
+    }
+
+    private fun changeBedtimeAudio(change: (BedtimeAudioSettings) -> BedtimeAudioSettings) = runBlocking {
+        val settings = readAppSettings(context).first()
+        writeAppSettings(context, settings.copy(bedtimeAudio = change(settings.bedtimeAudio)))
+    }
+
+    // Owner decision, 2026-10-03 (spec-audit.md #4): the fade's settings stay live mid-night, like every other
+    // setting that is saved at once - the spec used to say they were read at Start night.
+    @Test
+    fun `fade settings changed mid-night apply to the next fade and the running fade's next step`() = runBlocking<Unit> {
+        val now = Instant.now()
+        startSimulatedNight(now.minus(Duration.ofMinutes(40)))
+        setVolume(10)
+        play()
+        runMediaFadeCheck(context)
+        assertEquals("the first fade starts at the 25% the night started with", startStep, volume)
+
+        // Starting volume raised to 40% (step 6 of 15) while that fade runs; then asleep, which parks it.
+        changeBedtimeAudio { it.copy(fadeStartPercent = 40) }
+        markAsleep(now.minus(Duration.ofMinutes(30)))
+        runImmediateTick(context)
+        assertTrue(nightLog().contains("\"media_fade_parked\""))
+
+        play()
+        val fadeStartedAt = nowInstant()
+        assertTrue("media played again starts a fresh fade", runMediaFadeCheck(context))
+        assertEquals("the next fade starts at the new starting volume", 6, volume)
+
+        // Ending volume raised to 20% (step 3) while this fade runs: its floor moves at its next step. Step 6 to
+        // the old floor 1 would take 25 minutes; at 21 minutes it already sits at the new floor 3.
+        changeBedtimeAudio { it.copy(fadeEndPercent = 20) }
+        AppClock.setWarp(ClockWarp(1, Instant.now(), fadeStartedAt.plus(Duration.ofMinutes(21))))
+        runImmediateTick(context)
+        assertEquals("the running fade stops at the new ending volume", 3, volume)
+
+        // That fade ran its course asleep, so its media was paused and the fade re-armed. Fade switched off now:
+        // playing again starts no new fade.
+        assertTrue(nightLog().contains("\"media_pause_after_fade\""))
+        changeBedtimeAudio { it.copy(fadeEnabled = false) }
+        play()
+        assertTrue("with the fade switched off, playing again starts no fade", !runMediaFadeCheck(context))
+
+        changeBedtimeAudio { BedtimeAudioSettings() }
+        endNight(context, nowInstant())
     }
 }

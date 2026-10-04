@@ -38,22 +38,39 @@ fun sumSleepAlreadyHad(stretches: List<SleepStretch>, state: SleepState): Durati
 
 /**
  * Whole cycles still owed of the night's total (spec step 2, "Cycles still owed"): the picked budget
- * (`pickedCycles * cycleLength`) minus [sleptSoFar], never below zero, divided by one cycle and rounded to the
- * NEAREST whole number - so a remainder that does not divide evenly lands as close to the picked total as
- * whole cycles allow, rather than always cutting one short. Exactly half a cycle rounds up.
+ * (`pickedCycles * cycleLength`) minus [sleptSoFar], less [EngineConfig.owedCycleForgiveness], ROUNDED UP to
+ * whole cycles, never below zero.
+ *
+ * Owner decision, 2026-10-03 (phone night 2026-10-03: 40 min owed rounded to 0, so a 20 min nap alarm woke him
+ * mid-cycle at 08:48): rounding up gives at least the picked sleep and ends on a cycle boundary; a deadline,
+ * where one is set, still cuts the count down to what fits ([capCyclesByDeadline]). The forgiveness keeps a few
+ * minutes over whole cycles from costing a whole extra cycle. Supersedes the 2026-09-17 nearest-whole-cycle rule.
  */
 fun countOwedCycles(sleptSoFar: Duration, settings: NightSettings, config: EngineConfig): Int {
     val budget = config.cycleLength.multipliedBy(settings.pickedCycles.toLong())
-    val remaining = budget.minus(sleptSoFar)
+    val remaining = budget.minus(sleptSoFar).minus(config.owedCycleForgiveness)
     if (remaining.isNegative || remaining.isZero) return 0
-    return Math.round(remaining.toNanos().toDouble() / config.cycleLength.toNanos().toDouble()).toInt()
+    val cycleNanos = config.cycleLength.toNanos()
+    return ((remaining.toNanos() + cycleNanos - 1) / cycleNanos).toInt()
 }
 
 /** Which of rules 1, 7, 5, or 3/4/6 [chooseMode] matched, before the pull-forward amendment in `computeWakeAlarm`. */
 enum class PlanRule { FINISHED, NAP, DEADLINE_ONLY, FULL_CYCLES }
 
-/** D5: at most this many naps are armed after the wake alarm has fired before the night is forced to FINISHED. */
+/**
+ * D5/G8: at most this many engine nap alarms may FIRE in a night, pre-wake (rule 7) or after the wake alarm
+ * alike; the next new return to sleep is then refused a nap (FINISHED with no deadline ahead, DEADLINE_ONLY
+ * with one). Counted at fire time (NightState.napAlarmsUsed). The owner's own Nap button (P3) rings on the
+ * out-of-bed slot and is never counted.
+ */
 const val MAX_NAP_ALARMS = 2
+
+/**
+ * Owner decision, 2026-10-03: how long past the deadline a night whose morning alarm never rang still keeps
+ * trying to ring it (rule 1, [chooseMode]). Past this the night ends silently: a ring hours after the wake-by
+ * time would belong to a morning that is already over.
+ */
+val DEADLINE_RECOVERY_WINDOW: Duration = Duration.ofHours(1)
 
 /**
  * Picks the matching rule for this round, first match wins (spec step 2, "Modes"). The pull-forward amendment
@@ -74,10 +91,17 @@ fun chooseMode(
     referenceOnset: Instant,
     now: Instant,
     config: EngineConfig,
-    napAlarmsUsed: Int
+    napAlarmsUsed: Int,
+    /** Owner decision, 2026-10-03: whether the night's morning alarm has rung (WakeAlarm.kt's `morningAlarmHasRung`) - rule 1 ends the night only once it has. */
+    morningAlarmRang: Boolean
 ): PlanRule = when {
-    // Rule 1: the deadline has passed.
-    isPastDeadline(deadline, now) -> PlanRule.FINISHED
+    // Rule 1: the deadline has passed. Owner decision, 2026-10-03 (deadline.md #1: the phone off or its alarms
+    // wiped, the night ended at the first tick after the deadline with nothing ever rung): FINISHED only once the
+    // morning alarm has rung, or once the deadline is more than DEADLINE_RECOVERY_WINDOW behind. Until then the
+    // deadline alarm still rings - DEADLINE_ONLY, whose past target computeWakeAlarm pulls forward to
+    // now + minAlarmLead, uncapped by a deadline already behind now.
+    isPastDeadline(deadline, now) ->
+        if (morningAlarmRang || isDeadlineLongPast(checkNotNull(deadline), now)) PlanRule.FINISHED else PlanRule.DEADLINE_ONLY
     // D5/F4/G8 SUPERSEDES the original spec: the nap cap is already spent, and this is a genuinely NEW return
     // to sleep - see isPostWakeNapCapSpent. isPastDeadline above already ruled out a deadline at or before now,
     // so a deadline reaching here is still ahead of us, and it outranks the spent cap: the alarm rings at the
@@ -99,6 +123,9 @@ fun chooseMode(
 }
 
 private fun isPastDeadline(deadline: Instant?, now: Instant): Boolean = deadline != null && !deadline.isAfter(now)
+
+/** Owner decision, 2026-10-03: the deadline is more than [DEADLINE_RECOVERY_WINDOW] behind [now] - see [chooseMode]'s rule 1. */
+private fun isDeadlineLongPast(deadline: Instant, now: Instant): Boolean = now.isAfter(deadline.plus(DEADLINE_RECOVERY_WINDOW))
 
 /**
  * G2/G8 SUPERSEDE both the original spec's "incremented when armed" wording and this check's own earlier

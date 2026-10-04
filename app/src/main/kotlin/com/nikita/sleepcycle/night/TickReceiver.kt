@@ -36,7 +36,7 @@ class TickReceiver : BroadcastReceiver() {
     private fun logStartFailureIfNightActive(context: Context, error: IllegalStateException) {
         loadNightState(context)?.let { state ->
             appendNightLog(
-                context, state.startedAt,
+                context, state.realStartedAt,
                 NightLogEvent(nowInstant(), "error", mapOf("step" to "tick_service_start", "cause" to (error.message ?: error.toString()))),
                 state.debugOptions.isAnyEnabled
             )

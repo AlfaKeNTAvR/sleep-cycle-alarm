@@ -40,12 +40,12 @@ fun logDataAndPlan(context: Context, state: NightState, outcome: SyncOutcome, pl
     if (segmentsChanged) {
         dataFields["segments"] = encodeSegmentsDeltaForLog(outcome.segments, state.lastSegments)
     }
-    appendNightLog(context, state.startedAt, NightLogEvent(now, "data", dataFields), debugNight)
+    appendNightLog(context, state.realStartedAt, NightLogEvent(now, "data", dataFields), debugNight)
 
     logAwakeningChanges(context, state, outcome, now, debugNight)
 
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(
             now, "plan",
             mapOf(
@@ -118,9 +118,9 @@ private fun logAwakeningChanges(context: Context, state: NightState, outcome: Sy
     val config = resolveEngineConfig(state)
     val delta = detectAwakeningsThisTick(state.lastSegments, outcome.segments, now, config, state.wakeAlarmFiredAt)
     delta.closed.forEach { awakening ->
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "awakening_ended", encodeAwakeningEndedFields(awakening)), debugNight)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "awakening_ended", encodeAwakeningEndedFields(awakening)), debugNight)
     }
     delta.justStartedAt?.let { startedAt ->
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "awakening_started", encodeAwakeningStartedFields(startedAt, state.wakeAlarmFiredAt)), debugNight)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "awakening_started", encodeAwakeningStartedFields(startedAt, state.wakeAlarmFiredAt)), debugNight)
     }
 }

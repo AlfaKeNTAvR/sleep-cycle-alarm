@@ -25,7 +25,7 @@ data class AfterAlarmSettings(
 /** Bedtime audio: the media volume fade from Start night (MediaFade.kt) and the pause on falling asleep (MediaPauseOnSleep.kt). */
 data class BedtimeAudioSettings(
     val fadeEnabled: Boolean = true,
-    /** Where the fade starts, as a percent of the media volume range - never louder than what was already playing. */
+    /** Where the fade starts, as a percent of the media volume range - exactly there, even when that raises what was already playing. Read live mid-night: a change applies to the next fade. */
     val fadeStartPercent: Int = DEFAULT_FADE_START_PERCENT,
     /** Where the fade stops, as a percent of the media volume range (owner request, 2026-10-02). At or above [fadeStartPercent] the fade simply holds the starting volume. */
     val fadeEndPercent: Int = DEFAULT_FADE_END_PERCENT,

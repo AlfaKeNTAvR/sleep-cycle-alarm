@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.engine.EngineConfig
+import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -73,7 +74,7 @@ class BootReceiver : BroadcastReceiver() {
         val plan = nonNullState.lastPlan
         // T4: virtual - compared against plan.wakeAt, which is night state.
         val now = nowInstant()
-        if (plan != null && shouldArmPhoneAlarm(plan.wakeAt, now, nonNullState.phoneAlarmFiredFor)) {
+        if (plan != null && shouldRearmPlanAlarmOnBoot(nonNullState, plan.wakeAt, now)) {
             val wakeAt = requireNotNull(plan.wakeAt)
             // J5 (reviewer note, 2026-09-21): schedulePhoneAlarm's own result was DISCARDED here, so a boot
             // while the exact-alarm permission is revoked left this receiver believing it had re-armed the
@@ -153,7 +154,7 @@ class BootReceiver : BroadcastReceiver() {
     /** H5: a boot-time event is only loggable when a night state survived to carry a `startedAt` to log against - see [handleBoot]'s own H5 note for why the nudge restore itself must run regardless. */
     private fun logBootEvent(context: Context, state: NightState?, at: Instant, event: String, fields: Map<String, String>) {
         if (state == null) return
-        appendNightLog(context, state.startedAt, NightLogEvent(at, event, fields), state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(at, event, fields), state.debugOptions.isAnyEnabled)
     }
 
     /** G7: startForegroundService can throw ForegroundServiceStartNotAllowedException. BOOT_COMPLETED and MY_PACKAGE_REPLACED are both on Android's exemption list so this should not fire, but if it ever does the night must not die with nothing written anywhere the owner would look - PhoneAlarmReceiver's own equivalent guard around AlarmRingService is this function's model. An exception here would otherwise propagate out of receiverScope.launch's coroutine with no handler, reaching the thread's default handler rather than the night log. */
@@ -162,7 +163,7 @@ class BootReceiver : BroadcastReceiver() {
             startNightServiceForTick(context)
         } catch (error: Exception) {
             appendNightLog(
-                context, state.startedAt,
+                context, state.realStartedAt,
                 NightLogEvent(nowInstant(), "error", mapOf("step" to "boot_service_start", "cause" to (error.message ?: error.toString()))),
                 state.debugOptions.isAnyEnabled
             )
@@ -171,7 +172,7 @@ class BootReceiver : BroadcastReceiver() {
 
     private suspend fun handleClockChange(context: Context, action: String?) {
         val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return
-        appendNightLog(context, state.startedAt, NightLogEvent(nowInstant(), "clock_changed", mapOf("action" to (action ?: "unknown"))), state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(nowInstant(), "clock_changed", mapOf("action" to (action ?: "unknown"))), state.debugOptions.isAnyEnabled)
         requestImmediateTick(context)
     }
 }
@@ -184,6 +185,16 @@ class BootReceiver : BroadcastReceiver() {
  * Context/AlarmManager plumbing.
  */
 internal fun shouldResumeNightServiceOnBoot(state: NightState?): Boolean = state != null
+
+/**
+ * Whether a boot re-arms the saved plan's [wakeAt]: [shouldArmPhoneAlarm]'s own three refusals, plus one of the
+ * boot path's own (validation.md, 2026-10-03, ISSUES.md #1): never once the morning alarm has rung. "I'm up"
+ * records itself as the morning alarm's firing and cancels the alarm, but leaves the saved plan's `wakeAt` as it
+ * was until the next tick re-plans, so a reboot in between used to put the cancelled alarm back.
+ */
+internal fun shouldRearmPlanAlarmOnBoot(state: NightState, wakeAt: Instant?, now: Instant): Boolean =
+    shouldArmPhoneAlarm(wakeAt, now, state.phoneAlarmFiredFor) &&
+        !morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
 
 /**
  * J5 (owner-reported, 2026-09-21): the instant a pending out-of-bed nudge should actually be re-armed at after

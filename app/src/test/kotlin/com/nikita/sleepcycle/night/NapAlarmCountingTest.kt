@@ -84,8 +84,11 @@ class NapAlarmCountingTest {
     }
 
     @Test
-    fun `J2 must-fix 2 - alarmLabelFor rings a NAP armed one minute after the morning alarm as NAP, not MORNING`() {
-        assertEquals(AlarmLabel.NAP, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
+    fun `owner decision 2026-10-03 - a NAP armed one minute after the morning alarm rings as MORNING, still booked as a nap`() {
+        // Supersedes J2 must-fix 2's label half: such a nap took the morning alarm's place, and from its firing
+        // on everything treats it as the morning alarm (deadline.md #3). Its attribution above is unchanged.
+        assertEquals(AlarmLabel.MORNING, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
+        assertFalse(firedAlarmIsWakeAlarm(AlarmMode.NAP, morningAlarmAt.plusSeconds(60), morningAlarmAt))
     }
 
     // ---- M3 (owner-reported, 2026-09-21): firedFor == morningAlarmAt is replaced with
@@ -118,7 +121,14 @@ class NapAlarmCountingTest {
     }
 
     @Test
-    fun `W18 a nap alarm at its own instant still rings as a nap`() {
-        assertEquals(AlarmLabel.NAP, alarmLabelFor(AlarmMode.NAP, napFiredAt, morningAlarmAt))
+    fun `W18 a nap alarm before the morning time still rings as a nap`() {
+        // A deadline night where no whole cycle fits: the pre-wake nap rings first, the morning alarm after it.
+        assertEquals(AlarmLabel.NAP, alarmLabelFor(AlarmMode.NAP, morningAlarmAt.minusSeconds(1800), morningAlarmAt))
+        assertEquals(AlarmLabel.NAP, alarmLabelFor(AlarmMode.NAP, napFiredAt, morningAlarmAt = null))
+    }
+
+    @Test
+    fun `owner decision 2026-10-03 - a nap alarm at or after the morning time rings as the morning alarm`() {
+        assertEquals(AlarmLabel.MORNING, alarmLabelFor(AlarmMode.NAP, napFiredAt, morningAlarmAt))
     }
 }

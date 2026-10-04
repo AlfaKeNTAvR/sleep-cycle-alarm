@@ -224,7 +224,7 @@ private suspend fun runPreNudgeCheck(context: Context) {
     val plannedWakeAt = state.lastPlan?.wakeAt
     if (!shouldCancelNudgeForPreCheck(now, plannedWakeAt, state.phoneAlarmFiredFor)) {
         appendNightLog(
-            context, state.startedAt,
+            context, state.realStartedAt,
             NightLogEvent(now, "pre_nudge_check", mapOf("armedWakeAt" to (plannedWakeAt?.toString() ?: "none"), "result" to "rings")),
             state.debugOptions.isAnyEnabled
         )
@@ -233,7 +233,7 @@ private suspend fun runPreNudgeCheck(context: Context) {
     cancelOutOfBedAlarm(context)
     clearOutOfBedNudgePendingAt(context)
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(now, "pre_nudge_check", mapOf("armedWakeAt" to plannedWakeAt.toString(), "result" to "cancelled")),
         state.debugOptions.isAnyEnabled
     )

@@ -20,6 +20,7 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.computeAlarmPlan
+import com.nikita.sleepcycle.engine.morningAlarmRangAt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -41,10 +42,20 @@ private val nightStateFlow = MutableStateFlow<NightState?>(null)
 /** The current night state for the UI to observe; updated by every call in this file. */
 val observedNightState: StateFlow<NightState?> = nightStateFlow.asStateFlow()
 
-/** Loads the persisted night state into [observedNightState] off the main thread; call once when the UI (re)attaches, e.g. after process death. */
+/**
+ * Loads the persisted night state into [observedNightState] off the main thread; call when the UI (re)attaches,
+ * e.g. after process death, and after anything that changed the state's files outside a tick (an alarm firing).
+ *
+ * ISSUES.md #10 (deadline.md #2, 2026-10-03): read and published under the night transaction lock, like every
+ * other publisher, so it can never publish a state some commit has since replaced. Opening the app runs this next
+ * to an immediate tick; when that tick finished the night (cleared the state, published null), this refresh,
+ * which had read the disk first, published the finished night again and the Night screen sat on it.
+ */
 fun refreshNightStateFromDisk(context: Context) {
     controllerScope.launch {
-        nightStateFlow.value = withContext(Dispatchers.IO) { loadNightState(context) }
+        withNightTransactionLock {
+            nightStateFlow.value = withContext(Dispatchers.IO) { loadNightState(context) }
+        }
     }
 }
 
@@ -96,6 +107,10 @@ fun startNight(
             cancelOutOfBedAlarm(context)
             cancelPreNudgeCheck(context)
             val zone = ZoneId.systemDefault()
+            // Owner request, 2026-10-03: the real instant of this start names the night's log (see
+            // NightState.realStartedAt). Taken through the warp that produced [now] rather than a second clock
+            // read, so it is the same moment; identity on a real night.
+            val realStartedAt = AppClock.toRealInstant(now)
             val initialPlan = computeAlarmPlan(
                 emptyList(), settings, now, morningAlarmAt = null, zone, resolveEngineConfig(debugOptions, afterAlarm),
                 wakeAlarmFiredAt = null, napAlarmsUsed = 0, lastNapAlarmFiredAt = null,
@@ -105,6 +120,7 @@ fun startNight(
             )
             val state = NightState(
                 startedAt = now,
+                realStartedAt = realStartedAt,
                 settings = settings,
                 lastPlan = initialPlan,
                 lastSyncAt = null,
@@ -125,11 +141,11 @@ fun startNight(
                 schedulePhoneAlarm(context, wakeAt, alarmLabelFor(initialPlan.mode, wakeAt, state.morningAlarmAt))
             }
             if (!saveNightState(context, state)) {
-                appendNightLog(context, now, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to save the initial night state")), debugOptions.isAnyEnabled)
+                appendNightLog(context, realStartedAt, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to save the initial night state")), debugOptions.isAnyEnabled)
             }
             nightStateFlow.value = state
             appendNightLog(
-                context, now,
+                context, realStartedAt,
                 NightLogEvent(
                     now, "night_start",
                     // Every other instant in the log is UTC, and nothing else in the file says which zone the
@@ -145,11 +161,11 @@ fun startNight(
                 ),
                 debugOptions.isAnyEnabled
             )
-            logAlarmReadiness(context, now, debugOptions.isAnyEnabled)
+            logAlarmReadiness(context, realStartedAt, now, debugOptions.isAnyEnabled)
             // Fade off in Settings (or the pause it leads into is off): still finish a fade left over from a night that never ended cleanly, so its volume comes back.
             // Armed, not started: the fade begins on the first tick that sees media playing (MediaFade.kt).
-            if (shouldFadeMedia(bedtimeAudio)) armMediaFade(context, now, now, debugOptions.isAnyEnabled)
-            else endMediaFade(context, now, now, debugOptions.isAnyEnabled)
+            if (shouldFadeMedia(bedtimeAudio)) armMediaFade(context, realStartedAt, now, debugOptions.isAnyEnabled)
+            else endMediaFade(context, realStartedAt, now, debugOptions.isAnyEnabled)
             // The new night is now the newest log and has not ended: drops a later rating question still armed for the last one.
             syncLaterRatingAsk(context)
         }
@@ -211,10 +227,10 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
     val loaded = withContext(Dispatchers.IO) { loadNightState(context) }
     val state = applyAwakeConfirmation(loaded, awakeConfirmedAt)
     if (state != null) {
-        appendNightLog(context, state.startedAt, NightLogEvent(now, "night_end", nightEndFields(state, now)), state.debugOptions.isAnyEnabled)
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "night_end", nightEndFields(state, now)), state.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, state, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
-        endMediaFade(context, state.startedAt, now, state.debugOptions.isAnyEnabled)
+        endMediaFade(context, state.realStartedAt, now, state.debugOptions.isAnyEnabled)
     }
     cancelTick(context)
     cancelPhoneAlarm(context)
@@ -419,18 +435,18 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
         val pendingNudgeAt = readOutOfBedNudgePendingAt(context)
         if (shouldDeferFinishForPendingNudge(pendingNudgeAt, now, resolveEngineConfig(loaded))) {
             appendNightLog(
-                context, loaded.startedAt,
+                context, loaded.realStartedAt,
                 NightLogEvent(now, "night_end_deferred", mapOf("cause" to "out_of_bed_nudge_pending", "pendingNudgeAt" to pendingNudgeAt.toString())),
                 loaded.debugOptions.isAnyEnabled
             )
             return@withNightTransactionLock
         }
-        appendNightLog(context, loaded.startedAt, NightLogEvent(now, "night_end", nightEndFields(loaded, now)), loaded.debugOptions.isAnyEnabled)
+        appendNightLog(context, loaded.realStartedAt, NightLogEvent(now, "night_end", nightEndFields(loaded, now)), loaded.debugOptions.isAnyEnabled)
         logNightClosingSummary(context, loaded, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(loaded, now)) }
         // Emulator audit, 2026-10-03: a night finishing on its own (deadline passed, no alarm ever rang) kept the
         // faded volume until the next Start night; it is put back here just as End night does.
-        endMediaFade(context, loaded.startedAt, now, loaded.debugOptions.isAnyEnabled)
+        endMediaFade(context, loaded.realStartedAt, now, loaded.debugOptions.isAnyEnabled)
         // Bookkeeping only: no stopAlarmRinging, no cancelOutOfBedAlarm/clearOutOfBedNudgePendingAt, no
         // cancelPhoneAlarm - the tick that produced this FINISHED plan already cancelled the phone alarm's own
         // slot (armPhoneAlarmIfNeeded, plan.wakeAt == null) and the tick alarm (scheduleNextTick, nextSyncDelay
@@ -446,17 +462,21 @@ internal suspend fun finishNightIfNeeded(context: Context, state: NightState) {
     }
 }
 
-private fun logAlarmReadiness(context: Context, now: Instant, debugNight: Boolean) {
+private fun logAlarmReadiness(context: Context, realStartedAt: Instant, now: Instant, debugNight: Boolean) {
     val readiness = readAlarmNotificationReadiness(context)
     appendNightLog(
-        context, now,
+        context, realStartedAt,
         NightLogEvent(
             now, "alarm_readiness",
             mapOf(
                 "canUseFullScreenIntent" to readiness.canUseFullScreenIntent.toString(),
                 "notificationsEnabled" to readiness.notificationsEnabled.toString(),
                 "alarmChannelBlocked" to readiness.alarmChannelBlocked.toString(),
-                "alarmChannelDowngraded" to readiness.alarmChannelDowngraded.toString()
+                "alarmChannelDowngraded" to readiness.alarmChannelDowngraded.toString(),
+                // ISSUES.md #4 (2026-10-03): the ALARM stream's own volume, which nothing checked before.
+                "alarmVolume" to readiness.alarmVolume.toString(),
+                "alarmVolumeMax" to readiness.alarmVolumeMax.toString(),
+                "alarmVolumeLow" to readiness.alarmVolumeLow.toString()
             )
         ),
         debugNight
@@ -487,10 +507,12 @@ private suspend fun logNightClosingSummary(context: Context, state: NightState, 
         segments = state.lastSegments,
         endedAt = now,
         config = resolveEngineConfig(state),
-        wakeAlarmFiredAt = state.wakeAlarmFiredAt
+        // Owner decision, 2026-10-03 (deadline.md #3): a nap that rang at or after the morning time was the
+        // morning alarm, so "after the wake alarm" counts from it too, not from wakeAlarmFiredAt alone.
+        wakeAlarmFiredAt = morningAlarmRangAt(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
     )
     appendNightLog(
-        context, state.startedAt,
+        context, state.realStartedAt,
         NightLogEvent(now, "night_summary", encodeNightClosingSummaryFields(summary)),
         state.debugOptions.isAnyEnabled
     )

@@ -268,7 +268,7 @@ fun armMediaFade(context: Context, nightStartedAt: Instant, now: Instant, debugN
 /** Falling asleep re-arms the fade for the next awakening (see [shouldStartWakeFade]). */
 fun rearmMediaFadeForWake(context: Context) {
     try {
-        wakeFadeRearmFile(context).writeText("1")
+        writeTextAtomically(wakeFadeRearmFile(context), "1")
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to re-arm the media fade for the next awakening", error)
     }
@@ -326,7 +326,7 @@ private fun mediaFadeFile(context: Context): File = File(context.filesDir, MEDIA
 private fun saveMediaFade(context: Context, record: MediaFadeRecord) {
     try {
         val parkedField = if (record.parked) " $PARKED_FIELD" else ""
-        mediaFadeFile(context).writeText("${record.originalStep} ${record.startStep} ${record.startedAt}$parkedField")
+        writeTextAtomically(mediaFadeFile(context), "${record.originalStep} ${record.startStep} ${record.startedAt}$parkedField")
     } catch (error: Exception) {
         Log.e(LOG_TAG, "failed to save the media fade record", error)
     }
