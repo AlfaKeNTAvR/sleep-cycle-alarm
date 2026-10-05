@@ -66,8 +66,12 @@ private fun morningReport(
     stretchDetailRecorded = stretchDetailRecorded,
 )
 
-private fun toRatingRow(recorded: RecordedRating?, zone: ZoneId): PastNightRatingRow =
-    PastNightRatingRow(rating = recorded?.rating, timeLabel = recorded?.let { formatClockTime(it.at, zone) })
+private fun toRatingRow(recorded: RecordedRating?, zone: ZoneId): PastNightRatingRow = PastNightRatingRow(
+    rating = recorded?.rating,
+    timeLabel = recorded?.let { formatClockTime(it.at, zone) },
+    symptoms = symptomsShown(recorded),
+    showsSymptomsLine = showsSymptomsLine(recorded),
+)
 
 private fun toStretchLine(stretch: RecordedStretch, zone: ZoneId): StretchLine = StretchLine(
     startTimeLabel = formatClockTime(stretch.onset, zone),

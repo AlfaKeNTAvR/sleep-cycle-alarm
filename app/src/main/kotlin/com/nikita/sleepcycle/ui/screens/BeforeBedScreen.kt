@@ -57,6 +57,7 @@ fun BeforeBedScreen(
     onConfirmDebugNightStart: () -> Unit = {},
     onCancelDebugNightStart: () -> Unit = {},
     onTestAgain: () -> Unit = {},
+    onOpenGadgetbridge: () -> Unit = {},
 ) {
     ScreenContainer(scrollable = false) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -112,6 +113,10 @@ fun BeforeBedScreen(
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
         BandCheckLine(state.bandCheck, onTestAgain)
+        // Owner request, 2026-10-05: the band did not answer, so offer Gadgetbridge itself, to reconnect it there.
+        if (state.offerOpenGadgetbridge) {
+            SecondaryActionButton(text = stringResource(R.string.open_gadgetbridge), onClick = onOpenGadgetbridge)
+        }
         if (state.startNightBlocker != null) {
             Text(
                 text = stringResource(setupBlockerReasonRes(state.startNightBlocker)),

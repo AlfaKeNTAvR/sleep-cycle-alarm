@@ -69,4 +69,6 @@ data class BeforeBedUiState(
     val confirmingDebugNightStart: Boolean = false,
     /** P2: the latest connection test's state. Shown alongside, never instead of, the Start-night gating above: a failure here does not itself disable "Start night". */
     val bandCheck: BandCheckStatus = BandCheckStatus.None,
+    /** Owner request, 2026-10-05: a failed band check offers "Open Gadgetbridge" above Start night, to reconnect the band there. */
+    val offerOpenGadgetbridge: Boolean = false,
 )

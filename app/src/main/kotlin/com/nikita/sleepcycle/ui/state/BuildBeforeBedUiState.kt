@@ -88,6 +88,7 @@ fun buildBeforeBedUiState(
         simulatedTimeValue = if (debugOptions.simulatedBandData) formatSimulatedTimeValue(now, zone) else null,
         confirmingDebugNightStart = confirmingDebugNightStart,
         bandCheck = bandCheck,
+        offerOpenGadgetbridge = bandCheck is BandCheckStatus.Failed && gadgetbridgeInstalled,
     )
 }
 

@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.night.RatingMoment
 import com.nikita.sleepcycle.night.SleepRating
+import com.nikita.sleepcycle.ui.components.RatingSymptomsLine
 import com.nikita.sleepcycle.ui.components.SleepRatingPills
 import com.nikita.sleepcycle.ui.state.PastNightRatingRow
 import com.nikita.sleepcycle.ui.components.CardDivider
@@ -32,7 +33,12 @@ private val TitleRowGap = 6.dp
 
 /** One past night: its report if the log recorded one, and an honest line about what is missing if it did not. */
 @Composable
-fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit, onRate: (RatingMoment, SleepRating) -> Unit) {
+fun PastNightScreen(
+    state: PastNightUiState,
+    onBack: () -> Unit,
+    onRate: (RatingMoment, SleepRating) -> Unit,
+    onEditSymptoms: (RatingMoment) -> Unit,
+) {
     ScreenContainer(scrollable = true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TitleRowGap)) {
             BackArrowButton(
@@ -69,12 +75,14 @@ fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit, onRate: (Rating
                         ?: stringResource(R.string.rating_past_after_end_night),
                     row = ratings.afterEndNight,
                     onPick = { onRate(RatingMoment.AFTER_END_NIGHT, it) },
+                    onEditSymptoms = { onEditSymptoms(RatingMoment.AFTER_END_NIGHT) },
                 )
                 PastNightRatingRowView(
                     title = ratings.later.timeLabel?.let { stringResource(R.string.rating_past_later_at, it) }
                         ?: stringResource(R.string.rating_past_later),
                     row = ratings.later,
                     onPick = { onRate(RatingMoment.LATER, it) },
+                    onEditSymptoms = { onEditSymptoms(RatingMoment.LATER) },
                 )
             }
         }
@@ -92,11 +100,15 @@ fun PastNightScreen(state: PastNightUiState, onBack: () -> Unit, onRate: (Rating
     }
 }
 
-/** One rating row on Past night: its title (when it was given) over the three pills. */
+/**
+ * One rating row on Past night: its title (when it was given) over the three pills, and under an Okay or Bad
+ * one the symptoms ticked for it, tappable to edit them (owner spec, 2026-10-04).
+ */
 @Composable
-private fun PastNightRatingRowView(title: String, row: PastNightRatingRow, onPick: (SleepRating) -> Unit) {
+private fun PastNightRatingRowView(title: String, row: PastNightRatingRow, onPick: (SleepRating) -> Unit, onEditSymptoms: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(TitleRowGap)) {
         Text(text = title, style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)
         SleepRatingPills(selected = row.rating, onPick = onPick)
+        if (row.showsSymptomsLine) RatingSymptomsLine(symptoms = row.symptoms, onEdit = onEditSymptoms)
     }
 }

@@ -61,6 +61,7 @@ fun NightScreen(
     onDone: () -> Unit,
     morningRating: MorningRatingCard?,
     onRateMorning: (SleepRating) -> Unit,
+    onEditMorningSymptoms: () -> Unit,
     onSpeedChoice: (SpeedChoice) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
 ) {
@@ -102,7 +103,7 @@ fun NightScreen(
                         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight),
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        MorningReportContent(content, morningRating, onRateMorning)
+                        MorningReportContent(content, morningRating, onRateMorning, onEditMorningSymptoms)
                     }
                 }
             } else {

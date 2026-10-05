@@ -15,6 +15,16 @@ fun isGadgetbridgeInstalled(context: Context): Boolean =
         false
     }
 
+/**
+ * Owner request, 2026-10-05: opens Gadgetbridge's own screen, to reconnect the band there. Returns false when it
+ * cannot be opened (not installed), so the caller can say nothing happened.
+ */
+fun openGadgetbridge(context: Context): Boolean {
+    val launch = context.packageManager.getLaunchIntentForPackage(GADGETBRIDGE_PACKAGE_NAME) ?: return false
+    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    return true
+}
+
 private fun gadgetbridgeIntent(action: String): Intent =
     Intent(action).setPackage(GADGETBRIDGE_PACKAGE_NAME)
 

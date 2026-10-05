@@ -6,6 +6,11 @@ package com.nikita.sleepcycle.night
 // that night's own log, so changing one later (Past night) is one more line, and the last line per moment
 // wins. Only nights whose night_start carries the `rateable` marker - every night started since this build -
 // can be rated. Pure: the Android glue is SleepRatingAsk.kt.
+//
+// Owner spec, 2026-10-04: an Okay or Bad rating can also say why - the symptoms ticked on the dialog that
+// follows it. Those are `sleep_symptoms` lines in the same log, one per save, carrying the whole set for one
+// moment (`moment=later symptoms=low_energy,hard_to_focus`, empty for none), so the last line per moment wins
+// the same way. Logs written before this have no such line and read as no symptoms.
 
 import java.time.Instant
 import java.time.ZoneId
@@ -15,6 +20,9 @@ private const val SLEEP_RATING_EVENT_TYPE = "sleep_rating"
 private const val LATER_RATING_ASKED_EVENT_TYPE = "sleep_rating_asked"
 private const val MOMENT_FIELD = "moment"
 private const val RATING_FIELD = "rating"
+private const val RATING_SYMPTOMS_EVENT_TYPE = "sleep_symptoms"
+private const val SYMPTOMS_FIELD = "symptoms"
+private const val SYMPTOMS_SEPARATOR = ","
 
 /** How the night felt. Logged in lower case. */
 enum class SleepRating { GOOD, OKAY, BAD }
@@ -22,11 +30,35 @@ enum class SleepRating { GOOD, OKAY, BAD }
 /** Which of the two ratings: right after End night, or later in the day. Logged in lower case. */
 enum class RatingMoment { AFTER_END_NIGHT, LATER }
 
-/** One rating and when it was given (or last changed). */
-data class RecordedRating(val rating: SleepRating, val at: Instant)
+/**
+ * What made a night Okay or Bad (owner spec, 2026-10-04): ticked on a dialog right after an Okay or Bad rating,
+ * each item belonging to one [moment]'s list - the morning's four or the afternoon's three. Owner change,
+ * 2026-10-04: Groggy on waking and Heavy, overslept were dropped from the morning list after the design was approved. Logged in lower case.
+ */
+enum class RatingSymptom(val moment: RatingMoment) {
+    // Owner change, 2026-10-05: Still sleepy and Headache on the dialog's top row, Woke before alarm and Slow to
+    // fall asleep below. The order here is the dialog's order; the log stores names, so reordering never changes
+    // what an old log reads as.
+    STILL_SLEEPY(RatingMoment.AFTER_END_NIGHT),
+    HEADACHE(RatingMoment.AFTER_END_NIGHT),
+    WOKE_BEFORE_ALARM(RatingMoment.AFTER_END_NIGHT),
+    SLOW_TO_FALL_ASLEEP(RatingMoment.AFTER_END_NIGHT),
+    SLEEPY_IN_AFTERNOON(RatingMoment.LATER),
+    LOW_ENERGY(RatingMoment.LATER),
+    HARD_TO_FOCUS(RatingMoment.LATER),
+}
+
+/** One rating, when it was given (or last changed), and the symptoms ticked for it (always none for Good). */
+data class RecordedRating(val rating: SleepRating, val at: Instant, val symptoms: Set<RatingSymptom> = emptySet())
 
 /** A rateable night's two ratings, either missing until given, and whether the later question was already asked. */
-data class NightRatings(val afterEndNight: RecordedRating?, val later: RecordedRating?, val laterAsked: Boolean)
+data class NightRatings(val afterEndNight: RecordedRating?, val later: RecordedRating?, val laterAsked: Boolean) {
+    /** The rating given at [moment], or null when it has not been given yet. */
+    fun at(moment: RatingMoment): RecordedRating? = when (moment) {
+        RatingMoment.AFTER_END_NIGHT -> afterEndNight
+        RatingMoment.LATER -> later
+    }
+}
 
 /** Added to night_start: marks the night as started by a build that can rate it. */
 fun nightStartRatingFields(): Map<String, String> = mapOf(RATEABLE_FIELD to true.toString())
@@ -37,6 +69,15 @@ fun sleepRatingEvent(moment: RatingMoment, rating: SleepRating, at: Instant): Ni
     mapOf(MOMENT_FIELD to moment.name.lowercase(), RATING_FIELD to rating.name.lowercase()),
 )
 
+/** The log line for the symptoms ticked for [moment]'s rating, at [at]: the whole set, so the last line per moment wins. Empty clears them. */
+fun ratingSymptomsEvent(moment: RatingMoment, symptoms: Set<RatingSymptom>, at: Instant): NightLogEvent = NightLogEvent(
+    at, RATING_SYMPTOMS_EVENT_TYPE,
+    mapOf(
+        MOMENT_FIELD to moment.name.lowercase(),
+        SYMPTOMS_FIELD to RatingSymptom.entries.filter { it in symptoms }.joinToString(SYMPTOMS_SEPARATOR) { it.name.lowercase() },
+    ),
+)
+
 /** The log line for the later question having been posted, so it is asked once per night. */
 fun laterRatingAskedEvent(at: Instant): NightLogEvent = NightLogEvent(at, LATER_RATING_ASKED_EVENT_TYPE, emptyMap())
 
@@ -44,12 +85,38 @@ fun laterRatingAskedEvent(at: Instant): NightLogEvent = NightLogEvent(at, LATER_
 fun readNightRatings(events: List<NightLogEvent>): NightRatings? {
     val start = events.lastOrNull { it.type == NIGHT_START_EVENT_TYPE } ?: return null
     if (start.fields[RATEABLE_FIELD] != true.toString()) return null
-    val ratings = events.filter { it.type == SLEEP_RATING_EVENT_TYPE }.mapNotNull(::parseRatingEvent)
     return NightRatings(
-        afterEndNight = ratings.lastOrNull { it.first == RatingMoment.AFTER_END_NIGHT }?.second,
-        later = ratings.lastOrNull { it.first == RatingMoment.LATER }?.second,
+        afterEndNight = readMomentRating(events, RatingMoment.AFTER_END_NIGHT),
+        later = readMomentRating(events, RatingMoment.LATER),
         laterAsked = events.any { it.type == LATER_RATING_ASKED_EVENT_TYPE },
     )
+}
+
+/**
+ * [moment]'s last rating, with the symptoms of the last symptoms line for that moment - unless a Good rating
+ * came after that line. Owner decision, 2026-10-04: changing a rating to Good clears that moment's symptoms,
+ * and going back to Okay or Bad asks again rather than bringing the old ones back. Read from log order rather
+ * than written as a second "clear" line, so a crash between two appends cannot leave stale symptoms behind.
+ */
+private fun readMomentRating(events: List<NightLogEvent>, moment: RatingMoment): RecordedRating? {
+    var rating: RecordedRating? = null
+    var symptoms = emptySet<RatingSymptom>()
+    events.filter { it.fields[MOMENT_FIELD] == moment.name.lowercase() }.forEach { event ->
+        when (event.type) {
+            SLEEP_RATING_EVENT_TYPE -> parseRatingEvent(event)?.second?.let { recorded ->
+                rating = recorded
+                if (recorded.rating == SleepRating.GOOD) symptoms = emptySet()
+            }
+            RATING_SYMPTOMS_EVENT_TYPE -> symptoms = parseSymptoms(event)
+        }
+    }
+    return rating?.copy(symptoms = symptoms)
+}
+
+/** The symptoms a symptoms line names; a name this build does not know is skipped, the rest still read. */
+private fun parseSymptoms(event: NightLogEvent): Set<RatingSymptom> {
+    val names = event.fields[SYMPTOMS_FIELD].orEmpty().split(SYMPTOMS_SEPARATOR).toSet()
+    return RatingSymptom.entries.filter { it.name.lowercase() in names }.toSet()
 }
 
 /** Null for a rating line whose moment or value this build does not know. */
