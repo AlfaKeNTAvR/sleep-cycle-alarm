@@ -31,12 +31,11 @@ data class SymptomsDialogState(
 private const val MAX_TILES_PER_ROW = 3
 
 /**
- * Whether picking [picked] over [previous] opens the dialog. Owner decision, 2026-10-04: Good never asks, and
- * Okay or Bad asks when the rating was missing or Good (which had no symptoms). Okay to Bad, or the reverse,
- * keeps what was ticked without asking again: the row under the rating edits it.
+ * Whether picking [picked] opens the dialog. Owner decision, 2026-10-05 (superseding 2026-10-04's "only from
+ * nothing or Good"): Good never asks; every Okay or Bad pick asks, Okay to Bad and the same rating again
+ * included, with the ticks kept - so a skipped dialog is always one tap away. Only Good clears them.
  */
-fun shouldAskSymptoms(previous: SleepRating?, picked: SleepRating): Boolean =
-    hasSymptoms(picked) && !hasSymptoms(previous)
+fun shouldAskSymptoms(picked: SleepRating): Boolean = hasSymptoms(picked)
 
 /** Whether a [rating] can have symptoms ticked for it: only Okay and Bad. */
 fun hasSymptoms(rating: SleepRating?): Boolean = rating == SleepRating.OKAY || rating == SleepRating.BAD
@@ -50,6 +49,12 @@ fun symptomsDialogFor(moment: RatingMoment, recorded: RecordedRating?): Symptoms
 /** The symptoms ticked for [recorded], in the dialog's order, for the small line under a rating. */
 fun symptomsShown(recorded: RecordedRating?): List<RatingSymptom> =
     recorded?.let { rating -> RatingSymptom.entries.filter { it in rating.symptoms } } ?: emptyList()
+
+/**
+ * Whether the small line of ticked symptoms shows under [recorded]. Owner decision, 2026-10-05: only for an Okay
+ * or Bad with something ticked - no "Tick what felt off" prompt; picking Okay or Bad again reopens the dialog.
+ */
+fun showsSymptomsLine(recorded: RecordedRating?): Boolean = hasSymptoms(recorded?.rating) && recorded?.symptoms?.isNotEmpty() == true
 
 /** One tile tapped: ticks it, or unticks it if it was ticked. */
 fun SymptomsDialogState.toggled(symptom: RatingSymptom): SymptomsDialogState =

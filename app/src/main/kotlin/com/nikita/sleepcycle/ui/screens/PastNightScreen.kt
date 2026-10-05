@@ -109,6 +109,6 @@ private fun PastNightRatingRowView(title: String, row: PastNightRatingRow, onPic
     Column(verticalArrangement = Arrangement.spacedBy(TitleRowGap)) {
         Text(text = title, style = MaterialTheme.typography.bodySmall, color = NightOnSurfaceMuted)
         SleepRatingPills(selected = row.rating, onPick = onPick)
-        if (row.symptomsEditable) RatingSymptomsLine(symptoms = row.symptoms, onEdit = onEditSymptoms)
+        if (row.showsSymptomsLine) RatingSymptomsLine(symptoms = row.symptoms, onEdit = onEditSymptoms)
     }
 }

@@ -70,7 +70,7 @@ private fun toRatingRow(recorded: RecordedRating?, zone: ZoneId): PastNightRatin
     rating = recorded?.rating,
     timeLabel = recorded?.let { formatClockTime(it.at, zone) },
     symptoms = symptomsShown(recorded),
-    symptomsEditable = hasSymptoms(recorded?.rating),
+    showsSymptomsLine = showsSymptomsLine(recorded),
 )
 
 private fun toStretchLine(stretch: RecordedStretch, zone: ZoneId): StretchLine = StretchLine(

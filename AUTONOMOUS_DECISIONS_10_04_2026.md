@@ -25,3 +25,8 @@ Owner answers before the run (2026-10-04):
 - Should the 15:00 Okay/Bad also navigate to that night's Past night screen under the dialog? For now it opens over whatever screen the app starts on.
 - The tile colours, sizes and dialog layout were not checked on the phone or emulator; the brief said not to use them. They need a look on the device.
 - Logs list chips don't show symptoms (unchanged). Should they?
+
+## Owner changes after the first install (2026-10-05)
+- Morning order: Headache and Woke before alarm on the top row, then Still sleepy and Slow to fall asleep.
+- Bug reported: Okay with nothing ticked, then Bad, did not ask again (and Bad, Skip, then Okay). Now every Okay or Bad pick opens the dialog, prefilled with the ticks; only Good clears them. This supersedes "When the dialog asks" above.
+- No "Tick what felt off" line when nothing is ticked: the line shows only with ticks. Supersedes "Empty but editable line" above; picking Okay or Bad again (the same one included) is how a skipped dialog is reached.

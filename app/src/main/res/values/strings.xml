@@ -273,7 +273,6 @@
     <string name="symptoms_save">Save</string>
     <string name="symptoms_save_count">Save (%1$d)</string>
     <string name="symptoms_skip">Skip</string>
-    <string name="symptoms_add">Tick what felt off</string>
     <string name="symptom_still_sleepy">Still sleepy</string>
     <string name="symptom_woke_before_alarm">Woke before alarm</string>
     <string name="symptom_slow_to_fall_asleep">Slow to fall asleep</string>

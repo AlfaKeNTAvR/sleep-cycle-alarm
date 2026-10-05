@@ -49,7 +49,7 @@ fun MorningReportContent(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SleepRatingFaces(selected = rating.selected, onPick = onRate)
-                if (rating.symptomsEditable) RatingSymptomsLine(symptoms = rating.symptoms, onEdit = onEditSymptoms)
+                if (rating.showsSymptomsLine) RatingSymptomsLine(symptoms = rating.symptoms, onEdit = onEditSymptoms)
                 Text(
                     text = stringResource(if (rating.selected == null) R.string.rating_morning_hint else R.string.rating_morning_saved),
                     style = MaterialTheme.typography.bodySmall,

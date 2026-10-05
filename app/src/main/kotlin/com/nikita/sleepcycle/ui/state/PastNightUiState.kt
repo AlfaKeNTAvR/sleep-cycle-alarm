@@ -32,5 +32,5 @@ data class PastNightRatingRow(
     val rating: SleepRating?,
     val timeLabel: String?,
     val symptoms: List<RatingSymptom> = emptyList(),
-    val symptomsEditable: Boolean = false,
+    val showsSymptomsLine: Boolean = false,
 )

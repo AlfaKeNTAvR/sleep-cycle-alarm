@@ -16,7 +16,7 @@ class MorningRatingCardTest {
     private val at = Instant.parse("2026-10-03T04:53:00Z")
 
     @Test
-    fun `an Okay morning rating shows the symptoms ticked for it, and can edit them`() {
+    fun `an Okay morning rating shows the symptoms ticked for it`() {
         val ratings = NightRatings(
             afterEndNight = RecordedRating(SleepRating.OKAY, at, setOf(RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.STILL_SLEEPY)),
             later = null,
@@ -27,10 +27,18 @@ class MorningRatingCardTest {
             MorningRatingCard(
                 selected = SleepRating.OKAY,
                 symptoms = listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.SLOW_TO_FALL_ASLEEP),
-                symptomsEditable = true,
+                showsSymptomsLine = true,
             ),
             buildMorningRatingCard(ratings, ratingEnabled = true),
         )
+    }
+
+    @Test
+    fun `an Okay morning rating with nothing ticked shows no symptoms line`() {
+        // Owner decision, 2026-10-05: no "Tick what felt off" prompt; picking Okay or Bad again reopens the dialog.
+        val ratings = NightRatings(afterEndNight = RecordedRating(SleepRating.OKAY, at), later = null, laterAsked = false)
+
+        assertEquals(MorningRatingCard(selected = SleepRating.OKAY), buildMorningRatingCard(ratings, ratingEnabled = true))
     }
 
     @Test

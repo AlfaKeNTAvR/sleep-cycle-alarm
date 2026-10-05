@@ -179,11 +179,12 @@ class BuildPastNightUiStateTest {
         val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
 
         assertEquals(PastNightRatingRow(SleepRating.GOOD, "07:52"), state.ratings?.afterEndNight)
-        assertEquals(PastNightRatingRow(SleepRating.OKAY, "15:02", symptomsEditable = true), state.ratings?.later)
+        // Owner decision, 2026-10-05: an Okay with nothing ticked shows no symptoms line.
+        assertEquals(PastNightRatingRow(SleepRating.OKAY, "15:02"), state.ratings?.later)
     }
 
     @Test
-    fun `an Okay or Bad row shows its ticked symptoms in the dialog's order and can edit them, a Good row cannot`() {
+    fun `an Okay or Bad row with ticks shows them in the dialog's order, a Good row shows none`() {
         val ratings = NightRatings(
             afterEndNight = RecordedRating(
                 SleepRating.BAD, Instant.parse("2026-09-18T05:52:00Z"), setOf(RatingSymptom.HEADACHE, RatingSymptom.STILL_SLEEPY),
@@ -194,10 +195,10 @@ class BuildPastNightUiStateTest {
 
         val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
 
-        assertEquals(listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE), state.ratings?.afterEndNight?.symptoms)
-        assertEquals(true, state.ratings?.afterEndNight?.symptomsEditable)
+        assertEquals(listOf(RatingSymptom.HEADACHE, RatingSymptom.STILL_SLEEPY), state.ratings?.afterEndNight?.symptoms)
+        assertEquals(true, state.ratings?.afterEndNight?.showsSymptomsLine)
         assertEquals(emptyList<RatingSymptom>(), state.ratings?.later?.symptoms)
-        assertEquals(false, state.ratings?.later?.symptomsEditable)
+        assertEquals(false, state.ratings?.later?.showsSymptomsLine)
     }
 
     @Test

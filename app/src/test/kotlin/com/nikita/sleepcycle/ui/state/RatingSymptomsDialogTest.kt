@@ -18,20 +18,20 @@ class RatingSymptomsDialogTest {
     private val at = Instant.parse("2026-10-03T04:53:00Z")
 
     @Test
-    fun `Okay or Bad picked over nothing or Good asks what felt off, Good never asks, Okay to Bad keeps the ticks`() {
-        assertTrue(shouldAskSymptoms(previous = null, picked = SleepRating.OKAY))
-        assertTrue(shouldAskSymptoms(previous = SleepRating.GOOD, picked = SleepRating.BAD))
-        assertFalse(shouldAskSymptoms(previous = null, picked = SleepRating.GOOD))
-        assertFalse(shouldAskSymptoms(previous = SleepRating.OKAY, picked = SleepRating.BAD))
-        assertFalse(shouldAskSymptoms(previous = SleepRating.BAD, picked = SleepRating.BAD))
+    fun `every Okay or Bad pick asks what felt off, also Okay to Bad and the same rating again, Good never asks`() {
+        // Owner decision, 2026-10-05: switching between Okay and Bad, or picking the same one again, reopens the
+        // dialog with the ticks kept, so a skipped dialog can always be reached again.
+        assertTrue(shouldAskSymptoms(SleepRating.OKAY))
+        assertTrue(shouldAskSymptoms(SleepRating.BAD))
+        assertFalse(shouldAskSymptoms(SleepRating.GOOD))
     }
 
     @Test
-    fun `the morning dialog offers the four morning items in order, prefilled with what was ticked`() {
+    fun `the morning dialog offers Headache and Woke before alarm on the top row, then the other two, prefilled with what was ticked`() {
         val dialog = symptomsDialogFor(RatingMoment.AFTER_END_NIGHT, RecordedRating(SleepRating.OKAY, at, setOf(RatingSymptom.HEADACHE)))
 
         assertEquals(
-            listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.HEADACHE),
+            listOf(RatingSymptom.HEADACHE, RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.STILL_SLEEPY, RatingSymptom.SLOW_TO_FALL_ASLEEP),
             dialog?.options,
         )
         assertEquals(SleepRating.OKAY, dialog?.rating)

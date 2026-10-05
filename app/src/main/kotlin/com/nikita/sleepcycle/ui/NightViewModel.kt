@@ -366,17 +366,16 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Records [rating] for [moment] in [logFile], redraws whatever shows that night, and opens the symptoms
-     * dialog when the rating moved to Okay or Bad from nothing or Good ([shouldAskSymptoms]).
+     * dialog for an Okay or Bad ([shouldAskSymptoms]).
      */
     private fun rateNight(logFile: File, moment: RatingMoment, rating: SleepRating) {
         viewModelScope.launch {
-            val (previous, parsed) = withContext(Dispatchers.IO) {
-                val previous = readPastNightLog(logFile).ratings?.at(moment)?.rating
+            val parsed = withContext(Dispatchers.IO) {
                 recordSleepRating(context, logFile, moment, rating)
-                previous to readPastNightLog(logFile)
+                readPastNightLog(logFile)
             }
             showRatingsOf(logFile, parsed)
-            if (shouldAskSymptoms(previous, rating)) openSymptomsDialog(logFile, moment, parsed)
+            if (shouldAskSymptoms(rating)) openSymptomsDialog(logFile, moment, parsed)
         }
     }
 

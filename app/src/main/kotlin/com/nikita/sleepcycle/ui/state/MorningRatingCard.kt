@@ -12,12 +12,12 @@ import com.nikita.sleepcycle.night.SleepRating
 data class MorningRatingCard(
     val selected: SleepRating?,
     val symptoms: List<RatingSymptom> = emptyList(),
-    val symptomsEditable: Boolean = false,
+    val showsSymptomsLine: Boolean = false,
 )
 
 /** The card for a night rated (or not) as [ratings] says; null hides it - the rating switched off, or a night started before the rating existed. */
 fun buildMorningRatingCard(ratings: NightRatings?, ratingEnabled: Boolean): MorningRatingCard? {
     if (ratings == null || !ratingEnabled) return null
     val morning = ratings.afterEndNight
-    return MorningRatingCard(selected = morning?.rating, symptoms = symptomsShown(morning), symptomsEditable = hasSymptoms(morning?.rating))
+    return MorningRatingCard(selected = morning?.rating, symptoms = symptomsShown(morning), showsSymptomsLine = showsSymptomsLine(morning))
 }

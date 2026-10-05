@@ -36,10 +36,12 @@ enum class RatingMoment { AFTER_END_NIGHT, LATER }
  * 2026-10-04: Groggy on waking and Heavy, overslept were dropped from the morning list after the design was approved. Logged in lower case.
  */
 enum class RatingSymptom(val moment: RatingMoment) {
-    STILL_SLEEPY(RatingMoment.AFTER_END_NIGHT),
-    WOKE_BEFORE_ALARM(RatingMoment.AFTER_END_NIGHT),
-    SLOW_TO_FALL_ASLEEP(RatingMoment.AFTER_END_NIGHT),
+    // Owner change, 2026-10-05: Headache and Woke before alarm on the dialog's top row. The order here is the
+    // dialog's order; the log stores names, so reordering never changes what an old log reads as.
     HEADACHE(RatingMoment.AFTER_END_NIGHT),
+    WOKE_BEFORE_ALARM(RatingMoment.AFTER_END_NIGHT),
+    STILL_SLEEPY(RatingMoment.AFTER_END_NIGHT),
+    SLOW_TO_FALL_ASLEEP(RatingMoment.AFTER_END_NIGHT),
     SLEEPY_IN_AFTERNOON(RatingMoment.LATER),
     LOW_ENERGY(RatingMoment.LATER),
     HARD_TO_FOCUS(RatingMoment.LATER),

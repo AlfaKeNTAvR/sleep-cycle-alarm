@@ -110,6 +110,19 @@ class SleepRatingTest {
     }
 
     @Test
+    fun `switching between Okay and Bad keeps the ticks`() {
+        // Owner decision, 2026-10-05: only Good clears them; the dialog reopens prefilled.
+        val lines = listOf(
+            rateableStartLine, endLine,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, morning),
+            symptomsLine(RatingMoment.AFTER_END_NIGHT, setOf(RatingSymptom.HEADACHE), morning.plusSeconds(20)),
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.BAD, morning.plusSeconds(60)),
+        )
+
+        assertEquals(setOf(RatingSymptom.HEADACHE), parsePastNightLog(lines).ratings?.afterEndNight?.symptoms)
+    }
+
+    @Test
     fun `saving no symptoms clears the ones ticked before, and a name this build does not know is skipped`() {
         val unknownName = """{"at":"2026-10-03T04:54:00Z","type":"sleep_symptoms","fields":{"moment":"after_end_night","symptoms":"still_sleepy,itchy"}}"""
         val lines = listOf(rateableStartLine, endLine, ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, morning), unknownName)

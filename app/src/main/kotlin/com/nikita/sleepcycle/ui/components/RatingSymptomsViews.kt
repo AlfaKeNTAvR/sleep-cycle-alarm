@@ -163,21 +163,13 @@ private fun SymptomTile(symptom: RatingSymptom, selected: Boolean, selectedColor
 
 /**
  * The line under an Okay or Bad rating: each ticked symptom as a small icon and its name, wrapping onto more
- * lines as needed. With none ticked it says "Tick what felt off" instead. Tapping either opens the dialog.
+ * lines as needed. Tapping it opens the dialog. Shown only with something ticked (owner decision, 2026-10-05:
+ * no "Tick what felt off" prompt; picking Okay or Bad again reopens the dialog).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RatingSymptomsLine(symptoms: List<RatingSymptom>, onEdit: () -> Unit, modifier: Modifier = Modifier) {
     val tappable = modifier.fillMaxWidth().clip(RoundedCornerShape(TileCornerRadius / 2)).clickable(role = Role.Button, onClick = onEdit)
-    if (symptoms.isEmpty()) {
-        Text(
-            text = stringResource(R.string.symptoms_add),
-            style = MaterialTheme.typography.bodySmall,
-            color = NightOnSurfaceMuted,
-            modifier = tappable.padding(vertical = 4.dp),
-        )
-        return
-    }
     FlowRow(
         modifier = tappable.padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(LineItemGap),
