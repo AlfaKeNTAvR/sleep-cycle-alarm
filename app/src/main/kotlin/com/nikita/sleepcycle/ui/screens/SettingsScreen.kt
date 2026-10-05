@@ -100,6 +100,7 @@ fun SettingsScreen(
     onSimulatedStartTimeChange: (LocalTime) -> Unit,
     onRingTestAlarm: () -> Unit,
     onOpenSetup: () -> Unit,
+    onOpenGadgetbridge: () -> Unit,
     onBack: () -> Unit,
     isDebugBuild: Boolean = BuildConfig.DEBUG,
 ) {
@@ -217,6 +218,9 @@ fun SettingsScreen(
 
         SettingsSection(stringResource(R.string.settings_section_more)) {
             SettingsMenuRow(text = stringResource(R.string.setup_title), onClick = onOpenSetup)
+            // Owner request, 2026-10-05: a way into Gadgetbridge, to reconnect the band, without leaving through the launcher.
+            CardDivider()
+            SettingsMenuRow(text = stringResource(R.string.open_gadgetbridge), onClick = onOpenGadgetbridge)
         }
     }
 }

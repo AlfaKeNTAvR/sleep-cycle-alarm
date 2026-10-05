@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle
 
 import android.content.Intent
+import com.nikita.sleepcycle.bridge.openGadgetbridge
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -102,6 +103,7 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
                             onSimulatedStartTimeChange = viewModel::setSimulatedStartTime,
                             onRingTestAlarm = viewModel::ringDebugTestAlarm,
                             onOpenSetup = viewModel::openSetup,
+                            onOpenGadgetbridge = { openGadgetbridge(context) },
                             onBack = viewModel::closeSettings,
                         )
                     }
@@ -130,6 +132,7 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
                         onConfirmDebugNightStart = viewModel::confirmDebugNightStart,
                         onCancelDebugNightStart = viewModel::cancelDebugNightStart,
                         onTestAgain = viewModel::runSetupCheckAction,
+                        onOpenGadgetbridge = { openGadgetbridge(context) },
                     )
                     is Screen.Night -> uiState.night?.let { nightState ->
                         NightScreen(

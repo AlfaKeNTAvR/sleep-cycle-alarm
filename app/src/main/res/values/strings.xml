@@ -245,6 +245,7 @@
     <string name="settings_ask_again_later">Ask again later</string>
     <string name="settings_ask_at">Ask at</string>
     <string name="settings_section_more">More</string>
+    <string name="open_gadgetbridge">Open Gadgetbridge</string>
     <string name="settings_minutes_value">%1$d min</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="content_description_less">Less</string>

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 private fun beforeBedWith(
     connectionTest: ConnectionTestState,
     lastSetupCheckPassedAt: java.time.Instant? = null,
+    gadgetbridgeInstalled: Boolean = true,
 ): BeforeBedUiState = buildUiState(
     appSettings = testAppSettings(lastSetupCheckPassedAt = lastSetupCheckPassedAt),
     nightState = null,
@@ -20,7 +21,7 @@ private fun beforeBedWith(
     now = instant("2026-09-30T23:00"),
     zone = testZone,
     permissionStatus = testPermissionStatus(),
-    gadgetbridgeInstalled = true,
+    gadgetbridgeInstalled = gadgetbridgeInstalled,
     screen = Screen.BeforeBed,
     connectionTest = connectionTest,
     nightLogFiles = emptyList(),
@@ -59,6 +60,26 @@ class BeforeBedBandCheckTest {
             BandCheckStatus.Failed("In Gadgetbridge, disconnect and reconnect the band, then test again."),
             beforeBedWith(ConnectionTestState.Done(failed)).bandCheck,
         )
+    }
+
+    // Owner request, 2026-10-05: when the band check fails, a button above Start night opens Gadgetbridge to
+    // reconnect the band there.
+    private val failedReport = SetupCheckReport(
+        isReady = false,
+        lines = listOf(SetupCheckLine("In Gadgetbridge, disconnect and reconnect the band, then test again.", SetupCheckLineSeverity.ACTION_NEEDED)),
+    )
+
+    @Test fun `a failed test offers to open Gadgetbridge`() {
+        assertEquals(true, beforeBedWith(ConnectionTestState.Done(failedReport)).offerOpenGadgetbridge)
+    }
+
+    @Test fun `no failed test, no Gadgetbridge button`() {
+        assertEquals(false, beforeBedWith(ConnectionTestState.Idle).offerOpenGadgetbridge)
+        assertEquals(false, beforeBedWith(ConnectionTestState.Running).offerOpenGadgetbridge)
+    }
+
+    @Test fun `with Gadgetbridge not installed there is nothing to open`() {
+        assertEquals(false, beforeBedWith(ConnectionTestState.Done(failedReport), gadgetbridgeInstalled = false).offerOpenGadgetbridge)
     }
 
     // The status line in the top corner. Owner-reported on the prototype: it said "Band connected" right above an
