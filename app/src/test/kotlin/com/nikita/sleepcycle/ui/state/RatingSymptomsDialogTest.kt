@@ -27,11 +27,11 @@ class RatingSymptomsDialogTest {
     }
 
     @Test
-    fun `the morning dialog offers Headache and Woke before alarm on the top row, then the other two, prefilled with what was ticked`() {
+    fun `the morning dialog offers Still sleepy and Headache on the top row, Woke before alarm and Slow to fall asleep below, prefilled with what was ticked`() {
         val dialog = symptomsDialogFor(RatingMoment.AFTER_END_NIGHT, RecordedRating(SleepRating.OKAY, at, setOf(RatingSymptom.HEADACHE)))
 
         assertEquals(
-            listOf(RatingSymptom.HEADACHE, RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.STILL_SLEEPY, RatingSymptom.SLOW_TO_FALL_ASLEEP),
+            listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE, RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.SLOW_TO_FALL_ASLEEP),
             dialog?.options,
         )
         assertEquals(SleepRating.OKAY, dialog?.rating)

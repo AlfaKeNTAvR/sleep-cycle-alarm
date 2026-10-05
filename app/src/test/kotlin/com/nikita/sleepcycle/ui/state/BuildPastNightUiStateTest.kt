@@ -195,7 +195,7 @@ class BuildPastNightUiStateTest {
 
         val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
 
-        assertEquals(listOf(RatingSymptom.HEADACHE, RatingSymptom.STILL_SLEEPY), state.ratings?.afterEndNight?.symptoms)
+        assertEquals(listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE), state.ratings?.afterEndNight?.symptoms)
         assertEquals(true, state.ratings?.afterEndNight?.showsSymptomsLine)
         assertEquals(emptyList<RatingSymptom>(), state.ratings?.later?.symptoms)
         assertEquals(false, state.ratings?.later?.showsSymptomsLine)

@@ -27,6 +27,6 @@ Owner answers before the run (2026-10-04):
 - Logs list chips don't show symptoms (unchanged). Should they?
 
 ## Owner changes after the first install (2026-10-05)
-- Morning order: Headache and Woke before alarm on the top row, then Still sleepy and Slow to fall asleep.
+- Morning order (corrected by the owner the same day): Still sleepy and Headache on the top row, Woke before alarm and Slow to fall asleep below.
 - Bug reported: Okay with nothing ticked, then Bad, did not ask again (and Bad, Skip, then Okay). Now every Okay or Bad pick opens the dialog, prefilled with the ticks; only Good clears them. This supersedes "When the dialog asks" above.
 - No "Tick what felt off" line when nothing is ticked: the line shows only with ticks. Supersedes "Empty but editable line" above; picking Okay or Bad again (the same one included) is how a skipped dialog is reached.
