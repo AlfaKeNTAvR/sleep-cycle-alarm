@@ -3,6 +3,7 @@ package com.nikita.sleepcycle.ui.state
 import com.nikita.sleepcycle.night.NightRatings
 import com.nikita.sleepcycle.night.PastNightLog
 import com.nikita.sleepcycle.night.PastNightSummary
+import com.nikita.sleepcycle.night.RatingSymptom
 import com.nikita.sleepcycle.night.RecordedRating
 import com.nikita.sleepcycle.night.RecordedStretch
 import com.nikita.sleepcycle.night.SleepRating
@@ -178,7 +179,25 @@ class BuildPastNightUiStateTest {
         val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
 
         assertEquals(PastNightRatingRow(SleepRating.GOOD, "07:52"), state.ratings?.afterEndNight)
-        assertEquals(PastNightRatingRow(SleepRating.OKAY, "15:02"), state.ratings?.later)
+        assertEquals(PastNightRatingRow(SleepRating.OKAY, "15:02", symptomsEditable = true), state.ratings?.later)
+    }
+
+    @Test
+    fun `an Okay or Bad row shows its ticked symptoms in the dialog's order and can edit them, a Good row cannot`() {
+        val ratings = NightRatings(
+            afterEndNight = RecordedRating(
+                SleepRating.BAD, Instant.parse("2026-09-18T05:52:00Z"), setOf(RatingSymptom.HEADACHE, RatingSymptom.STILL_SLEEPY),
+            ),
+            later = RecordedRating(SleepRating.GOOD, Instant.parse("2026-09-18T13:02:00Z")),
+            laterAsked = true,
+        )
+
+        val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
+
+        assertEquals(listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE), state.ratings?.afterEndNight?.symptoms)
+        assertEquals(true, state.ratings?.afterEndNight?.symptomsEditable)
+        assertEquals(emptyList<RatingSymptom>(), state.ratings?.later?.symptoms)
+        assertEquals(false, state.ratings?.later?.symptomsEditable)
     }
 
     @Test

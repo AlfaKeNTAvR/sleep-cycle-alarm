@@ -14,6 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.night.SleepRating
+import com.nikita.sleepcycle.ui.components.RatingSymptomsLine
 import com.nikita.sleepcycle.ui.components.SleepRatingFaces
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
 import com.nikita.sleepcycle.ui.components.CardDivider
@@ -27,10 +28,16 @@ import com.nikita.sleepcycle.ui.theme.SmallNumeralStyle
 /**
  * State D itself: the shared report body under this morning's greeting, then either the "How did you sleep?"
  * card ([rating] non-null - owner spec, 2026-10-02, it takes the place of the note) or the note that the log
- * was saved (rating switched off, or a night started before the rating existed).
+ * was saved (rating switched off, or a night started before the rating existed). Under an Okay or Bad face,
+ * the symptoms ticked for it, tappable to change them (owner spec, 2026-10-04).
  */
 @Composable
-fun MorningReportContent(content: NightScreenContent.MorningReport, rating: MorningRatingCard?, onRate: (SleepRating) -> Unit) {
+fun MorningReportContent(
+    content: NightScreenContent.MorningReport,
+    rating: MorningRatingCard?,
+    onRate: (SleepRating) -> Unit,
+    onEditSymptoms: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(ScreenContentGap)) {
         MorningReportBody(content = content, caption = stringResource(R.string.night_morning_greeting))
         if (rating != null) {
@@ -42,6 +49,7 @@ fun MorningReportContent(content: NightScreenContent.MorningReport, rating: Morn
                     modifier = Modifier.fillMaxWidth(),
                 )
                 SleepRatingFaces(selected = rating.selected, onPick = onRate)
+                if (rating.symptomsEditable) RatingSymptomsLine(symptoms = rating.symptoms, onEdit = onEditSymptoms)
                 Text(
                     text = stringResource(if (rating.selected == null) R.string.rating_morning_hint else R.string.rating_morning_saved),
                     style = MaterialTheme.typography.bodySmall,

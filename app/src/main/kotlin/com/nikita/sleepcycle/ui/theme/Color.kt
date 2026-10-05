@@ -23,3 +23,6 @@ val ErrorRed = Color(0xFFE0806E)
 val RatingGood = ConnectedDot
 val RatingOkay = AmberAccent
 val RatingBad = ErrorRed
+
+// Why Okay or Bad (owner spec, 2026-10-04): an unticked symptom tile's icon, a step brighter than the muted text.
+val SymptomIconIdle = Color(0xFFC9CCD3)

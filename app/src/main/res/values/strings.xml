@@ -266,4 +266,19 @@
     <string name="rating_later_title_still_same">Still feel the same about last night?</string>
     <string name="rating_later_title_how_do_you_feel">How do you feel about last night?</string>
     <string name="rating_later_body_morning_said">This morning you said %1$s.</string>
+    <!-- Why Okay or Bad: the symptoms dialog after an Okay or Bad rating (owner spec, 2026-10-04). -->
+    <string name="symptoms_title_morning">What felt off?</string>
+    <string name="symptoms_title_later">How is your afternoon?</string>
+    <string name="symptoms_subtitle">You picked %1$s. Tick all that apply.</string>
+    <string name="symptoms_save">Save</string>
+    <string name="symptoms_save_count">Save (%1$d)</string>
+    <string name="symptoms_skip">Skip</string>
+    <string name="symptoms_add">Tick what felt off</string>
+    <string name="symptom_still_sleepy">Still sleepy</string>
+    <string name="symptom_woke_before_alarm">Woke before alarm</string>
+    <string name="symptom_slow_to_fall_asleep">Slow to fall asleep</string>
+    <string name="symptom_headache">Headache</string>
+    <string name="symptom_sleepy_in_afternoon">Sleepy in afternoon</string>
+    <string name="symptom_low_energy">Low energy</string>
+    <string name="symptom_hard_to_focus">Hard to focus</string>
 </resources>

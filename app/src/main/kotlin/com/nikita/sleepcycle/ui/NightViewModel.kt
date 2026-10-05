@@ -7,6 +7,7 @@ package com.nikita.sleepcycle.ui
 // one property/method per Debug screen feature.
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,7 +48,16 @@ import com.nikita.sleepcycle.night.SleepRatingSettings
 import com.nikita.sleepcycle.night.nightLogFile
 import com.nikita.sleepcycle.night.recordSleepRating
 import com.nikita.sleepcycle.night.syncLaterRatingAsk
+import com.nikita.sleepcycle.night.PastNightLog
+import com.nikita.sleepcycle.night.RatingSymptom
+import com.nikita.sleepcycle.night.recordLaterRatingFromNotification
+import com.nikita.sleepcycle.night.recordRatingSymptoms
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
+import com.nikita.sleepcycle.ui.state.SymptomsDialogState
+import com.nikita.sleepcycle.ui.state.buildMorningRatingCard
+import com.nikita.sleepcycle.ui.state.shouldAskSymptoms
+import com.nikita.sleepcycle.ui.state.symptomsDialogFor
+import com.nikita.sleepcycle.ui.state.toggled
 import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
 import com.nikita.sleepcycle.night.runSetupCheck
@@ -98,6 +108,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -123,6 +134,9 @@ private data class NightLogListing(val files: List<File>, val ratings: Map<File,
 
 /** The night the morning report shows, for its rating card: that night's log file and its ratings so far (null: it cannot be rated). */
 private data class MorningRatingTarget(val logFile: File, val ratings: NightRatings?)
+
+/** The open symptoms dialog and the night log its Save writes to. */
+private data class SymptomsDialogTarget(val logFile: File, val state: SymptomsDialogState)
 
 private data class ExtraInputs(
     val permissionStatus: PermissionStatus,
@@ -175,6 +189,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** The Logs row the open Past night screen came from - the file a rating changed there is written to. */
     private var openedPastNightRow: NightLogSummary? = null
     private val morningRatingTarget = MutableStateFlow<MorningRatingTarget?>(null)
+    private val symptomsDialogTarget = MutableStateFlow<SymptomsDialogTarget?>(null)
     private val confirmingEndNight = MutableStateFlow(false)
     /** Owner spec, 2026-10-02: the "I'm up" confirmation dialog is open - see NightUiState.confirmingImUp. */
     private val confirmingImUp = MutableStateFlow(false)
@@ -207,9 +222,12 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Owner spec, 2026-10-02: the morning report's "How did you sleep?" card - null hides it (rating switched off, or a night started before the rating existed). */
     val morningRating: StateFlow<MorningRatingCard?> = combine(morningRatingTarget, appSettings) { target, settings ->
-        val ratings = target?.ratings
-        if (ratings != null && settings?.sleepRating?.enabled == true) MorningRatingCard(ratings.afterEndNight?.rating) else null
+        buildMorningRatingCard(target?.ratings, ratingEnabled = settings?.sleepRating?.enabled == true)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Owner spec, 2026-10-04: the open "why Okay or Bad" dialog, over whichever screen is showing; null when none is open. */
+    val symptomsDialog: StateFlow<SymptomsDialogState?> =
+        symptomsDialogTarget.map { it?.state }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Owner request, 2026-10-03: the Debug section's "Simulated start" time, for the Settings screen. */
     val simulatedStartTime: StateFlow<LocalTime> = debug.simulatedStartTime
@@ -331,14 +349,92 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Owner spec, 2026-10-02: a face tapped on the morning report. Optional - Done without one skips it - and tapping another face changes it. */
+    /**
+     * Owner spec, 2026-10-02: a face tapped on the morning report. Optional - Done without one skips it - and
+     * tapping another face changes it. Owner spec, 2026-10-04: Okay or Bad then asks what felt off.
+     */
     fun rateMorning(rating: SleepRating) {
         val target = morningRatingTarget.value ?: return
+        rateNight(target.logFile, RatingMoment.AFTER_END_NIGHT, rating)
+    }
+
+    /** The symptoms line under the morning report's Okay or Bad rating, tapped: opens the dialog to change them. */
+    fun editMorningSymptoms() {
+        val target = morningRatingTarget.value ?: return
+        editSymptoms(target.logFile, RatingMoment.AFTER_END_NIGHT)
+    }
+
+    /**
+     * Records [rating] for [moment] in [logFile], redraws whatever shows that night, and opens the symptoms
+     * dialog when the rating moved to Okay or Bad from nothing or Good ([shouldAskSymptoms]).
+     */
+    private fun rateNight(logFile: File, moment: RatingMoment, rating: SleepRating) {
         viewModelScope.launch {
-            morningRatingTarget.value = withContext(Dispatchers.IO) {
-                recordSleepRating(context, target.logFile, RatingMoment.AFTER_END_NIGHT, rating)
-                target.copy(ratings = readPastNightLog(target.logFile).ratings)
+            val (previous, parsed) = withContext(Dispatchers.IO) {
+                val previous = readPastNightLog(logFile).ratings?.at(moment)?.rating
+                recordSleepRating(context, logFile, moment, rating)
+                previous to readPastNightLog(logFile)
             }
+            showRatingsOf(logFile, parsed)
+            if (shouldAskSymptoms(previous, rating)) openSymptomsDialog(logFile, moment, parsed)
+        }
+    }
+
+    private fun editSymptoms(logFile: File, moment: RatingMoment) {
+        viewModelScope.launch {
+            openSymptomsDialog(logFile, moment, withContext(Dispatchers.IO) { readPastNightLog(logFile) })
+        }
+    }
+
+    private fun openSymptomsDialog(logFile: File, moment: RatingMoment, parsed: PastNightLog) {
+        symptomsDialogTarget.value = symptomsDialogFor(moment, parsed.ratings?.at(moment))?.let { SymptomsDialogTarget(logFile, it) }
+    }
+
+    /** Redraws the morning report's card and the Past night screen from [parsed], whichever of them shows the night logged in [logFile]. */
+    private fun showRatingsOf(logFile: File, parsed: PastNightLog) {
+        morningRatingTarget.value?.takeIf { it.logFile == logFile }?.let { morningRatingTarget.value = it.copy(ratings = parsed.ratings) }
+        openedPastNightRow?.takeIf { it.file == logFile }?.let { openedPastNight.value = buildPastNightUiState(it, parsed, currentZone()) }
+    }
+
+    /** A tile tapped on the symptoms dialog. */
+    fun toggleSymptom(symptom: RatingSymptom) {
+        symptomsDialogTarget.value = symptomsDialogTarget.value?.let { it.copy(state = it.state.toggled(symptom)) }
+    }
+
+    /** The dialog's Save: stores the ticked set (none clears what was ticked before), closes the dialog and redraws that night. */
+    fun saveSymptoms() {
+        val target = symptomsDialogTarget.value ?: return
+        symptomsDialogTarget.value = null
+        viewModelScope.launch {
+            val parsed = withContext(Dispatchers.IO) {
+                recordRatingSymptoms(target.logFile, target.state.moment, target.state.selected)
+                readPastNightLog(target.logFile)
+            }
+            showRatingsOf(target.logFile, parsed)
+        }
+    }
+
+    /**
+     * The dialog's Skip (or a tap outside it): closes it and writes nothing. Owner decision, 2026-10-04: right
+     * after a rating there is nothing ticked yet, so Skip stores none; when editing later, Skip keeps what was
+     * ticked - Save with every tile unticked is how to clear them.
+     */
+    fun skipSymptoms() {
+        symptomsDialogTarget.value = null
+    }
+
+    /**
+     * Owner spec, 2026-10-04: the app opened from the later question's Okay or Bad button. Records that rating
+     * and opens that night's 15:00 dialog over whichever screen the app opens on. Any other intent (a plain
+     * launch) does nothing.
+     */
+    fun openFromIntent(intent: Intent) {
+        viewModelScope.launch {
+            val (opened, parsed) = withContext(Dispatchers.IO) {
+                recordLaterRatingFromNotification(context, intent)?.let { it to readPastNightLog(it.logFile) }
+            } ?: return@launch
+            showRatingsOf(opened.logFile, parsed)
+            openSymptomsDialog(opened.logFile, RatingMoment.LATER, parsed)
         }
     }
 
@@ -475,16 +571,20 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { refreshNightLogs() }
     }
 
-    /** Owner spec, 2026-10-02: Past night changes either rating. Written as one more rating line in that night's log, then the screen is redrawn from the log. */
+    /**
+     * Owner spec, 2026-10-02: Past night changes either rating. Written as one more rating line in that night's
+     * log, then the screen is redrawn from the log. Owner spec, 2026-10-04: a change to Okay or Bad from nothing
+     * or Good asks what felt off; a change to Good clears that moment's symptoms (SleepRating.kt reads it so).
+     */
     fun ratePastNight(moment: RatingMoment, rating: SleepRating) {
         val row = openedPastNightRow ?: return
-        viewModelScope.launch {
-            val parsed = withContext(Dispatchers.IO) {
-                recordSleepRating(context, row.file, moment, rating)
-                readPastNightLog(row.file)
-            }
-            if (openedPastNightRow == row) openedPastNight.value = buildPastNightUiState(row, parsed, currentZone())
-        }
+        rateNight(row.file, moment, rating)
+    }
+
+    /** Owner spec, 2026-10-04: the symptoms line under one of Past night's ratings, tapped: opens the dialog to edit them. */
+    fun editPastNightSymptoms(moment: RatingMoment) {
+        val row = openedPastNightRow ?: return
+        editSymptoms(row.file, moment)
     }
 
     /** Re-lists the saved night logs and reads each one's ratings for its chips, off the main thread. */

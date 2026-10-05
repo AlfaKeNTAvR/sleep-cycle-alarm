@@ -72,4 +72,50 @@ class SleepRatingTest {
         val lines = listOf(rateableStartLine, endLine, formatNightLogLine(laterRatingAskedEvent(afternoon)))
         assertEquals(true, parsePastNightLog(lines).ratings?.laterAsked)
     }
+
+    private fun symptomsLine(moment: RatingMoment, symptoms: Set<RatingSymptom>, at: Instant) =
+        formatNightLogLine(ratingSymptomsEvent(moment, symptoms, at))
+
+    @Test
+    fun `the symptoms ticked for a rating are read back with that rating, each moment its own`() {
+        val lines = listOf(
+            rateableStartLine, endLine,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, morning),
+            symptomsLine(RatingMoment.AFTER_END_NIGHT, setOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE), morning.plusSeconds(20)),
+            ratingLine(RatingMoment.LATER, SleepRating.BAD, afternoon),
+            symptomsLine(RatingMoment.LATER, setOf(RatingSymptom.LOW_ENERGY), afternoon.plusSeconds(20)),
+        )
+        val ratings = parsePastNightLog(lines).ratings
+
+        assertEquals(setOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE), ratings?.afterEndNight?.symptoms)
+        assertEquals(setOf(RatingSymptom.LOW_ENERGY), ratings?.later?.symptoms)
+    }
+
+    @Test
+    fun `changing a rating to Good clears that moment's symptoms, and a later Okay starts from none`() {
+        val laterSymptoms = symptomsLine(RatingMoment.LATER, setOf(RatingSymptom.HARD_TO_FOCUS), afternoon.plusSeconds(20))
+        val toGood = listOf(
+            rateableStartLine, endLine,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.BAD, morning),
+            symptomsLine(RatingMoment.AFTER_END_NIGHT, setOf(RatingSymptom.HEADACHE), morning.plusSeconds(20)),
+            ratingLine(RatingMoment.LATER, SleepRating.OKAY, afternoon),
+            laterSymptoms,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.GOOD, afternoon.plusSeconds(60)),
+        )
+        val backToOkay = toGood + ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, afternoon.plusSeconds(120))
+
+        assertEquals(emptySet<RatingSymptom>(), parsePastNightLog(toGood).ratings?.afterEndNight?.symptoms)
+        assertEquals(emptySet<RatingSymptom>(), parsePastNightLog(backToOkay).ratings?.afterEndNight?.symptoms)
+        assertEquals(setOf(RatingSymptom.HARD_TO_FOCUS), parsePastNightLog(backToOkay).ratings?.later?.symptoms, "the other moment keeps its own")
+    }
+
+    @Test
+    fun `saving no symptoms clears the ones ticked before, and a name this build does not know is skipped`() {
+        val unknownName = """{"at":"2026-10-03T04:54:00Z","type":"sleep_symptoms","fields":{"moment":"after_end_night","symptoms":"still_sleepy,itchy"}}"""
+        val lines = listOf(rateableStartLine, endLine, ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, morning), unknownName)
+
+        assertEquals(setOf(RatingSymptom.STILL_SLEEPY), parsePastNightLog(lines).ratings?.afterEndNight?.symptoms)
+        val cleared = lines + symptomsLine(RatingMoment.AFTER_END_NIGHT, emptySet(), afternoon)
+        assertEquals(emptySet<RatingSymptom>(), parsePastNightLog(cleared).ratings?.afterEndNight?.symptoms)
+    }
 }

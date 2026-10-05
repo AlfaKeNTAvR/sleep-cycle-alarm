@@ -26,6 +26,7 @@ One screen whose content depends on the moment you look at it. Opening it syncs 
 - **One choice at a time (owner spec, 2026-10-02).** The live-night buttons depend on whether he is asleep as far as the app knows. While the morning alarm is still ahead, or his own nap is, the only button is **I'm up** (behind an "Are you up?" confirmation): there is no End night before the morning alarm. I'm up counts as the morning alarm being stopped now (or, during his own nap, replaces the nap): the phone alarm is cancelled and the out-of-bed nudge is armed 10 min out, which brings **Nap for 20 min** and **End night**. Once he is up (the nudge ahead, or the night over), the screen offers Nap (while a nudge is pending) and **End night**, never I'm up. So abandoning a night at 3 am takes I'm up, then End night.
 - **D. Morning:** total slept, each stretch with from-to times, length and cycles in parentheses (one decimal), note that the night log was saved. A night with no stretch at all says "No sleep recorded tonight" - unless its syncs were failing when it ended (P1), when it says "No band data reached the app: the band's syncs were failing", because the app never saw the band's data and cannot claim there was no sleep.
 - **D. Morning, rating (owner spec, 2026-10-02):** under the stretches, a "How did you sleep?" card with three faces, Good / Okay / Bad in green #7BC89A, amber #F0B75A and red #E0806E. Optional: Done without a tap skips it; tapping another face changes it. It replaces the "night log saved" note, which comes back when the rating is switched off or the night was started before the rating existed.
+- **Why Okay or Bad (owner spec, 2026-10-04):** picking Okay or Bad (from no rating or from Good) opens a dialog of tappable tiles, an outline icon with its name under it, any number ticked. Morning, "What felt off?": Still sleepy, Woke before alarm, Slow to fall asleep, Headache (two by two; Groggy on waking and Heavy, overslept were dropped by the owner on 2026-10-04). 15:00, "How is your afternoon?": Sleepy in afternoon, Low energy, Hard to focus (one row of three). Subtitle "You picked Okay. Tick all that apply." Dialog #181C24, radius 28; tiles at least 104dp tall, radius 16, 2dp border #3A404D; a ticked tile takes the rating's color for border, icon and name over a 13% tint of it. "Save" ("Save (2)" once two are ticked) stores the set; "Skip" (or a tap outside) writes nothing. Good never asks. Okay to Bad keeps the ticks without asking. Under the faces, the ticked symptoms as small icons with names ("Tick what felt off" when none), tappable to change them.
 
 ## Settings (owner spec, 2026-10-02, option A)
 
@@ -41,7 +42,7 @@ A row whose switch above it is off stays visible, dimmed and inert. The fade nee
 
 ## Later rating notification
 
-At the "Ask at" time on the day the night ended, a notification: "Still feel the same about last night?" with "This morning you said Good." - or "How do you feel about last night?" when the morning rating was skipped. Three buttons, Good / Okay / Bad, rate without opening the app. Asked once per night; not asked when the night ended after that time or the time already passed.
+At the "Ask at" time on the day the night ended, a notification: "Still feel the same about last night?" with "This morning you said Good." - or "How do you feel about last night?" when the morning rating was skipped. Three buttons, Good / Okay / Bad. Good rates without opening the app; Okay and Bad (owner spec, 2026-10-04) rate and open the app on that night's "How is your afternoon?" dialog, over whatever screen it opens on. Asked once per night; not asked when the night ended after that time or the time already passed.
 
 ## Alarm ring screen
 
@@ -64,7 +65,7 @@ Rating chips (owner spec, 2026-10-02): after the size, one small colored chip pe
 
 ## Past night
 
-A "Your rating" card (owner spec, 2026-10-02) between the report and the Wake by card: two rows, "After End night, 07:52" and "Later in the day, 15:02", each three pill buttons that change that rating. A night from before the rating has no card.
+A "Your rating" card (owner spec, 2026-10-02) between the report and the Wake by card: two rows, "After End night, 07:52" and "Later in the day, 15:02", each three pill buttons that change that rating. A night from before the rating has no card. Under an Okay or Bad row, the symptoms ticked for it as small icons with names ("Tick what felt off" when none); tapping that line opens the same dialog to edit them any time (owner spec, 2026-10-04). Changing a rating to Good clears that moment's symptoms; changing it to Okay or Bad from Good asks again.
 
 The same retrospective view D shows, for a night that ended earlier: total slept under "You slept", each stretch with from-to times, length and cycles, and below it that night's deadline ("Wake by") and picked length.
 

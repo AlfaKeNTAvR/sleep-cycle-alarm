@@ -3,7 +3,10 @@ package com.nikita.sleepcycle.night
 // File purpose: the Android side of the sleep rating (owner spec, 2026-10-02). Writes a rating into a night's
 // log, and keeps the later "Still feel the same about last night?" notification armed for the newest night:
 // one exact alarm at the time laterRatingAskAt (SleepRating.kt) says, whose receiver posts a notification with
-// Good / Okay / Bad action buttons that rate without opening the app.
+// Good / Okay / Bad action buttons. Good rates without opening the app. Owner spec, 2026-10-04: Okay and Bad
+// open the app instead, which records the rating ([recordLaterRatingFromNotification]) and shows that night's
+// "How is your afternoon?" dialog. They go straight to MainActivity rather than through the receiver: since
+// Android 12 a receiver started from a notification may not open an activity (the "trampoline" rule).
 //
 // [syncLaterRatingAsk] is the one place that arms or cancels that alarm. It is called whenever its inputs may
 // have changed - a night started or ended, a rating given, the Settings changed, the app opened, the phone
@@ -40,10 +43,13 @@ private const val LATER_RATING_ASK_REQUEST_CODE = 2005
 private const val LATER_RATING_OPEN_APP_REQUEST_CODE = 4002
 /** One request code per rating button, so the three PendingIntents never replace one another. */
 private const val LATER_RATING_BUTTON_REQUEST_CODE_BASE = 2010
+/** The Okay and Bad buttons' activity PendingIntents, one per rating like the broadcast ones. */
+private const val LATER_RATING_OPEN_BUTTON_REQUEST_CODE_BASE = 4010
 private const val LATER_RATING_NOTIFICATION_ID = 5
 private const val LATER_RATING_CHANNEL_ID = "sleep_rating"
 private const val ACTION_ASK = "com.nikita.sleepcycle.action.ASK_LATER_RATING"
 private const val ACTION_RATE = "com.nikita.sleepcycle.action.RATE_LATER"
+private const val ACTION_RATE_AND_OPEN = "com.nikita.sleepcycle.action.RATE_LATER_AND_OPEN"
 private const val EXTRA_LOG_FILE_NAME = "logFileName"
 private const val EXTRA_RATING = "rating"
 
@@ -53,6 +59,11 @@ private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 suspend fun recordSleepRating(context: Context, logFile: File, moment: RatingMoment, rating: SleepRating) {
     appendLogLine(logFile, sleepRatingEvent(moment, rating, Instant.now()))
     syncLaterRatingAsk(context)
+}
+
+/** Appends the [symptoms] ticked for [moment]'s rating to the night log [logFile], timestamped now: the whole set, replacing any ticked before. */
+fun recordRatingSymptoms(logFile: File, moment: RatingMoment, symptoms: Set<RatingSymptom>) {
+    appendLogLine(logFile, ratingSymptomsEvent(moment, symptoms, Instant.now()))
 }
 
 /**
@@ -92,13 +103,60 @@ private fun scheduleAsk(context: Context, alarmManager: AlarmManager, at: Instan
 }
 
 /** The ask alarm's intent. [logFileName] null builds the same identity for cancelling, extras being ignored when matching. */
-private fun askPendingIntent(context: Context, logFileName: String?): PendingIntent {
+private fun askPendingIntent(context: Context, logFileName: String?): PendingIntent = PendingIntent.getBroadcast(
+    context, LATER_RATING_ASK_REQUEST_CODE, laterRatingAskIntent(context, logFileName),
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+)
+
+/** What the ask alarm delivers to [LaterRatingReceiver] to post the question about the night logged in [logFileName]. */
+internal fun laterRatingAskIntent(context: Context, logFileName: String?): Intent {
     val intent = Intent(context, LaterRatingReceiver::class.java).setAction(ACTION_ASK)
     logFileName?.let { intent.putExtra(EXTRA_LOG_FILE_NAME, it) }
-    return PendingIntent.getBroadcast(context, LATER_RATING_ASK_REQUEST_CODE, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    return intent
 }
 
+/** An Okay or Bad tapped on the later question: the night's log file and the rating it now has, for the app to open that night's dialog on. */
+data class LaterRatingFromNotification(val logFile: File, val rating: SleepRating)
+
+/**
+ * MainActivity's half of an Okay or Bad tap on the later question: records that rating for the night the
+ * notification asked about, removes the notification, and says which night and rating the dialog is for.
+ * Null for any other intent (a plain app launch, or the notification's body), and for a night log since deleted.
+ */
+suspend fun recordLaterRatingFromNotification(context: Context, intent: Intent): LaterRatingFromNotification? {
+    if (intent.action != ACTION_RATE_AND_OPEN) return null
+    val rating = SleepRating.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_RATING) } ?: return null
+    val logFile = findNightLog(context, intent.getStringExtra(EXTRA_LOG_FILE_NAME))
+    if (logFile == null) {
+        Log.w(LOG_TAG, "later rating from the notification for a night log that no longer exists")
+        return null
+    }
+    recordSleepRating(context, logFile, RatingMoment.LATER, rating)
+    context.getSystemService<NotificationManager>()?.cancel(LATER_RATING_NOTIFICATION_ID)
+    return LaterRatingFromNotification(logFile, rating)
+}
+
+private fun findNightLog(context: Context, name: String?): File? = name?.let { listNightLogs(context).firstOrNull { it.name == name } }
+
+/**
+ * One rating button's tap. Good rates in the background, through [LaterRatingReceiver]. Okay and Bad open
+ * MainActivity, reusing the open one (CLEAR_TOP + SINGLE_TOP reach it through onNewIntent) rather than
+ * stacking a second copy of the app.
+ */
 private fun rateButtonPendingIntent(context: Context, logFileName: String, rating: SleepRating): PendingIntent {
+    if (rating == SleepRating.GOOD) return rateInBackgroundPendingIntent(context, logFileName, rating)
+    val intent = Intent(context, MainActivity::class.java)
+        .setAction(ACTION_RATE_AND_OPEN)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        .putExtra(EXTRA_LOG_FILE_NAME, logFileName)
+        .putExtra(EXTRA_RATING, rating.name)
+    return PendingIntent.getActivity(
+        context, LATER_RATING_OPEN_BUTTON_REQUEST_CODE_BASE + rating.ordinal, intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+}
+
+private fun rateInBackgroundPendingIntent(context: Context, logFileName: String, rating: SleepRating): PendingIntent {
     val intent = Intent(context, LaterRatingReceiver::class.java)
         .setAction(ACTION_RATE)
         .putExtra(EXTRA_LOG_FILE_NAME, logFileName)
@@ -109,10 +167,10 @@ private fun rateButtonPendingIntent(context: Context, logFileName: String, ratin
     )
 }
 
-/** The ask alarm firing posts the question; a tap on one of its buttons stores that rating and removes the notification. */
+/** The ask alarm firing posts the question; a tap on its Good button stores that rating and removes the notification. */
 class LaterRatingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val logFile = intent.getStringExtra(EXTRA_LOG_FILE_NAME)?.let { name -> listNightLogs(context).firstOrNull { it.name == name } }
+        val logFile = findNightLog(context, intent.getStringExtra(EXTRA_LOG_FILE_NAME))
         if (logFile == null) {
             Log.w(LOG_TAG, "later rating ${intent.action} for a night log that no longer exists")
             return
