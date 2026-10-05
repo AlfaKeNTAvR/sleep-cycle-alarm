@@ -100,7 +100,7 @@ fun buildNightUiState(
         activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
         bandNotSyncingWarning = bandNotSyncingWarning,
-        napButtonMinutes = napButtonMinutes(pendingFollowUp, now, resolveEngineConfig(state)),
+        napButtonMinutes = napButtonMinutes(pendingFollowUp, morningAlarmHasRung(state), now, resolveEngineConfig(state)),
         showImUpButton = showImUp,
         confirmingImUp = confirmingImUp,
     )
@@ -114,10 +114,12 @@ fun buildNightUiState(
  */
 private fun imUpOffered(state: NightState, mode: AlarmMode, pendingFollowUp: PendingFollowUp?, now: Instant): Boolean {
     val ownNapAhead = pendingFollowUp?.kind == FollowUpKind.NAP && pendingFollowUp.at.isAfter(now)
-    val morningAlarmAhead = mode != AlarmMode.FINISHED &&
-        !morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    val morningAlarmAhead = mode != AlarmMode.FINISHED && !morningAlarmHasRung(state)
     return ownNapAhead || morningAlarmAhead
 }
+
+private fun morningAlarmHasRung(state: NightState): Boolean =
+    morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
 
 /**
  * P3 (owner spec, 2026-09-30): the "Nap N min" button is offered exactly while the out-of-bed NUDGE is pending
@@ -125,8 +127,15 @@ private fun imUpOffered(state: NightState, mode: AlarmMode, pendingFollowUp: Pen
  * ignores a press with anything else pending). Hidden while the owner's own nap is already armed: a second press
  * would change nothing, and the screen already names that nap. Hidden for a stale record whose instant has
  * passed, by the same `isAfter(now)` rule the label override uses.
+ *
+ * Owner decision, 2026-10-04: also offered whenever the morning alarm has rung ([morningAlarmRang]) and his own
+ * nap is not ahead, whatever the nudge record says. The screen hears of a firing a moment before it re-reads the
+ * nudge record the receiver has already written, and showed End night alone in between. A press in a moment
+ * with no nudge armed does nothing (PostAlarmCycle.kt's nextFollowUp), which the owner accepted.
  */
-private fun napButtonMinutes(pendingFollowUp: PendingFollowUp?, now: Instant, config: EngineConfig): Int? {
+private fun napButtonMinutes(pendingFollowUp: PendingFollowUp?, morningAlarmRang: Boolean, now: Instant, config: EngineConfig): Int? {
     val nudgePending = pendingFollowUp?.kind == FollowUpKind.NUDGE && pendingFollowUp.at.isAfter(now)
-    return if (nudgePending) config.napLength.toMinutes().toInt() else null
+    val ownNapAhead = pendingFollowUp?.kind == FollowUpKind.NAP && pendingFollowUp.at.isAfter(now)
+    val offered = nudgePending || (morningAlarmRang && !ownNapAhead)
+    return if (offered) config.napLength.toMinutes().toInt() else null
 }

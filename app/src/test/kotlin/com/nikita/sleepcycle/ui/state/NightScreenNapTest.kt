@@ -67,6 +67,18 @@ class NightScreenNapTest {
         assertEquals(null, screenAt("2026-09-17T07:10", followUp = null).napButtonMinutes)
     }
 
+    @Test fun `the moment the morning alarm fires the screen offers Nap and End night, before the nudge record is read`() {
+        // Owner decision, 2026-10-04: the screen hears of the firing (the fired marker) a moment before it re-reads
+        // the nudge record; it must not show End night alone in between.
+        val rang = afterMorningAlarm.copy(phoneAlarmFiredFor = instant("2026-09-17T07:00"))
+
+        val screen = screenAt("2026-09-17T07:00", followUp = null, state = rang)
+
+        assertEquals(20, screen.napButtonMinutes)
+        assertFalse(screen.showImUpButton)
+        assertTrue(screen.showEndNightButton)
+    }
+
     @Test fun `a nudge whose time has already passed does not offer the Nap button`() {
         // The record is read on a ticker; between the nudge ringing and the receiver rewriting it, a stale past
         // instant must not offer a trade for an alarm that has already rung.
