@@ -71,4 +71,6 @@ data class BeforeBedUiState(
     val bandCheck: BandCheckStatus = BandCheckStatus.None,
     /** Owner request, 2026-10-05: a failed band check offers "Open Gadgetbridge" above Start night, to reconnect the band there. */
     val offerOpenGadgetbridge: Boolean = false,
+    /** Owner spec, 2026-10-22 (PER-133): the live media output and volume line above Start night; false while the simulation block shows the volume instead (see [isLiveVolumeLineShown]). */
+    val showLiveVolumeLine: Boolean = false,
 )

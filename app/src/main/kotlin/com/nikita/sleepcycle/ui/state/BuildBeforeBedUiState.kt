@@ -89,6 +89,7 @@ fun buildBeforeBedUiState(
         confirmingDebugNightStart = confirmingDebugNightStart,
         bandCheck = bandCheck,
         offerOpenGadgetbridge = bandCheck is BandCheckStatus.Failed && gadgetbridgeInstalled,
+        showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
     )
 }
 

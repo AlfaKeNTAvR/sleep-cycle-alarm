@@ -28,6 +28,7 @@ import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.DebugQuickControls
+import com.nikita.sleepcycle.ui.components.LiveVolumeLine
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
@@ -109,6 +110,10 @@ fun NightScreen(
             } else {
                 Spacer(modifier = Modifier.weight(1f))
             }
+
+            // Owner spec, 2026-10-22 (PER-133): the live output and media volume above the buttons on every live
+            // night state (NightUiState.showLiveVolumeLine), never on the morning report or a simulated night.
+            if (state.showLiveVolumeLine && content !is NightScreenContent.MorningReport) LiveVolumeLine()
 
             // P3 (owner spec, 2026-09-30): "Nap for 20 min", a filled amber button stacked ABOVE the outlined
             // end-night button, offered only while the out-of-bed nudge is pending (NightUiState.napButtonMinutes).

@@ -54,7 +54,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart, connectionTest
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp, debugOptions),
         logs = buildLogsUiState(nightLogFiles, nightLogRatings, zone),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, nightActive),
         errorMessage = errorMessage,

@@ -126,4 +126,10 @@ data class NightUiState(
      * the morning report.
      */
     val discardsNight: Boolean = false,
+    /**
+     * Owner spec, 2026-10-22 (PER-133): the live media output and volume line above the screen's buttons, on every
+     * live night state. Never on the morning report, and false on a simulated night, whose amber block already
+     * shows the volume (see [isLiveVolumeLineShown]).
+     */
+    val showLiveVolumeLine: Boolean = false,
 )

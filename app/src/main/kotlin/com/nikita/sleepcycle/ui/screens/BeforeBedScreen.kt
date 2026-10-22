@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
+import com.nikita.sleepcycle.ui.components.LiveVolumeLine
 import com.nikita.sleepcycle.ui.components.SimulatedBlock
 import com.nikita.sleepcycle.ui.components.MenuLinesButton
 import com.nikita.sleepcycle.ui.components.SlidersButton
@@ -128,6 +129,9 @@ fun BeforeBedScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        // Owner spec, 2026-10-22 (PER-133): the live output and media volume, directly above Start night, as a
+        // reference for the fade's starting volume. Hidden while the simulation block shows the volume instead.
+        if (state.showLiveVolumeLine) LiveVolumeLine()
         PrimaryActionButton(
             text = stringResource(R.string.before_bed_start_night),
             onClick = onStartNight,
