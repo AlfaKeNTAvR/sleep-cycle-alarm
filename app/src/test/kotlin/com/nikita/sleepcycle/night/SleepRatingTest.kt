@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.night
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Instant
 
@@ -130,5 +131,42 @@ class SleepRatingTest {
         assertEquals(setOf(RatingSymptom.STILL_SLEEPY), parsePastNightLog(lines).ratings?.afterEndNight?.symptoms)
         val cleared = lines + symptomsLine(RatingMoment.AFTER_END_NIGHT, emptySet(), afternoon)
         assertEquals(emptySet<RatingSymptom>(), parsePastNightLog(cleared).ratings?.afterEndNight?.symptoms)
+    }
+
+    @Test
+    fun `Kept napping and Heavy head are stored as kept_napping and heavy_head and read back`() {
+        // Owner spec, 2026-10-21: the two new symptoms are stored in snake_case like the others.
+        val morningSymptoms = symptomsLine(RatingMoment.AFTER_END_NIGHT, setOf(RatingSymptom.KEPT_NAPPING, RatingSymptom.HEADACHE), morning.plusSeconds(20))
+        val laterSymptoms = symptomsLine(RatingMoment.LATER, setOf(RatingSymptom.HEAVY_HEAD), afternoon.plusSeconds(20))
+        val lines = listOf(
+            rateableStartLine, endLine,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.BAD, morning), morningSymptoms,
+            ratingLine(RatingMoment.LATER, SleepRating.OKAY, afternoon), laterSymptoms,
+        )
+        val ratings = parsePastNightLog(lines).ratings
+
+        assertTrue(""""symptoms":"headache,kept_napping"""" in morningSymptoms, morningSymptoms)
+        assertTrue(""""symptoms":"heavy_head"""" in laterSymptoms, laterSymptoms)
+        assertEquals(setOf(RatingSymptom.KEPT_NAPPING, RatingSymptom.HEADACHE), ratings?.afterEndNight?.symptoms)
+        assertEquals(setOf(RatingSymptom.HEAVY_HEAD), ratings?.later?.symptoms)
+    }
+
+    @Test
+    fun `a symptoms line written before Kept napping and Heavy head still reads as it did`() {
+        // Owner spec, 2026-10-21: old logs keep reading; the stored names of the existing symptoms do not change.
+        val oldMorning = """{"at":"2026-10-03T04:54:00Z","type":"sleep_symptoms","fields":{"moment":"after_end_night","symptoms":"still_sleepy,woke_before_alarm,slow_to_fall_asleep,headache"}}"""
+        val oldLater = """{"at":"2026-10-03T12:03:00Z","type":"sleep_symptoms","fields":{"moment":"later","symptoms":"sleepy_in_afternoon,low_energy,hard_to_focus"}}"""
+        val lines = listOf(
+            rateableStartLine, endLine,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, morning), oldMorning,
+            ratingLine(RatingMoment.LATER, SleepRating.BAD, afternoon), oldLater,
+        )
+        val ratings = parsePastNightLog(lines).ratings
+
+        assertEquals(
+            setOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.HEADACHE),
+            ratings?.afterEndNight?.symptoms,
+        )
+        assertEquals(setOf(RatingSymptom.SLEEPY_IN_AFTERNOON, RatingSymptom.LOW_ENERGY, RatingSymptom.HARD_TO_FOCUS), ratings?.later?.symptoms)
     }
 }

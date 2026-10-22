@@ -1,8 +1,8 @@
 package com.nikita.sleepcycle.ui.state
 
 // File purpose: the "why Okay or Bad" dialog (owner spec, 2026-10-04) as plain state. After an Okay or Bad
-// rating a dialog of tappable tiles asks which symptoms applied: the morning's four after the morning report's
-// rating, the afternoon's three after the 15:00 one. The same dialog edits them later from Past night.
+// rating a dialog of tappable tiles asks which symptoms applied: the morning's five after the morning report's
+// rating, the afternoon's four after the 15:00 one (one more each since 2026-10-21). The same dialog edits them later from Past night.
 
 import com.nikita.sleepcycle.night.RatingMoment
 import com.nikita.sleepcycle.night.RatingSymptom
@@ -20,6 +20,8 @@ data class SymptomsDialogState(
      * How many tiles share a row: as few rows as three-wide allows, then spread evenly over them. With the
      * morning list cut to four (owner change, 2026-10-04, the layout left to this run), 3 + 1 would leave one
      * tile alone on its row, so four sit two by two; the afternoon's three stay one row of three.
+     * Owner change, 2026-10-21: one symptom more each, so the morning's five sit three over two and the
+     * afternoon's four two by two.
      */
     val tilesPerRow: Int
         get() {

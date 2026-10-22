@@ -33,14 +33,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
 private val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 private val nightStateFlow = MutableStateFlow<NightState?>(null)
+private val pendingFollowUpFlow = MutableStateFlow<PendingFollowUp?>(null)
 
 /** The current night state for the UI to observe; updated by every call in this file. */
 val observedNightState: StateFlow<NightState?> = nightStateFlow.asStateFlow()
+
+/**
+ * PER-127 (owner-reported, 2026-10-03): the pending follow-up record (OutOfBedNudgeStore.kt) as of the last
+ * [refreshNightStateFromDisk], read under the same lock as the state it is published with. A ring ending moves
+ * the nudge without changing [NightState] at all, so [observedNightState] cannot carry that news (a StateFlow
+ * drops an equal value); this one does. Only the refresh writes it: the Night screen's own ticker still re-reads
+ * the record for every other writer (Nap, I'm up, a tick's re-arm, the night ending).
+ */
+val observedPendingFollowUp: StateFlow<PendingFollowUp?> = pendingFollowUpFlow.asStateFlow()
 
 /**
  * Loads the persisted night state into [observedNightState] off the main thread; call when the UI (re)attaches,
@@ -50,11 +61,14 @@ val observedNightState: StateFlow<NightState?> = nightStateFlow.asStateFlow()
  * other publisher, so it can never publish a state some commit has since replaced. Opening the app runs this next
  * to an immediate tick; when that tick finished the night (cleared the state, published null), this refresh,
  * which had read the disk first, published the finished night again and the Night screen sat on it.
+ *
+ * PER-127: also publishes the pending follow-up record, see [observedPendingFollowUp].
  */
 fun refreshNightStateFromDisk(context: Context) {
     controllerScope.launch {
         withNightTransactionLock {
             nightStateFlow.value = withContext(Dispatchers.IO) { loadNightState(context) }
+            pendingFollowUpFlow.value = withContext(Dispatchers.IO) { readPendingFollowUp(context) }
         }
     }
 }
@@ -210,13 +224,35 @@ private val endNightInFlightGuard = Mutex()
  * same call's result instead of starting a second run. [now] and [awakeConfirmedAt] are only meaningful for
  * the run that actually starts the work; a call that joins an in-flight run gets that run's own values, not its own.
  */
-suspend fun endNight(context: Context, now: Instant, awakeConfirmedAt: Instant? = null): EndNightReport? {
+suspend fun endNight(context: Context, now: Instant, awakeConfirmedAt: Instant? = null): EndNightReport? =
+    runEndingOnce { endNightLocked(context, now, awakeConfirmedAt) }
+
+/**
+ * Owner spec, 2026-10-21 (PER-126): ends a night started by mistake without keeping anything of it - the Night
+ * screen calls this instead of [endNight] (or instead of I'm up) while [isShortNight] holds. Every alarm and the
+ * tracking are torn down exactly as [endNight] does, and the bedtime fade puts the owner's volume back, but no
+ * night_end or summary is written, no morning report is saved, and the night's log is deleted, so it never
+ * appears in Logs and no later rating question can be armed for it. A simulated night ([keepsDiscardedNightLog])
+ * keeps its log, closed with `night_discarded` rather than night_end. Goes through the same single-flight guard
+ * as [endNight], so an end and a discard can never run at once. Returns the discarded state (null when there was
+ * no night), which the caller does not render.
+ */
+suspend fun discardNight(context: Context, now: Instant): EndNightReport? {
+    val report = runEndingOnce { discardNightLocked(context, now) }
+    // startNight cancelled the later rating question about the night before; with this night's log gone, that
+    // night is the newest again, so its question comes back if it is still due.
+    syncLaterRatingAsk(context)
+    return report
+}
+
+/** F1: the single-flight guard [endNight] and [discardNight] share - a call made while one is still running joins that run's result instead of starting a second. */
+private suspend fun runEndingOnce(work: suspend () -> EndNightReport?): EndNightReport? {
     val deferred = endNightInFlightGuard.withLock {
         val existing = endNightInFlight
         if (existing != null && existing.isActive) {
             existing
         } else {
-            controllerScope.async { endNightLocked(context, now, awakeConfirmedAt) }.also { endNightInFlight = it }
+            controllerScope.async { work() }.also { endNightInFlight = it }
         }
     }
     return deferred.await()
@@ -232,6 +268,33 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
         endMediaFade(context, state.realStartedAt, now, state.debugOptions.isAnyEnabled)
     }
+    tearDownNight(context)
+    state?.let { EndNightReport(it, now) }
+}
+
+private suspend fun discardNightLocked(context: Context, now: Instant): EndNightReport? = withNightTransactionLock {
+    stopAlarmRinging(context, ALARM_STOP_REASON_NIGHT_ENDED)
+    val state = withContext(Dispatchers.IO) { loadNightState(context) }
+    if (state != null) {
+        val debugNight = state.debugOptions.isAnyEnabled
+        // Before the log is deleted: endMediaFade writes its own media_fade_end line into it.
+        endMediaFade(context, state.realStartedAt, now, debugNight)
+        if (keepsDiscardedNightLog(state.debugOptions)) {
+            appendNightLog(
+                context, state.realStartedAt,
+                NightLogEvent(now, "night_discarded", mapOf("ranFor" to Duration.between(state.startedAt, now).toString())),
+                debugNight
+            )
+        } else {
+            withContext(Dispatchers.IO) { deleteNightLog(nightLogFile(context, state.realStartedAt, debugNight)) }
+        }
+    }
+    tearDownNight(context)
+    state?.let { EndNightReport(it, now) }
+}
+
+/** What ending and discarding a night share: every alarm, the tick and the tracking service stopped, the state cleared, the debug switches reset. Runs inside the caller's night transaction lock. */
+private suspend fun tearDownNight(context: Context) {
     cancelTick(context)
     cancelPhoneAlarm(context)
     cancelOutOfBedAlarm(context)
@@ -251,7 +314,6 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
     // REAL-world idle-reset guard (shouldAutoResetDebugOptions), so this is Instant.now() on purpose, not the
     // virtual `now` this function's every other write uses.
     resetDebugOptionsAndClock(context, Instant.now())
-    state?.let { EndNightReport(it, now) }
 }
 
 /**

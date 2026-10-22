@@ -27,11 +27,16 @@ class RatingSymptomsDialogTest {
     }
 
     @Test
-    fun `the morning dialog offers Still sleepy and Headache on the top row, Woke before alarm and Slow to fall asleep below, prefilled with what was ticked`() {
+    fun `the morning dialog offers Still sleepy and Headache first, then Woke before alarm, Slow to fall asleep and Kept napping, prefilled with what was ticked`() {
+        // Owner spec, 2026-10-21: "I kept resetting the nap alarm... because I wanted to keep sleeping more" -
+        // Kept napping joins the morning list, last.
         val dialog = symptomsDialogFor(RatingMoment.AFTER_END_NIGHT, RecordedRating(SleepRating.OKAY, at, setOf(RatingSymptom.HEADACHE)))
 
         assertEquals(
-            listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE, RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.SLOW_TO_FALL_ASLEEP),
+            listOf(
+                RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE, RatingSymptom.WOKE_BEFORE_ALARM,
+                RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.KEPT_NAPPING,
+            ),
             dialog?.options,
         )
         assertEquals(SleepRating.OKAY, dialog?.rating)
@@ -39,19 +44,24 @@ class RatingSymptomsDialogTest {
     }
 
     @Test
-    fun `the tiles sit in balanced rows of at most three - the morning's four as two by two, the afternoon's three in one row`() {
+    fun `the tiles sit in balanced rows of at most three - the morning's five as three over two, the afternoon's four as two by two`() {
+        // Owner spec, 2026-10-21: with Kept napping and Heavy head added, the rows stay balanced on a phone.
         val morning = symptomsDialogFor(RatingMoment.AFTER_END_NIGHT, RecordedRating(SleepRating.OKAY, at))
         val afternoon = symptomsDialogFor(RatingMoment.LATER, RecordedRating(SleepRating.OKAY, at))
 
-        assertEquals(2, morning?.tilesPerRow)
-        assertEquals(3, afternoon?.tilesPerRow)
+        assertEquals(3, morning?.tilesPerRow)
+        assertEquals(2, afternoon?.tilesPerRow)
     }
 
     @Test
-    fun `the 15 00 dialog offers the three afternoon items`() {
+    fun `the 15 00 dialog offers the four afternoon items, Heavy head last`() {
+        // Owner spec, 2026-10-21: "for the midday symptoms, I want to add headache also, or like heavy head".
         val dialog = symptomsDialogFor(RatingMoment.LATER, RecordedRating(SleepRating.BAD, at))
 
-        assertEquals(listOf(RatingSymptom.SLEEPY_IN_AFTERNOON, RatingSymptom.LOW_ENERGY, RatingSymptom.HARD_TO_FOCUS), dialog?.options)
+        assertEquals(
+            listOf(RatingSymptom.SLEEPY_IN_AFTERNOON, RatingSymptom.LOW_ENERGY, RatingSymptom.HARD_TO_FOCUS, RatingSymptom.HEAVY_HEAD),
+            dialog?.options,
+        )
         assertEquals(emptySet<RatingSymptom>(), dialog?.selected)
     }
 

@@ -22,6 +22,8 @@ import com.nikita.sleepcycle.night.buildNightEngineView
 import com.nikita.sleepcycle.night.clearMorningReport
 import com.nikita.sleepcycle.night.deleteNightLog as deleteNightLogFile
 import com.nikita.sleepcycle.night.endNight as endNightTracking
+import com.nikita.sleepcycle.night.discardNight as discardNightTracking
+import com.nikita.sleepcycle.night.isShortNight
 import com.nikita.sleepcycle.night.listNightLogs
 import com.nikita.sleepcycle.night.loadMorningReport
 import com.nikita.sleepcycle.night.loadNightState
@@ -30,6 +32,7 @@ import com.nikita.sleepcycle.night.UI_TICKER_INTERVAL_MS
 import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.uiTickerIntervalMillis
 import com.nikita.sleepcycle.night.observedNightState
+import com.nikita.sleepcycle.night.observedPendingFollowUp
 import com.nikita.sleepcycle.night.publishNightState
 import com.nikita.sleepcycle.night.readAppSettings
 import com.nikita.sleepcycle.night.PendingFollowUp
@@ -50,7 +53,7 @@ import com.nikita.sleepcycle.night.recordSleepRating
 import com.nikita.sleepcycle.night.syncLaterRatingAsk
 import com.nikita.sleepcycle.night.PastNightLog
 import com.nikita.sleepcycle.night.RatingSymptom
-import com.nikita.sleepcycle.night.recordLaterRatingFromNotification
+import com.nikita.sleepcycle.night.handleLaterRatingNotificationTap
 import com.nikita.sleepcycle.night.recordRatingSymptoms
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
 import com.nikita.sleepcycle.ui.state.SymptomsDialogState
@@ -89,6 +92,7 @@ import com.nikita.sleepcycle.ui.state.PastNightUiState
 import com.nikita.sleepcycle.ui.state.PermissionStatus
 import com.nikita.sleepcycle.ui.state.Screen
 import com.nikita.sleepcycle.ui.state.UiState
+import com.nikita.sleepcycle.ui.state.buildNightLogSummary
 import com.nikita.sleepcycle.ui.state.buildPastNightUiState
 import com.nikita.sleepcycle.ui.state.buildSetupUiState
 import com.nikita.sleepcycle.ui.state.buildUiState
@@ -99,6 +103,7 @@ import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -210,6 +215,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * `readPendingFollowUp`) on the 500 ms-floored ticker - at the debug screen's 600x speed that is two
      * blocking main-thread file reads a second, on every screen, not just the Night screen. P3: the record now
      * also says whether it is the nudge or the owner's own nap, which decides the label and the Nap button.
+     * PER-127: also re-read whenever `refreshNightStateFromDisk` publishes a changed record (a ring ending).
      */
     private val pendingFollowUp = MutableStateFlow<PendingFollowUp?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
@@ -251,8 +257,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(TICKER_INTERVAL_MS), UiState.initial())
 
+    /** The cold start's own choice of first screen; [openFromIntent] waits for it so a notification's screen is not overwritten. */
+    private val initialScreenResolution: Job
+
     init {
-        viewModelScope.launch { resolveInitialScreen() }
+        initialScreenResolution = viewModelScope.launch { resolveInitialScreen() }
         watchScreenVisibilityTicker()
         watchSleepLengthFallback()
         watchNightStateClearedWhileViewing()
@@ -423,17 +432,20 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Owner spec, 2026-10-04: the app opened from the later question's Okay or Bad button. Records that rating
-     * and opens that night's 15:00 dialog over whichever screen the app opens on. Any other intent (a plain
-     * launch) does nothing.
+     * Owner spec, 2026-10-04: the app opened from the later question's Okay or Bad button, which records that
+     * rating and opens that night's 15:00 dialog. Owner spec, 2026-10-21 (PER-124): it opens on that night's Past
+     * night screen with the dialog on top, and a tap on the notification itself opens that Past night without
+     * one. Back from there goes to the Logs list as usual. Any other intent (a plain launch) does nothing.
      */
     fun openFromIntent(intent: Intent) {
         viewModelScope.launch {
-            val (opened, parsed) = withContext(Dispatchers.IO) {
-                recordLaterRatingFromNotification(context, intent)?.let { it to readPastNightLog(it.logFile) }
+            val (tap, parsed) = withContext(Dispatchers.IO) {
+                handleLaterRatingNotificationTap(context, intent)?.let { it to readPastNightLog(it.logFile) }
             } ?: return@launch
-            showRatingsOf(opened.logFile, parsed)
-            openSymptomsDialog(opened.logFile, RatingMoment.LATER, parsed)
+            // A cold start works out its first screen at the same time; once that is done it cannot replace this one.
+            initialScreenResolution.join()
+            showPastNight(buildNightLogSummary(tap.logFile, parsed.ratings, currentZone()), parsed)
+            if (tap.rating != null) openSymptomsDialog(tap.logFile, RatingMoment.LATER, parsed)
         }
     }
 
@@ -458,6 +470,12 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 // "I'm up" for "Nap" in one step.
                 refreshPendingOutOfBedNudge()
             }
+        }
+        viewModelScope.launch {
+            // PER-127: a ring ending moves the nudge without changing the night state, so the collect above never
+            // sees it; the refresh publishes the record itself. Re-read rather than taking the published value,
+            // so this stays the one place that sets it from disk.
+            observedPendingFollowUp.collect { refreshPendingOutOfBedNudge() }
         }
     }
 
@@ -556,11 +574,14 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** Reopens one saved night as its own summary screen. Reading and parsing the log is disk I/O, so it happens off the main thread before the screen switches. */
     fun openNightLog(log: NightLogSummary) {
         viewModelScope.launch {
-            val parsed = withContext(Dispatchers.IO) { readPastNightLog(log.file) }
-            openedPastNightRow = log
-            openedPastNight.value = buildPastNightUiState(log, parsed, currentZone())
-            screen.value = Screen.PastNight
+            showPastNight(log, withContext(Dispatchers.IO) { readPastNightLog(log.file) })
         }
+    }
+
+    private fun showPastNight(row: NightLogSummary, parsed: PastNightLog) {
+        openedPastNightRow = row
+        openedPastNight.value = buildPastNightUiState(row, parsed, currentZone())
+        screen.value = Screen.PastNight
     }
 
     fun closePastNight() {
@@ -809,6 +830,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun confirmImUp() {
         confirmingImUp.value = false
+        // Owner spec, 2026-10-21 (PER-126): under 1 h after Start night the dialog said "Discard this night?".
+        if (shortNightShown()) { discardShortNight(); return }
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 // Owner spec, 2026-10-02: a simulated night drops to 1x first, so the nudge is armed at real speed.
@@ -835,6 +858,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     fun confirmEndNight() {
         if (!canConfirmEndNight(EndNightFlowState(confirmingEndNight.value, endingNight.value))) return
         confirmingEndNight.value = false
+        // Owner spec, 2026-10-21 (PER-126): under 1 h after Start night the dialog said "Discard this night?".
+        if (shortNightShown()) { discardShortNight(); return }
         endingNight.value = true
         viewModelScope.launch {
             // T4: virtual - endNight records this into night_end/the morning report, both virtual-time.
@@ -851,6 +876,34 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             // The night now has its night_end, so the later rating question can be armed for it.
             withContext(Dispatchers.IO) { syncLaterRatingAsk(context) }
             showingMorningReport.value = true
+            endingNight.value = false
+        }
+    }
+
+    /**
+     * Owner spec, 2026-10-21 (PER-126): whether the confirmation just tapped was the discard one - read from the
+     * same night state and ticker [now] the dialog was drawn from (BuildNightUiState.kt's discardsNight), so the
+     * night is discarded exactly when the dialog said it would be.
+     */
+    private fun shortNightShown(): Boolean = observedNightState.value?.let { isShortNight(it.startedAt, now.value) } == true
+
+    /**
+     * Owner spec, 2026-10-21 (PER-126): a night under 1 h old, confirmed through End night or I'm up, is discarded
+     * (night/NightController.kt's discardNight): no morning report, no rating, straight back to Before bed.
+     * [endingNight] guards it like End night, so a second tap cannot start another end or discard meanwhile.
+     */
+    private fun discardShortNight() {
+        if (endingNight.value) return
+        endingNight.value = true
+        viewModelScope.launch {
+            // T4: virtual, like End night's - the night's own clock.
+            discardNightTracking(context, nowInstant())
+            pendingFollowUp.value = null
+            showingMorningReport.value = false
+            cachedMorningReport.value = null
+            morningReportEndedAt.value = null
+            morningRatingTarget.value = null
+            screen.value = Screen.BeforeBed
             endingNight.value = false
         }
     }

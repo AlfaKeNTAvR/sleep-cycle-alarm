@@ -18,9 +18,10 @@ private val LOG_DISPLAY_NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPat
 
 /** Builds the Logs screen's state, newest first. [ratings] is each file's night ratings, read by the caller (absent or null: none). */
 fun buildLogsUiState(logFiles: List<File>, ratings: Map<File, NightRatings?>, zone: ZoneId): LogsUiState =
-    LogsUiState(logFiles.map { toLogSummary(it, ratings[it], zone) })
+    LogsUiState(logFiles.map { buildNightLogSummary(it, ratings[it], zone) })
 
-private fun toLogSummary(file: File, ratings: NightRatings?, zone: ZoneId): NightLogSummary = NightLogSummary(
+/** One Logs row for [file]. Also what a night opened straight from the 15:00 notification uses, never having passed through the list. */
+fun buildNightLogSummary(file: File, ratings: NightRatings?, zone: ZoneId): NightLogSummary = NightLogSummary(
     file = file,
     // Owner request, 2026-10-02: when the night started (from the file name), not when its log was last written.
     displayName = nightLogStartLocalTime(file.name)?.let(LOG_DISPLAY_NAME_FORMAT::format)

@@ -14,6 +14,7 @@ import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
+import com.nikita.sleepcycle.night.isShortNight
 import com.nikita.sleepcycle.night.formatSimulatedTimeValue
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import java.time.Instant
@@ -103,6 +104,7 @@ fun buildNightUiState(
         napButtonMinutes = napButtonMinutes(pendingFollowUp, morningAlarmHasRung(state), now, resolveEngineConfig(state)),
         showImUpButton = showImUp,
         confirmingImUp = confirmingImUp,
+        discardsNight = isShortNight(state.startedAt, now),
     )
 }
 
