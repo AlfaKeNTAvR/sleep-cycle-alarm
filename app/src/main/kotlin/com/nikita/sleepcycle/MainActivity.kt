@@ -40,7 +40,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Owner spec, 2026-10-04: the later question's Okay or Bad button opens the app through this intent. Only
+        // Owner spec, 2026-10-04: the later question's Okay or Bad button opens the app through this intent, and
+        // since 2026-10-21 (PER-124) a tap on that notification itself does too, on that night's Past night. Only
         // a fresh launch acts on it: a rotation (saved state) or a reopen from Recents (which redelivers the same
         // intent) must not record the rating and open the dialog a second time.
         val launchedFromRecents = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
@@ -59,7 +60,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** The app already open when Okay or Bad is tapped on the later question: the same intent arrives here instead. */
+    /** The app already open when the later question is tapped (Okay, Bad or its body): the same intent arrives here instead. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -172,7 +173,7 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
             }
         }
         // Owner spec, 2026-10-04: the "why Okay or Bad" dialog, over whichever screen asked for it - the morning
-        // report, Past night, or any screen the later question's Okay or Bad button opened the app on.
+        // report or Past night (where the later question's Okay or Bad button opens it since 2026-10-21).
         symptomsDialog?.let { dialog ->
             RatingSymptomsDialog(
                 state = dialog,
