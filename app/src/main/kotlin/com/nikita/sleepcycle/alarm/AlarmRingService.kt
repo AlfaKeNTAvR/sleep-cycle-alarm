@@ -50,6 +50,7 @@ import androidx.core.content.getSystemService
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.night.AppClock
+import com.nikita.sleepcycle.night.MediaFadeGain
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendToCurrentNightLog
 import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
@@ -157,6 +158,8 @@ class AlarmRingService : Service() {
             stopRingingArtifacts()
         }
         isRinging = true
+        // Owner spec, 2026-10-22 (PER-134): the bedtime fade's digital gain on all media goes before any alarm sound starts.
+        runGuarded("release the bedtime fade's gain") { MediaFadeGain.releaseForAlarm() }
         // ISSUES.md #4 (owner decision, 2026-10-03): never quieter than half the alarm stream's range. Before the
         // sound starts, and only once per ring sequence: a restart (F1) keeps the volume the FIRST ring replaced.
         if (alarmVolumeBeforeRing == null) {
