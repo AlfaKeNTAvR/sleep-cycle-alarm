@@ -40,7 +40,7 @@ class MediaVolumeReadingTest {
     @Test fun `media on the built-in speaker at step 13 of 25 reads Speaker 52 percent`() {
         playOn(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
 
-        assertEquals(MediaVolumeReading(MediaOutput.SPEAKER, 52), readMediaVolume(audioManager))
+        assertEquals(MediaVolumeReading(MediaOutput.SPEAKER, 52, 25), readMediaVolume(audioManager))
     }
 
     @Test fun `switching media to Bluetooth and turning it down shows on the next read`() {
@@ -50,17 +50,17 @@ class MediaVolumeReadingTest {
         playOn(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
         audio.setStreamVolume(10)
 
-        assertEquals(MediaVolumeReading(MediaOutput.BLUETOOTH, 40), readMediaVolume(audioManager))
+        assertEquals(MediaVolumeReading(MediaOutput.BLUETOOTH, 40, 25), readMediaVolume(audioManager))
     }
 
     @Test fun `wired headphones read Headphones`() {
         playOn(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
         audio.setStreamVolume(4)
 
-        assertEquals(MediaVolumeReading(MediaOutput.HEADPHONES, 16), readMediaVolume(audioManager))
+        assertEquals(MediaVolumeReading(MediaOutput.HEADPHONES, 16, 25), readMediaVolume(audioManager))
     }
 
     @Test fun `no audio service reads Speaker at 0 percent rather than failing`() {
-        assertEquals(MediaVolumeReading(MediaOutput.SPEAKER, 0), readMediaVolume(null))
+        assertEquals(MediaVolumeReading(MediaOutput.SPEAKER, 0, 0), readMediaVolume(null))
     }
 }

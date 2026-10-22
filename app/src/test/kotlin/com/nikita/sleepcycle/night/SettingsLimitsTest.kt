@@ -21,7 +21,7 @@ class SettingsLimitsTest {
     @Test
     fun `defaults are the agreed ones`() {
         assertEquals(AfterAlarmSettings(nudgeMinutes = 10, napMinutes = 20), AfterAlarmSettings())
-        assertEquals(BedtimeAudioSettings(fadeEnabled = true, fadeStartPercent = 25, fadeEndPercent = 5, pauseWhenAsleep = true), BedtimeAudioSettings())
+        assertEquals(BedtimeAudioSettings(fadeEnabled = true, phoneSpeakerVolumes = FadeVolumes(25, 5), bluetoothVolumes = FadeVolumes(25, 5), fadeDurationMinutes = 15, pauseWhenAsleep = true), BedtimeAudioSettings())
         assertEquals(SleepRatingSettings(enabled = true, askAgainLater = true, askAt = LocalTime.of(15, 0)), SleepRatingSettings())
     }
 
@@ -40,26 +40,13 @@ class SettingsLimitsTest {
         assertEquals(10, stepSetting(SettingStepper.NAP_MINUTES, 10, -1))
     }
 
-    @Test
-    fun `the fade starting volume steps five percent at a time between 10 and 50`() {
-        assertEquals(30, stepSetting(SettingStepper.FADE_START_PERCENT, 25, +1))
-        assertEquals(50, stepSetting(SettingStepper.FADE_START_PERCENT, 50, +1))
-        assertEquals(10, stepSetting(SettingStepper.FADE_START_PERCENT, 10, -1))
-    }
-
-    @Test
-    fun `the fade ending volume steps five percent at a time between 5 and 45`() {
-        // Owner request, 2026-10-02: a Settings choice in multiples of 5, below the starting volume's 50% top.
-        assertEquals(10, stepSetting(SettingStepper.FADE_END_PERCENT, 5, +1))
-        assertEquals(5, stepSetting(SettingStepper.FADE_END_PERCENT, 5, -1))
-        assertEquals(45, stepSetting(SettingStepper.FADE_END_PERCENT, 45, +1))
-    }
+    // The fade's starting and ending volume steps are the phone's own: see FadeVolumeSettingsTest.
 
     @Test
     fun `a stepper's button is offered only while there is room in that direction`() {
         assertFalse(canStepSetting(SettingStepper.NUDGE_MINUTES, 15, +1))
         assertTrue(canStepSetting(SettingStepper.NUDGE_MINUTES, 15, -1))
-        assertFalse(canStepSetting(SettingStepper.FADE_START_PERCENT, 10, -1))
+        assertFalse(canStepSetting(SettingStepper.FADE_DURATION_MINUTES, 5, -1))
     }
 
     @Test
@@ -73,7 +60,7 @@ class SettingsLimitsTest {
     fun `a stored value outside the limits reads back at the nearest limit`() {
         assertEquals(5, clampSetting(SettingStepper.NUDGE_MINUTES, 2))
         assertEquals(30, clampSetting(SettingStepper.NAP_MINUTES, 90))
-        assertEquals(50, clampSetting(SettingStepper.FADE_START_PERCENT, 100))
+        assertEquals(60, clampSetting(SettingStepper.FADE_DURATION_MINUTES, 100))
         assertEquals(12, clampSetting(SettingStepper.NUDGE_MINUTES, 12))
     }
 

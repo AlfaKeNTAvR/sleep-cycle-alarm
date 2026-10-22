@@ -5,6 +5,10 @@ package com.nikita.sleepcycle.ui.screens
 // alarm, Bedtime audio, Sleep rating, then - debug builds only - Debug, which holds the two controls the Debug
 // screen used to (Simulated band data, Ring phone alarm), and last More (Setup). Every change is saved at once;
 // there is no Done button (W17). Limits and defaults live in night/UserSettings.kt.
+//
+// Owner spec, 2026-10-22 (PER-134, PER-135): Bedtime audio shows the starting and ending volume of the output
+// media plays on now, named in its header ("BEDTIME AUDIO (BLUETOOTH)"), offered as the phone's own volume steps,
+// and one shared Fade duration. The pair and the header follow the output live (ui/state/FadeVolumeRows.kt).
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -42,6 +46,8 @@ import com.nikita.sleepcycle.BuildConfig
 import com.nikita.sleepcycle.R
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.BedtimeAudioSettings
+import com.nikita.sleepcycle.night.FadeOutput
+import com.nikita.sleepcycle.night.FadeVolumeKind
 import com.nikita.sleepcycle.night.SettingStepper
 import com.nikita.sleepcycle.night.SleepRatingSettings
 import com.nikita.sleepcycle.night.canStepSetting
@@ -58,8 +64,11 @@ import com.nikita.sleepcycle.ui.components.SettingsButtonRow
 import com.nikita.sleepcycle.ui.components.SettingsSection
 import com.nikita.sleepcycle.ui.components.SettingsSwitchRow
 import com.nikita.sleepcycle.ui.components.ToggleRow
+import com.nikita.sleepcycle.ui.components.rememberMediaVolumeReading
 import com.nikita.sleepcycle.ui.state.DebugUiState
 import com.nikita.sleepcycle.ui.state.SettingsGroup
+import com.nikita.sleepcycle.ui.state.buildFadeVolumeRows
+import com.nikita.sleepcycle.ui.state.withFadeVolumeStepped
 import com.nikita.sleepcycle.ui.state.settingsGroups
 import com.nikita.sleepcycle.ui.theme.AmberAccent
 import com.nikita.sleepcycle.ui.theme.CardNarrowPadding
@@ -131,7 +140,18 @@ fun SettingsScreen(
             )
         }
 
-        SettingsSection(stringResource(R.string.settings_section_bedtime_audio)) {
+        // Re-read every 500 ms, so the pair shown switches when media moves to or from Bluetooth with Settings open.
+        val mediaVolume = rememberMediaVolumeReading()
+        val fadeVolumes = buildFadeVolumeRows(bedtimeAudio, mediaVolume.output, mediaVolume.maxStep)
+        val fadeOutputName = stringResource(
+            when (fadeVolumes.output) {
+                FadeOutput.PHONE_SPEAKER -> R.string.settings_fade_output_phone
+                FadeOutput.BLUETOOTH -> R.string.settings_fade_output_bluetooth
+            }
+        )
+        fun stepFadeVolume(kind: FadeVolumeKind, direction: Int) =
+            onBedtimeAudioChange(withFadeVolumeStepped(bedtimeAudio, mediaVolume.output, kind, direction, mediaVolume.maxStep))
+        SettingsSection(stringResource(R.string.settings_section_bedtime_audio, fadeOutputName)) {
             SettingsSwitchRow(
                 label = stringResource(R.string.settings_pause_when_asleep),
                 checked = bedtimeAudio.pauseWhenAsleep,
@@ -146,21 +166,32 @@ fun SettingsScreen(
                 enabled = bedtimeAudio.pauseWhenAsleep,
             )
             CardDivider()
-            StepperRow(
+            StepperRowLayout(
                 label = stringResource(R.string.settings_fade_start),
-                stepper = SettingStepper.FADE_START_PERCENT,
-                value = bedtimeAudio.fadeStartPercent,
-                valueText = stringResource(R.string.settings_percent_value, bedtimeAudio.fadeStartPercent),
-                onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeStartPercent = it)) },
+                valueText = stringResource(R.string.settings_percent_value, fadeVolumes.startPercent),
+                canLower = fadeVolumes.canLowerStart,
+                canRaise = fadeVolumes.canRaiseStart,
+                onLower = { stepFadeVolume(FadeVolumeKind.START, -1) },
+                onRaise = { stepFadeVolume(FadeVolumeKind.START, +1) },
+                enabled = shouldFadeMedia(bedtimeAudio),
+            )
+            CardDivider()
+            StepperRowLayout(
+                label = stringResource(R.string.settings_fade_end),
+                valueText = stringResource(R.string.settings_percent_value, fadeVolumes.endPercent),
+                canLower = fadeVolumes.canLowerEnd,
+                canRaise = fadeVolumes.canRaiseEnd,
+                onLower = { stepFadeVolume(FadeVolumeKind.END, -1) },
+                onRaise = { stepFadeVolume(FadeVolumeKind.END, +1) },
                 enabled = shouldFadeMedia(bedtimeAudio),
             )
             CardDivider()
             StepperRow(
-                label = stringResource(R.string.settings_fade_end),
-                stepper = SettingStepper.FADE_END_PERCENT,
-                value = bedtimeAudio.fadeEndPercent,
-                valueText = stringResource(R.string.settings_percent_value, bedtimeAudio.fadeEndPercent),
-                onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeEndPercent = it)) },
+                label = stringResource(R.string.settings_fade_duration),
+                stepper = SettingStepper.FADE_DURATION_MINUTES,
+                value = bedtimeAudio.fadeDurationMinutes,
+                valueText = stringResource(R.string.settings_minutes_value, bedtimeAudio.fadeDurationMinutes),
+                onValueChange = { onBedtimeAudioChange(bedtimeAudio.copy(fadeDurationMinutes = it)) },
                 enabled = shouldFadeMedia(bedtimeAudio),
             )
         }
@@ -235,6 +266,28 @@ private fun StepperRow(
     onValueChange: (Int) -> Unit,
     enabled: Boolean = true,
 ) {
+    StepperRowLayout(
+        label = label,
+        valueText = valueText,
+        canLower = canStepSetting(stepper, value, -1),
+        canRaise = canStepSetting(stepper, value, +1),
+        onLower = { onValueChange(stepSetting(stepper, value, -1)) },
+        onRaise = { onValueChange(stepSetting(stepper, value, +1)) },
+        enabled = enabled,
+    )
+}
+
+/** A label, then minus, the value and plus; a button is offered only while [enabled] and it can move the value. */
+@Composable
+private fun StepperRowLayout(
+    label: String,
+    valueText: String,
+    canLower: Boolean,
+    canRaise: Boolean,
+    onLower: () -> Unit,
+    onRaise: () -> Unit,
+    enabled: Boolean = true,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = MinTouchTarget),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -245,8 +298,8 @@ private fun StepperRow(
             StepperButton(
                 text = "−",
                 contentDescription = stringResource(R.string.content_description_less),
-                enabled = enabled && canStepSetting(stepper, value, -1),
-                onClick = { onValueChange(stepSetting(stepper, value, -1)) },
+                enabled = enabled && canLower,
+                onClick = onLower,
             )
             Text(
                 text = valueText,
@@ -259,8 +312,8 @@ private fun StepperRow(
             StepperButton(
                 text = "+",
                 contentDescription = stringResource(R.string.content_description_more),
-                enabled = enabled && canStepSetting(stepper, value, +1),
-                onClick = { onValueChange(stepSetting(stepper, value, +1)) },
+                enabled = enabled && canRaise,
+                onClick = onRaise,
             )
         }
     }

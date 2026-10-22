@@ -9,6 +9,7 @@ package com.nikita.sleepcycle.scenario
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.PowerManager
 import androidx.test.core.app.ApplicationProvider
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.night.AppClock
@@ -93,6 +94,8 @@ class DiscardShortNightScenarioTest {
         startNightAndWait(context, noDeadline, Instant.now().minus(Duration.ofMinutes(10)))
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 10, 0)
         shadowOf(audioManager).setIsMusicActive(true)
+        // Owner, 2026-10-21 (PER-134): a fade begins only with the screen off.
+        shadowOf(context.getSystemService(PowerManager::class.java)).setIsInteractive(false)
         runMediaFadeCheck(context)
         assertTrue("the fade lowered the volume", audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) < 10)
 

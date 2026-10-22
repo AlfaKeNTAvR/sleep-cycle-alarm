@@ -1,17 +1,23 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: the pure decisions behind the bedtime media fade - where it starts and which volume step it
-// should be at by a given minute (see MediaFade.kt). Worked examples use the Pixel 10's 25-step media volume.
+// File purpose: the pure decisions behind the bedtime media fade (see MediaFade.kt) - where it starts, the
+// smooth target line it follows in dB, how that line is split into a hardware volume step plus a small digital
+// gain, and how the owner's own volume changes, the screen and a switch of output move the line. Worked
+// examples use the Pixel 10's 25-step media volume.
 
 import com.nikita.sleepcycle.engine.SleepState
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.time.Duration
 import java.time.Instant
 
 class MediaFadeTest {
     private val pixelMaxStep = 25
+
+    // A made-up curve that is easy to reason about: step N is 2N dB below the top, so every step is 2 dB.
+    private val evenCurve = VolumeCurve(listOf(Double.NEGATIVE_INFINITY) + (1..pixelMaxStep).map { 2.0 * (it - pixelMaxStep) })
 
     // Owner decision, 2026-10-02 (phone log 22:03: a fade after waking restarted at the parked 6, not the
     // starting 8): every fade starts at exactly the starting volume, whatever was playing - a louder volume is
@@ -21,70 +27,170 @@ class MediaFadeTest {
     }
 
     @Test fun `the fade starts at the starting volume chosen in Settings`() {
-        assertEquals(3, fadeStartStep(maxStep = pixelMaxStep, startPercent = 10))
-        assertEquals(13, fadeStartStep(maxStep = pixelMaxStep, startPercent = 50))
+        assertEquals(3, fadeStartStep(maxStep = pixelMaxStep, startPercent = 12))
+        assertEquals(13, fadeStartStep(maxStep = pixelMaxStep, startPercent = 52))
     }
 
-    private val nightStart = Instant.parse("2026-10-02T23:00:00Z")
-    private fun stepAt(minutes: Long, startStep: Int = 6, endPercent: Int = 5) =
-        fadeTargetStep(startStep, pixelMaxStep, nightStart, nightStart.plusSeconds(minutes * 60), endPercent)
-
-    // Owner request, 2026-10-02: the ending volume is a Settings choice (5% to 45%), not a fixed 5%.
-
-    @Test fun `the fade stops at the ending volume chosen in Settings`() {
-        // 20% of 25 steps is 5.
-        assertEquals(5, stepAt(90, startStep = 13, endPercent = 20))
+    @Test fun `the fade's floor is the ending volume's step, never below one step`() {
+        assertEquals(1, fadeFloorStep(maxStep = pixelMaxStep, endPercent = 4))
+        assertEquals(5, fadeFloorStep(maxStep = pixelMaxStep, endPercent = 20))
+        assertEquals(1, fadeFloorStep(maxStep = pixelMaxStep, endPercent = 0))
     }
 
-    @Test fun `an ending volume at or above the starting volume never lowers it`() {
-        assertEquals(6, stepAt(60, startStep = 6, endPercent = 45))
+    // Owner spec, 2026-10-22 (PER-134): "you specify starting sound, ending percentage, and the duration...
+    // automatically calculates the speed". The speed is in dB per minute on the playing output's own curve.
+
+    @Test fun `the speed is the starting volume's dB down to the ending volume's dB over the fade duration`() {
+        // Step 6 is -38 dB and step 1 is -48 dB on the even curve: 10 dB over 15 minutes.
+        assertEquals(10.0 / 15, fadeRateDbPerMinute(evenCurve.db(6), evenCurve.db(1), Duration.ofMinutes(15)), 1e-9)
     }
 
-    @Test fun `the volume holds for the first 10 minutes`() {
-        assertEquals(6, stepAt(0))
-        assertEquals(6, stepAt(9))
+    @Test fun `an ending volume at or above the starting volume gives no speed at all`() {
+        assertEquals(0.0, fadeRateDbPerMinute(evenCurve.db(3), evenCurve.db(5), Duration.ofMinutes(15)))
     }
 
-    @Test fun `after the hold the volume loses one step every 5 minutes`() {
-        assertEquals(5, stepAt(10))
-        assertEquals(5, stepAt(14))
-        assertEquals(4, stepAt(15))
-        assertEquals(3, stepAt(20))
-        assertEquals(2, stepAt(25))
+    private val fadeStart = Instant.parse("2026-10-22T23:00:00Z")
+    private fun minutes(value: Double): Instant = fadeStart.plusMillis((value * 60_000).toLong())
+
+    @Test fun `the target line falls at the speed and holds at the ending volume`() {
+        val line = FadeLine(anchorDb = -38.0, anchorAt = fadeStart)
+        assertEquals(-38.0, fadeTargetDb(line, rateDbPerMinute = 1.0, endDb = -48.0, now = fadeStart), 1e-9)
+        assertEquals(-40.5, fadeTargetDb(line, rateDbPerMinute = 1.0, endDb = -48.0, now = minutes(2.5)), 1e-9)
+        assertEquals(-48.0, fadeTargetDb(line, rateDbPerMinute = 1.0, endDb = -48.0, now = minutes(30.0)), 1e-9)
     }
 
-    @Test fun `the volume stops at the 1-step floor`() {
-        assertEquals(1, stepAt(30))
-        assertEquals(1, stepAt(90))
+    @Test fun `a line already below the ending volume stays where it is`() {
+        val line = FadeLine(anchorDb = -50.0, anchorAt = fadeStart)
+        assertEquals(-50.0, fadeTargetDb(line, rateDbPerMinute = 1.0, endDb = -48.0, now = minutes(10.0)), 1e-9)
     }
 
-    @Test fun `a fade starting at the floor stays there`() {
-        assertEquals(1, stepAt(20, startStep = 1))
+    // Owner, 2026-10-21: "I don't want it to start dropping the audio while the screen is still active." The line
+    // freezes while the screen is on (or nothing plays) and carries on from there once it goes off - no reset.
+
+    @Test fun `while the screen is on the line holds and moves its anchor to now`() {
+        val line = FadeLine(anchorDb = -40.0, anchorAt = fadeStart)
+        assertEquals(FadeLine(-40.0, minutes(5.0)), advanceFadeLine(line, 1.0, -48.0, minutes(5.0), descendingSinceAnchor = false))
     }
 
-    @Test fun `a muted volume stays muted`() {
-        assertEquals(0, stepAt(20, startStep = 0))
+    @Test fun `once the screen goes off the line continues from where it froze, with no jump`() {
+        // Frozen at -40 dB at minute 5; the screen went off at minute 20. The first update only re-anchors.
+        val frozen = FadeLine(anchorDb = -40.0, anchorAt = minutes(5.0))
+        val resumed = advanceFadeLine(frozen, 1.0, -48.0, minutes(20.0), descendingSinceAnchor = false)
+        assertEquals(-40.0, resumed.anchorDb, 1e-9)
+        assertEquals(-41.0, advanceFadeLine(resumed, 1.0, -48.0, minutes(21.0), descendingSinceAnchor = true).anchorDb, 1e-9)
     }
 
-    // Owner spec, 2026-10-02: from Start night to the morning alarm the fade's schedule wins over the owner's own
-    // volume changes; once the morning alarm has rung the fade is over and his own volume comes back.
+    // The hybrid (spike, 2026-10-21, "this worked amazingly"): the hardware sits on the lowest step still at or
+    // above the target line, and a digital gain fills the rest, so the loudness follows the line smoothly.
 
-    private fun tickAt(minutes: Long, currentStep: Int, parked: Boolean = false, morningAlarmRang: Boolean = false) =
-        fadeTickAction(startStep = 13, startedAt = nightStart, parked = parked, currentStep = currentStep, maxStep = pixelMaxStep, now = nightStart.plusSeconds(minutes * 60), endPercent = 5, morningAlarmRang = morningAlarmRang)
-
-    @Test fun `a volume turned up mid-fade is pulled back to where the fade is`() {
-        // 20 minutes in: the 10 minute hold, then 3 steps down from 13.
-        assertEquals(FadeTickAction.SetVolume(10), tickAt(20, currentStep = 22))
+    @Test fun `the hardware sits on the lowest step at or above the target and the gain fills the gap`() {
+        // -40.5 dB on the even curve: step 5 is -40 dB, step 4 is -42 dB. Step 5 plus -0.5 dB.
+        assertEquals(FadeSplit(step = 5, gainDb = -0.5), splitFadeTarget(-40.5, evenCurve, currentStep = 5, floorStep = 1))
     }
 
-    @Test fun `a volume already where the fade wants it is left alone`() {
-        assertEquals(FadeTickAction.None, tickAt(20, currentStep = 10))
+    @Test fun `on a step exactly the gain is zero`() {
+        assertEquals(FadeSplit(step = 4, gainDb = 0.0), splitFadeTarget(-42.0, evenCurve, currentStep = 5, floorStep = 1))
     }
 
-    // Phone test, 2026-10-02: the owner turned the volume down below the schedule (4) and the next tick raised it
-    // back to the schedule's 5. The fade only ever lowers the volume.
-    @Test fun `a volume turned down below the fade is left there`() {
-        assertEquals(FadeTickAction.None, tickAt(20, currentStep = 4))
+    @Test fun `the hardware never drops more than one step in one update, so drops never bunch`() {
+        // Target -45 dB wants step 3 (-44 dB), three steps down from 6: this update only goes to 5.
+        val split = splitFadeTarget(-45.0, evenCurve, currentStep = 6, floorStep = 1)
+        assertEquals(5, split.step)
+        assertEquals(-2.0, split.gainDb, 1e-9, "the gain never reaches past the next step down")
+    }
+
+    @Test fun `the hardware never goes below the ending volume's step`() {
+        assertEquals(FadeSplit(step = 3, gainDb = 0.0), splitFadeTarget(-44.0, evenCurve, currentStep = 3, floorStep = 3))
+    }
+
+    @Test fun `a volume the owner took below the ending volume is left alone`() {
+        assertEquals(FadeSplit(step = 2, gainDb = 0.0), splitFadeTarget(-44.0, evenCurve, currentStep = 2, floorStep = 3))
+        assertEquals(FadeSplit(step = 0, gainDb = 0.0), splitFadeTarget(-44.0, evenCurve, currentStep = 0, floorStep = 1))
+    }
+
+    @Test fun `the fade never raises the hardware above where it is`() {
+        assertEquals(FadeSplit(step = 4, gainDb = 0.0), splitFadeTarget(-30.0, evenCurve, currentStep = 4, floorStep = 1))
+    }
+
+    // Owner spec, 2026-10-22 (PER-134): "in case you increase the volume myself, it's going to still be fading
+    // away with the same rate." A volume the owner changed himself becomes the line's new start - raised or
+    // lowered - and a switch of output (Bluetooth connects or drops) starts the line again from that output's
+    // own volume (PER-135). Today's pull back to the schedule is gone.
+
+    @Test fun `a volume the owner changed himself re-anchors the line`() {
+        assertEquals(FadeReanchor.OWNER_VOLUME, fadeReanchorCause(recordedStep = 5, actualStep = 9, recordedDeviceType = 2, actualDeviceType = 2))
+        assertEquals(FadeReanchor.OWNER_VOLUME, fadeReanchorCause(recordedStep = 5, actualStep = 3, recordedDeviceType = 2, actualDeviceType = 2))
+    }
+
+    @Test fun `a switch of output re-anchors the line, whatever its volume`() {
+        assertEquals(FadeReanchor.OUTPUT, fadeReanchorCause(recordedStep = 5, actualStep = 5, recordedDeviceType = 2, actualDeviceType = 8))
+        assertEquals(FadeReanchor.OUTPUT, fadeReanchorCause(recordedStep = 5, actualStep = 12, recordedDeviceType = 2, actualDeviceType = 8))
+    }
+
+    @Test fun `nothing changed, nothing re-anchors`() {
+        assertEquals(FadeReanchor.NONE, fadeReanchorCause(recordedStep = 5, actualStep = 5, recordedDeviceType = 2, actualDeviceType = 2))
+    }
+
+    @Test fun `a raised volume keeps falling at the same speed, so it takes longer`() {
+        // Raised to step 9 (-32 dB) at minute 6: at 1 dB a minute it is at -37 dB five minutes later.
+        val raised = FadeLine(evenCurve.db(9), minutes(6.0))
+        assertEquals(-37.0, fadeTargetDb(raised, 1.0, -48.0, minutes(11.0)), 1e-9)
+        assertEquals(minutes(22.0), fadeProjectedEndAt(raised, 1.0, -48.0, startedAt = fadeStart, duration = Duration.ofMinutes(15)))
+    }
+
+    // Emulator test, 2026-10-03 (owner decision), kept: a fade that has run its course while the band still says
+    // asleep pauses its media. It has run its course once the line reached the ending volume, and never before
+    // the fade duration, so media pressed while asleep is never paused the moment it starts.
+
+    @Test fun `a fade has run its course at the ending volume once the fade duration has passed`() {
+        val duration = Duration.ofMinutes(15)
+        assertTrue(fadeHasRunItsCourse(-48.0, -48.0, fadeStart, minutes(15.0), duration))
+        assertFalse(fadeHasRunItsCourse(-47.0, -48.0, fadeStart, minutes(20.0), duration))
+        assertFalse(fadeHasRunItsCourse(-48.0, -48.0, fadeStart, minutes(3.0), duration), "lowered to the floor by hand at minute 3")
+    }
+
+    @Test fun `the projected end is the line reaching the ending volume, never before the fade duration`() {
+        val line = FadeLine(-38.0, fadeStart)
+        assertEquals(minutes(10.0), fadeProjectedEndAt(line, 1.0, -48.0, fadeStart, Duration.ofMinutes(5)))
+        assertEquals(minutes(15.0), fadeProjectedEndAt(line, 1.0, -48.0, fadeStart, Duration.ofMinutes(15)))
+        assertEquals(minutes(15.0), fadeProjectedEndAt(line, 0.0, -48.0, fadeStart, Duration.ofMinutes(15)), "no speed: it holds for the duration")
+    }
+
+    private fun pause(finished: Boolean, sleepState: SleepState = SleepState.ASLEEP, mediaPlaying: Boolean = true, morningAlarmRang: Boolean = false) =
+        shouldPauseFinishedFade(sleepState, mediaPlaying, fadeFinished = finished, morningAlarmRang = morningAlarmRang)
+
+    @Test fun `media still playing when the fade has run its course while the band says asleep is paused`() {
+        assertTrue(pause(finished = true))
+        assertFalse(pause(finished = false))
+    }
+
+    @Test fun `no pause once the band says awake, with nothing playing, or after the morning alarm`() {
+        assertFalse(pause(true, sleepState = SleepState.AWAKE))
+        assertFalse(pause(true, sleepState = SleepState.NOT_YET_ASLEEP))
+        assertFalse(pause(true, mediaPlaying = false))
+        assertFalse(pause(true, morningAlarmRang = true))
+    }
+
+    // The phone's own dB curve (AudioManager.getStreamVolumeDb) is used when it makes sense; otherwise AOSP's
+    // default media curve, so the line is always in real loudness steps.
+
+    @Test fun `a curve that rises step by step is usable`() {
+        assertTrue(isUsableVolumeCurve(evenCurve.stepDbs))
+    }
+
+    @Test fun `a flat or broken curve is not, and the default curve is`() {
+        assertFalse(isUsableVolumeCurve(List(pixelMaxStep + 1) { 0.0 }))
+        assertFalse(isUsableVolumeCurve(listOf(Double.NEGATIVE_INFINITY, -50.0, Double.NaN, -10.0)))
+        assertTrue(isUsableVolumeCurve(defaultVolumeCurve(pixelMaxStep).stepDbs))
+        assertTrue(isUsableVolumeCurve(defaultVolumeCurve(15).stepDbs))
+    }
+
+    @Test fun `the default curve runs from about -58 dB at the bottom to 0 dB at the top`() {
+        val curve = defaultVolumeCurve(100)
+        assertEquals(-58.0, curve.db(1), 1e-9)
+        assertEquals(-40.0, curve.db(20), 1e-9)
+        assertEquals(-17.0, curve.db(60), 1e-9)
+        assertEquals(0.0, curve.db(100), 1e-9)
     }
 
     // Phone test, 2026-10-02: falling asleep at the faded 3 parked the volume back up at the starting 10, so
@@ -108,22 +214,32 @@ class MediaFadeTest {
         assertEquals(0, mediaVolumePercent(currentStep = 3, maxStep = 0))
     }
 
+    // Owner spec, 2026-10-02: once the morning alarm has rung the fade is over and his own volume comes back; a
+    // parked volume (asleep) never goes above the starting volume and never steps down.
+
+    private fun tick(currentStep: Int, parked: Boolean, morningAlarmRang: Boolean = false) =
+        fadeTickAction(startStep = 13, parked = parked, currentStep = currentStep, morningAlarmRang = morningAlarmRang)
+
     @Test fun `a parked volume does not step down while the owner sleeps`() {
-        assertEquals(FadeTickAction.None, tickAt(60, currentStep = 13, parked = true))
+        assertEquals(FadeTickAction.None, tick(currentStep = 13, parked = true))
     }
 
     // Phone test, 2026-10-02: a volume key held in the night took the parked 3 up to 15 before any media played.
     @Test fun `a parked volume turned up above the starting volume is pulled back to it`() {
-        assertEquals(FadeTickAction.SetVolume(13), tickAt(60, currentStep = 22, parked = true))
+        assertEquals(FadeTickAction.SetVolume(13), tick(currentStep = 22, parked = true))
     }
 
     @Test fun `a parked volume turned down stays where it is`() {
-        assertEquals(FadeTickAction.None, tickAt(60, currentStep = 4, parked = true))
+        assertEquals(FadeTickAction.None, tick(currentStep = 4, parked = true))
+    }
+
+    @Test fun `a running fade is moved along its line`() {
+        assertEquals(FadeTickAction.Advance, tick(currentStep = 22, parked = false))
     }
 
     @Test fun `once the morning alarm has rung the owner's own volume comes back, parked or not`() {
-        assertEquals(FadeTickAction.RestoreOriginal, tickAt(20, currentStep = 10, morningAlarmRang = true))
-        assertEquals(FadeTickAction.RestoreOriginal, tickAt(60, currentStep = 13, parked = true, morningAlarmRang = true))
+        assertEquals(FadeTickAction.RestoreOriginal, tick(currentStep = 10, parked = false, morningAlarmRang = true))
+        assertEquals(FadeTickAction.RestoreOriginal, tick(currentStep = 13, parked = true, morningAlarmRang = true))
     }
 
     // Owner request, 2026-10-02: falling asleep parks the volume at the starting volume until End night, so a
@@ -137,87 +253,30 @@ class MediaFadeTest {
         assertEquals(20, fadeOriginalStep(currentStep = 20, parkedOriginalStep = null))
     }
 
-    // Owner request, 2026-10-02: waking in the night and playing the audiobook again fades it again.
+    // Owner request, 2026-10-02: waking in the night and playing the audiobook again fades it again. Owner,
+    // 2026-10-21: a fade begins only once the screen is off too.
 
-    @Test fun `after falling asleep, waking with media playing starts a fresh fade`() {
-        assertTrue(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+    private fun shouldStart(rearmed: Boolean = true, playing: Boolean = true, screenOff: Boolean = true, enabled: Boolean = true, alarmRang: Boolean = false) =
+        shouldStartWakeFade(fadeRearmed = rearmed, mediaPlaying = playing, screenOff = screenOff, fadeEnabled = enabled, morningAlarmRang = alarmRang)
+
+    @Test fun `armed, with media playing and the screen off, a fade starts`() {
+        assertTrue(shouldStart())
+    }
+
+    @Test fun `no fade starts while the screen is on`() {
+        assertFalse(shouldStart(screenOff = false))
     }
 
     @Test fun `waking with nothing playing waits until media plays`() {
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = false, fadeEnabled = true, morningAlarmRang = false))
-    }
-
-    @Test fun `the Start night fade begins once media is actually playing, before the first sleep`() {
-        // Seen on the phone, 2026-10-02: setting the volume at the Start night tap, before the audiobook played,
-        // changed a volume nobody heard, and the next tick read the playing device's own volume as an override.
-        assertTrue(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStart(playing = false))
     }
 
     @Test fun `no new fade once one has started, until the next sleep re-arms it`() {
-        // Not armed: a fade is already running, or the owner turned the volume up himself and ended it.
-        assertFalse(shouldStartWakeFade(fadeRearmed = false, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
-        assertFalse(shouldStartWakeFade(fadeRearmed = false, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
+        assertFalse(shouldStart(rearmed = false))
     }
 
     @Test fun `no fresh fade with the fade switched off, or once the morning alarm has rung`() {
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = false, morningAlarmRang = false))
-        assertFalse(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = true))
-    }
-
-    // Emulator test, 2026-10-03 (owner decision): media started while the band still says asleep (it confirms
-    // an awakening late, or never when the owner lies still) used to play at the parked volume all night. It now
-    // gets a fresh fade like any awakening, and a pause once that fade has run its course if the band still says
-    // asleep ([shouldPauseFinishedFade]).
-
-    @Test fun `media started while the band still says asleep gets a fresh fade too`() {
-        // The decision no longer looks at the sleep state at all: armed, playing, switched on, before the alarm.
-        assertTrue(shouldStartWakeFade(fadeRearmed = true, mediaPlaying = true, fadeEnabled = true, morningAlarmRang = false))
-    }
-
-    // Starting step 8 of 15 with the ending volume at 5% (floor 1): the 10 minute hold, then 8 to 1 in 7 steps,
-    // the last at 10 + 6 * 5 = 40 minutes.
-    private fun endsAt(startStep: Int, endPercent: Int = 5) = fadeEndsAt(startStep, maxStep = 15, startedAt = nightStart, endPercent = endPercent)
-
-    @Test fun `a fade has run its course once it reaches the ending volume`() {
-        assertEquals(nightStart.plusSeconds(40 * 60), endsAt(startStep = 8))
-    }
-
-    @Test fun `a fade starting at or below the ending volume runs its course after the hold`() {
-        assertEquals(nightStart.plusSeconds(10 * 60), endsAt(startStep = 1))
-        assertEquals(nightStart.plusSeconds(10 * 60), endsAt(startStep = 4, endPercent = 45))
-    }
-
-    private fun pauseAt(minutes: Long, sleepState: SleepState = SleepState.ASLEEP, mediaPlaying: Boolean = true, morningAlarmRang: Boolean = false) =
-        shouldPauseFinishedFade(sleepState, mediaPlaying, fadeEndsAt = nightStart.plusSeconds(40 * 60), now = nightStart.plusSeconds(minutes * 60), morningAlarmRang = morningAlarmRang)
-
-    @Test fun `media still playing when the fade has run its course while the band says asleep is paused`() {
-        assertTrue(pauseAt(40))
-        assertTrue(pauseAt(55))
-    }
-
-    @Test fun `no pause before the fade has run its course`() {
-        assertFalse(pauseAt(39))
-    }
-
-    @Test fun `no pause once the band says awake, with nothing playing, or after the morning alarm`() {
-        assertFalse(pauseAt(40, sleepState = SleepState.AWAKE))
-        assertFalse(pauseAt(40, sleepState = SleepState.NOT_YET_ASLEEP))
-        assertFalse(pauseAt(40, mediaPlaying = false))
-        assertFalse(pauseAt(40, morningAlarmRang = true))
-    }
-
-    // Ticks come every 15 minutes while asleep, so a fade there would step late and pause late; each tick books
-    // the next one no later than the fade's next step, up to the instant it has run its course.
-    private fun nextStepAt(minutes: Long) = nextFadeStepAt(startStep = 8, maxStep = 15, startedAt = nightStart, now = nightStart.plusSeconds(minutes * 60), endPercent = 5)
-
-    @Test fun `the next fade step is the hold's end, then every 5 minutes`() {
-        assertEquals(nightStart.plusSeconds(10 * 60), nextStepAt(0))
-        assertEquals(nightStart.plusSeconds(15 * 60), nextStepAt(10))
-        assertEquals(nightStart.plusSeconds(20 * 60), nextStepAt(17))
-    }
-
-    @Test fun `the last fade step is the instant it has run its course, and none after`() {
-        assertEquals(nightStart.plusSeconds(40 * 60), nextStepAt(36))
-        assertEquals(null, nextStepAt(40))
+        assertFalse(shouldStart(enabled = false))
+        assertFalse(shouldStart(alarmRang = true))
     }
 }

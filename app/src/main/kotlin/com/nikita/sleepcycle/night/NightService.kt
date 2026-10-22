@@ -49,7 +49,8 @@ private val NOTIFICATION_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPa
 class NightService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
-    private val mediaFadeWatcher by lazy { MediaFadeWatcher(this, serviceScope) }
+    private val mediaFadeWatcher: MediaFadeWatcher by lazy { MediaFadeWatcher(this, serviceScope, onChecked = { mediaFadeRunner.wake() }) }
+    private val mediaFadeRunner: MediaFadeRunner by lazy { MediaFadeRunner(this, serviceScope, onFadeReachedEnd = { mediaFadeWatcher.requestCheck() }) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -57,6 +58,8 @@ class NightService : Service() {
         super.onCreate()
         createNotificationChannel(this)
         mediaFadeWatcher.start()
+        // A fade that was falling when the process last died carries on (MediaFadeRunner.kt).
+        mediaFadeRunner.wake()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -79,6 +82,8 @@ class NightService : Service() {
                 // `now` param), not a real-time measurement.
                 val newState = runNightTick(this@NightService, nowInstant(), scheduledFor, receivedAt)
                 handleTickResult(newState, startId)
+                // A tick may have started a fade or thawed one; the runner moves it from here (MediaFadeRunner.kt).
+                mediaFadeRunner.wake()
             } catch (error: CancellationException) {
                 // H3: a FINISHED tick's own bookkeeping (finishNightIfNeeded) stops this very service, which
                 // cancels this coroutine at its own next suspension point - completely expected once that
@@ -130,6 +135,7 @@ class NightService : Service() {
 
     override fun onDestroy() {
         mediaFadeWatcher.stop()
+        mediaFadeRunner.stop()
         serviceJob.cancel()
         super.onDestroy()
     }
