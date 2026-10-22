@@ -55,6 +55,7 @@ import com.nikita.sleepcycle.night.appendToCurrentNightLog
 import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
 import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.rearmFollowUpAfterRingEnded
+import com.nikita.sleepcycle.night.refreshNightStateFromDisk
 import com.nikita.sleepcycle.night.requestImmediateTick
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -217,6 +218,10 @@ class AlarmRingService : Service() {
         // failure here must never keep the sound playing.
         if (isRinging && reason != ALARM_STOP_REASON_NIGHT_ENDED && ringingLabel != AlarmLabel.TEST) {
             runGuarded("re-time the out-of-bed nudge after the ring ended") { rearmFollowUpAfterRingEnded(this, nowInstant()) }
+            // PER-127 (owner-reported, 2026-10-03): the Night screen kept the firing's safety-net nudge time for
+            // up to a minute after Stop, until its own ticker re-read the record. Publish it now, the same way
+            // PhoneAlarmReceiver publishes a firing.
+            refreshNightStateFromDisk(this)
         }
         stopRingingArtifacts()
         restoreAlarmVolumeIfRaised()
