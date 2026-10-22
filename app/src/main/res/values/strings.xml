@@ -281,4 +281,6 @@
     <string name="symptom_sleepy_in_afternoon">Sleepy in afternoon</string>
     <string name="symptom_low_energy">Low energy</string>
     <string name="symptom_hard_to_focus">Hard to focus</string>
+    <string name="symptom_kept_napping">Kept napping</string>
+    <string name="symptom_heavy_head">Heavy head</string>
 </resources>

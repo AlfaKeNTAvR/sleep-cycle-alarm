@@ -32,20 +32,24 @@ enum class RatingMoment { AFTER_END_NIGHT, LATER }
 
 /**
  * What made a night Okay or Bad (owner spec, 2026-10-04): ticked on a dialog right after an Okay or Bad rating,
- * each item belonging to one [moment]'s list - the morning's four or the afternoon's three. Owner change,
- * 2026-10-04: Groggy on waking and Heavy, overslept were dropped from the morning list after the design was approved. Logged in lower case.
+ * each item belonging to one [moment]'s list - the morning's five or the afternoon's four. Owner change,
+ * 2026-10-04: Groggy on waking and Heavy, overslept were dropped from the morning list after the design was approved.
+ * Owner change, 2026-10-21: Kept napping (kept moving the alarm or tapping Nap to sleep more) added to the morning,
+ * Heavy head to the afternoon. Logged in lower case.
  */
 enum class RatingSymptom(val moment: RatingMoment) {
     // Owner change, 2026-10-05: Still sleepy and Headache on the dialog's top row, Woke before alarm and Slow to
     // fall asleep below. The order here is the dialog's order; the log stores names, so reordering never changes
-    // what an old log reads as.
+    // what an old log reads as, and adding one never changes the others' names.
     STILL_SLEEPY(RatingMoment.AFTER_END_NIGHT),
     HEADACHE(RatingMoment.AFTER_END_NIGHT),
     WOKE_BEFORE_ALARM(RatingMoment.AFTER_END_NIGHT),
     SLOW_TO_FALL_ASLEEP(RatingMoment.AFTER_END_NIGHT),
+    KEPT_NAPPING(RatingMoment.AFTER_END_NIGHT),
     SLEEPY_IN_AFTERNOON(RatingMoment.LATER),
     LOW_ENERGY(RatingMoment.LATER),
     HARD_TO_FOCUS(RatingMoment.LATER),
+    HEAVY_HEAD(RatingMoment.LATER),
 }
 
 /** One rating, when it was given (or last changed), and the symptoms ticked for it (always none for Good). */

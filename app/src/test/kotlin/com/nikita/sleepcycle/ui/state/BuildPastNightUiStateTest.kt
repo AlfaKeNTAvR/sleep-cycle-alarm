@@ -202,6 +202,26 @@ class BuildPastNightUiStateTest {
     }
 
     @Test
+    fun `Kept napping and Heavy head show on the symptoms lines, each last in its dialog's order`() {
+        // Owner spec, 2026-10-21: the two new symptoms show in the Past night symptoms line like the others.
+        val ratings = NightRatings(
+            afterEndNight = RecordedRating(
+                SleepRating.BAD, Instant.parse("2026-09-18T05:52:00Z"), setOf(RatingSymptom.KEPT_NAPPING, RatingSymptom.STILL_SLEEPY),
+            ),
+            later = RecordedRating(
+                SleepRating.OKAY, Instant.parse("2026-09-18T13:02:00Z"), setOf(RatingSymptom.HEAVY_HEAD, RatingSymptom.LOW_ENERGY),
+            ),
+            laterAsked = true,
+        )
+
+        val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
+
+        assertEquals(listOf(RatingSymptom.STILL_SLEEPY, RatingSymptom.KEPT_NAPPING), state.ratings?.afterEndNight?.symptoms)
+        assertEquals(listOf(RatingSymptom.LOW_ENERGY, RatingSymptom.HEAVY_HEAD), state.ratings?.later?.symptoms)
+        assertEquals(true, state.ratings?.later?.showsSymptomsLine)
+    }
+
+    @Test
     fun `a rateable night not rated yet still offers both ratings, empty`() {
         val state = buildPastNightUiState(row(), log(detailed).copy(ratings = NightRatings(null, null, false)), TEST_ZONE)
 
