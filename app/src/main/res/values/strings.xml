@@ -94,6 +94,9 @@
     <string name="night_nap_for_minutes">Nap for %1$d min</string>
     <string name="night_ending">Ending night…</string>
     <string name="night_confirm_end_title">End night?</string>
+    <string name="night_confirm_discard_title">Discard this night?</string>
+    <string name="night_confirm_discard_message">It is under 1 hour, so nothing is saved.</string>
+    <string name="night_discard">Discard</string>
 
     <!-- Night screen: the label above the hero time (owner request, 09/21 review's must-fix 1) - what the
          owner sees when the engine has nothing armed at all, instead of a wrong alarm name. -->

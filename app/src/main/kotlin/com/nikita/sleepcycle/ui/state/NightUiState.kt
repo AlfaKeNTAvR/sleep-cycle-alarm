@@ -120,4 +120,10 @@ data class NightUiState(
     val showImUpButton: Boolean = false,
     /** Whether the "I'm up" confirmation dialog is open: a mis-tap would cancel the smart alarm for the rest of the night. */
     val confirmingImUp: Boolean = false,
+    /**
+     * Owner spec, 2026-10-21 (PER-126): under 1 h after Start night (night/ShortNight.kt's isShortNight),
+     * confirming End night or I'm up discards the night instead of ending it, so both dialogs say so. Never on
+     * the morning report.
+     */
+    val discardsNight: Boolean = false,
 )

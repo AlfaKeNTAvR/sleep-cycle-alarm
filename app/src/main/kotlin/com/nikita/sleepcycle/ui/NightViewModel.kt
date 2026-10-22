@@ -22,6 +22,8 @@ import com.nikita.sleepcycle.night.buildNightEngineView
 import com.nikita.sleepcycle.night.clearMorningReport
 import com.nikita.sleepcycle.night.deleteNightLog as deleteNightLogFile
 import com.nikita.sleepcycle.night.endNight as endNightTracking
+import com.nikita.sleepcycle.night.discardNight as discardNightTracking
+import com.nikita.sleepcycle.night.isShortNight
 import com.nikita.sleepcycle.night.listNightLogs
 import com.nikita.sleepcycle.night.loadMorningReport
 import com.nikita.sleepcycle.night.loadNightState
@@ -809,6 +811,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun confirmImUp() {
         confirmingImUp.value = false
+        // Owner spec, 2026-10-21 (PER-126): under 1 h after Start night the dialog said "Discard this night?".
+        if (shortNightShown()) { discardShortNight(); return }
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 // Owner spec, 2026-10-02: a simulated night drops to 1x first, so the nudge is armed at real speed.
@@ -835,6 +839,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     fun confirmEndNight() {
         if (!canConfirmEndNight(EndNightFlowState(confirmingEndNight.value, endingNight.value))) return
         confirmingEndNight.value = false
+        // Owner spec, 2026-10-21 (PER-126): under 1 h after Start night the dialog said "Discard this night?".
+        if (shortNightShown()) { discardShortNight(); return }
         endingNight.value = true
         viewModelScope.launch {
             // T4: virtual - endNight records this into night_end/the morning report, both virtual-time.
@@ -851,6 +857,34 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             // The night now has its night_end, so the later rating question can be armed for it.
             withContext(Dispatchers.IO) { syncLaterRatingAsk(context) }
             showingMorningReport.value = true
+            endingNight.value = false
+        }
+    }
+
+    /**
+     * Owner spec, 2026-10-21 (PER-126): whether the confirmation just tapped was the discard one - read from the
+     * same night state and ticker [now] the dialog was drawn from (BuildNightUiState.kt's discardsNight), so the
+     * night is discarded exactly when the dialog said it would be.
+     */
+    private fun shortNightShown(): Boolean = observedNightState.value?.let { isShortNight(it.startedAt, now.value) } == true
+
+    /**
+     * Owner spec, 2026-10-21 (PER-126): a night under 1 h old, confirmed through End night or I'm up, is discarded
+     * (night/NightController.kt's discardNight): no morning report, no rating, straight back to Before bed.
+     * [endingNight] guards it like End night, so a second tap cannot start another end or discard meanwhile.
+     */
+    private fun discardShortNight() {
+        if (endingNight.value) return
+        endingNight.value = true
+        viewModelScope.launch {
+            // T4: virtual, like End night's - the night's own clock.
+            discardNightTracking(context, nowInstant())
+            pendingFollowUp.value = null
+            showingMorningReport.value = false
+            cachedMorningReport.value = null
+            morningReportEndedAt.value = null
+            morningRatingTarget.value = null
+            screen.value = Screen.BeforeBed
             endingNight.value = false
         }
     }
