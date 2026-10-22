@@ -61,8 +61,11 @@ internal val MEDIA_PLAYBACK_ATTRIBUTES: AudioAttributes = AudioAttributes.Builde
     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
     .build()
 
-/** One read of the phone's media output and its volume as a percent of the stream's range ([mediaVolumePercent]). */
-internal data class MediaVolumeReading(val output: MediaOutput, val percent: Int)
+/**
+ * One read of the phone's media output and its volume as a percent of the stream's range ([mediaVolumePercent]).
+ * [maxStep]: the stream's step count, which the Settings screen's fade volume pickers are offered in (PER-135).
+ */
+internal data class MediaVolumeReading(val output: MediaOutput, val percent: Int, val maxStep: Int)
 
 /**
  * Reads the media volume and the device media plays on. Android 13+ names that device directly; before it, every
@@ -71,14 +74,15 @@ internal data class MediaVolumeReading(val output: MediaOutput, val percent: Int
  * Bluetooth device's address is never touched, let alone shown or logged.
  */
 internal fun readMediaVolume(audioManager: AudioManager?): MediaVolumeReading {
-    if (audioManager == null) return MediaVolumeReading(MediaOutput.SPEAKER, 0)
-    val percent = mediaVolumePercent(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC))
+    if (audioManager == null) return MediaVolumeReading(MediaOutput.SPEAKER, 0, 0)
+    val maxStep = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    val percent = mediaVolumePercent(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), maxStep)
     val deviceTypes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         audioManager.getAudioDevicesForAttributes(MEDIA_PLAYBACK_ATTRIBUTES).map { it.type }
     } else {
         audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type }
     }
-    return MediaVolumeReading(mediaOutputFor(deviceTypes), percent)
+    return MediaVolumeReading(mediaOutputFor(deviceTypes), percent, maxStep)
 }
 
 /**

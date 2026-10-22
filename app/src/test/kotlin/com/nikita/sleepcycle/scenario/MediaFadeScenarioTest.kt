@@ -201,7 +201,7 @@ class MediaFadeScenarioTest {
         assertEquals("the first fade starts at the 25% the night started with", startStep, volume)
 
         // Starting volume raised to 40% (step 6 of 15) while that fade runs; then asleep, which parks it.
-        changeBedtimeAudio { it.copy(fadeStartPercent = 40) }
+        changeBedtimeAudio { it.copy(phoneSpeakerVolumes = it.phoneSpeakerVolumes.copy(startPercent = 40)) }
         markAsleep(now.minus(Duration.ofMinutes(30)))
         runImmediateTick(context)
         assertTrue(nightLog().contains("\"media_fade_parked\""))
@@ -213,7 +213,7 @@ class MediaFadeScenarioTest {
 
         // Ending volume raised to 20% (step 3) while this fade runs: its floor moves at its next step. Step 6 to
         // the old floor 1 would take 25 minutes; at 21 minutes it already sits at the new floor 3.
-        changeBedtimeAudio { it.copy(fadeEndPercent = 20) }
+        changeBedtimeAudio { it.copy(phoneSpeakerVolumes = it.phoneSpeakerVolumes.copy(endPercent = 20)) }
         AppClock.setWarp(ClockWarp(1, Instant.now(), fadeStartedAt.plus(Duration.ofMinutes(21))))
         runImmediateTick(context)
         assertEquals("the running fade stops at the new ending volume", 3, volume)

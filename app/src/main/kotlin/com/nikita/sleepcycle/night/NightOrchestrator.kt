@@ -364,7 +364,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         watchingForSleepSince = state.startedAt.takeIf { sleepState == SleepState.NOT_YET_ASLEEP },
         autoSpeedAlarmAt = autoAlarmAt, autoSpeedFollowUpAt = followUpAt.takeIf { autoSpeedOn }, autoSpeedOn = autoSpeedOn,
         simulatedAwakeSettlesAt = simulatedAwakeSettlesAt(simulatedEvents, decisionNow, config.minAwakening),
-        fadeStepAt = mediaFadeNextStepAt(context, decisionNow, appSettings.bedtimeAudio.fadeEndPercent),
+        fadeStepAt = mediaFadeNextStepAt(context, decisionNow, appSettings.bedtimeAudio.volumesFor(readFadeOutput(context)).endPercent),
     )
     // FIX1: published from INSIDE this same lock - the one seam every committed tick's result now reaches
     // observedNightState through, whether it ran from NightService's own tick or an immediate UI-requested
@@ -385,10 +385,12 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
 private suspend fun stepMediaFadeForSleepState(context: Context, state: NightState, appSettings: AppSettings, sleepState: SleepState, now: Instant): Boolean {
     val debugNight = state.debugOptions.isAnyEnabled
     val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
-    val endPercent = appSettings.bedtimeAudio.fadeEndPercent
+    // Owner spec, 2026-10-22 (PER-135): the pair of the output media plays on now.
+    val volumes = appSettings.bedtimeAudio.volumesFor(readFadeOutput(context))
+    val endPercent = volumes.endPercent
     val fadeStarted = startWakeFadeIfDue(
         context, state.realStartedAt, now,
-        fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = appSettings.bedtimeAudio.fadeStartPercent,
+        fadeEnabled = shouldFadeMedia(appSettings.bedtimeAudio), startPercent = volumes.startPercent,
         morningAlarmRang = morningAlarmRang, debugNight = debugNight,
     )
     stepMediaFade(context, state.realStartedAt, now, endPercent = endPercent, morningAlarmRang = morningAlarmRang, debugNight = debugNight)

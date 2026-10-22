@@ -42,8 +42,12 @@ package com.nikita.sleepcycle.night
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.Build
 import android.util.Log
 import com.nikita.sleepcycle.engine.SleepState
+import com.nikita.sleepcycle.ui.components.MEDIA_PLAYBACK_ATTRIBUTES
+import com.nikita.sleepcycle.ui.state.fadeOutputFor
+import com.nikita.sleepcycle.ui.state.mediaOutputFor
 import java.io.File
 import java.time.Duration
 import java.time.Instant
@@ -312,6 +316,23 @@ fun mediaFadeNextStepAt(context: Context, now: Instant, endPercent: Int): Instan
     val record = readMediaFade(context)?.takeUnless { it.parked } ?: return null
     val maxStep = context.getSystemService(AudioManager::class.java)?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: return null
     return nextFadeStepAt(record.startStep, maxStep, record.startedAt, now, endPercent)
+}
+
+/**
+ * Which output's starting and ending volume apply now (owner spec, 2026-10-22, PER-135): the device media plays
+ * on, classified exactly as the live volume line does, so the pair Settings shows is the pair the fade uses. Only
+ * the device TYPE is read, never a Bluetooth address.
+ */
+fun readFadeOutput(context: Context): FadeOutput = fadeOutputFor(mediaOutputFor(readMediaDeviceTypes(context)))
+
+/** The AudioDeviceInfo types media plays on: the one device on Android 13+, every connected output before it. */
+internal fun readMediaDeviceTypes(context: Context): List<Int> {
+    val audioManager = context.getSystemService(AudioManager::class.java) ?: return emptyList()
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        audioManager.getAudioDevicesForAttributes(MEDIA_PLAYBACK_ATTRIBUTES).map { it.type }
+    } else {
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type }
+    }
 }
 
 private fun wakeFadeRearmFile(context: Context): File = File(context.filesDir, WAKE_FADE_REARM_FILE_NAME)

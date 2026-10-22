@@ -32,8 +32,14 @@ private val KEY_LAST_SETUP_CHECK_PASSED_AT = longPreferencesKey("last_setup_chec
 private val KEY_NUDGE_MINUTES = intPreferencesKey("nudge_minutes")
 private val KEY_NAP_MINUTES = intPreferencesKey("nap_minutes")
 private val KEY_FADE_ENABLED = booleanPreferencesKey("fade_enabled")
-private val KEY_FADE_START_PERCENT = intPreferencesKey("fade_start_percent")
-private val KEY_FADE_END_PERCENT = intPreferencesKey("fade_end_percent")
+/** The single starting and ending volume of builds before PER-135: read only, as both outputs' value until each is saved. */
+private val KEY_LEGACY_FADE_START_PERCENT = intPreferencesKey("fade_start_percent")
+private val KEY_LEGACY_FADE_END_PERCENT = intPreferencesKey("fade_end_percent")
+private val KEY_FADE_PHONE_START_PERCENT = intPreferencesKey("fade_phone_speaker_start_percent")
+private val KEY_FADE_PHONE_END_PERCENT = intPreferencesKey("fade_phone_speaker_end_percent")
+private val KEY_FADE_BLUETOOTH_START_PERCENT = intPreferencesKey("fade_bluetooth_start_percent")
+private val KEY_FADE_BLUETOOTH_END_PERCENT = intPreferencesKey("fade_bluetooth_end_percent")
+private val KEY_FADE_DURATION_MINUTES = intPreferencesKey("fade_duration_minutes")
 private val KEY_PAUSE_WHEN_ASLEEP = booleanPreferencesKey("pause_when_asleep")
 private val KEY_RATING_ENABLED = booleanPreferencesKey("rating_enabled")
 private val KEY_RATING_ASK_AGAIN_LATER = booleanPreferencesKey("rating_ask_again_later")
@@ -78,12 +84,24 @@ private fun readAfterAlarmSettings(preferences: Preferences): AfterAlarmSettings
     )
 }
 
-private fun readBedtimeAudioSettings(preferences: Preferences): BedtimeAudioSettings {
+/**
+ * Owner spec, 2026-10-22 (PER-135): each output's pair falls back to the single pair older builds stored, so both
+ * outputs start from the owner's existing choice. A percent outside its picker's range reads back at the range's
+ * end; snapping to the phone's own steps happens where the phone's step count is known ([snapFadeVolumePercent]).
+ */
+internal fun readBedtimeAudioSettings(preferences: Preferences): BedtimeAudioSettings {
     val defaults = BedtimeAudioSettings()
+    val legacyStart = preferences[KEY_LEGACY_FADE_START_PERCENT] ?: defaults.phoneSpeakerVolumes.startPercent
+    val legacyEnd = preferences[KEY_LEGACY_FADE_END_PERCENT] ?: defaults.phoneSpeakerVolumes.endPercent
+    fun volumes(startKey: Preferences.Key<Int>, endKey: Preferences.Key<Int>) = FadeVolumes(
+        startPercent = (preferences[startKey] ?: legacyStart).coerceIn(FadeVolumeKind.START.percentRange),
+        endPercent = (preferences[endKey] ?: legacyEnd).coerceIn(FadeVolumeKind.END.percentRange),
+    )
     return BedtimeAudioSettings(
         fadeEnabled = preferences[KEY_FADE_ENABLED] ?: defaults.fadeEnabled,
-        fadeStartPercent = clampSetting(SettingStepper.FADE_START_PERCENT, preferences[KEY_FADE_START_PERCENT] ?: defaults.fadeStartPercent),
-        fadeEndPercent = clampSetting(SettingStepper.FADE_END_PERCENT, preferences[KEY_FADE_END_PERCENT] ?: defaults.fadeEndPercent),
+        phoneSpeakerVolumes = volumes(KEY_FADE_PHONE_START_PERCENT, KEY_FADE_PHONE_END_PERCENT),
+        bluetoothVolumes = volumes(KEY_FADE_BLUETOOTH_START_PERCENT, KEY_FADE_BLUETOOTH_END_PERCENT),
+        fadeDurationMinutes = clampSetting(SettingStepper.FADE_DURATION_MINUTES, preferences[KEY_FADE_DURATION_MINUTES] ?: defaults.fadeDurationMinutes),
         pauseWhenAsleep = preferences[KEY_PAUSE_WHEN_ASLEEP] ?: defaults.pauseWhenAsleep,
     )
 }
@@ -116,8 +134,11 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         preferences[KEY_NUDGE_MINUTES] = settings.afterAlarm.nudgeMinutes
         preferences[KEY_NAP_MINUTES] = settings.afterAlarm.napMinutes
         preferences[KEY_FADE_ENABLED] = settings.bedtimeAudio.fadeEnabled
-        preferences[KEY_FADE_START_PERCENT] = settings.bedtimeAudio.fadeStartPercent
-        preferences[KEY_FADE_END_PERCENT] = settings.bedtimeAudio.fadeEndPercent
+        preferences[KEY_FADE_PHONE_START_PERCENT] = settings.bedtimeAudio.phoneSpeakerVolumes.startPercent
+        preferences[KEY_FADE_PHONE_END_PERCENT] = settings.bedtimeAudio.phoneSpeakerVolumes.endPercent
+        preferences[KEY_FADE_BLUETOOTH_START_PERCENT] = settings.bedtimeAudio.bluetoothVolumes.startPercent
+        preferences[KEY_FADE_BLUETOOTH_END_PERCENT] = settings.bedtimeAudio.bluetoothVolumes.endPercent
+        preferences[KEY_FADE_DURATION_MINUTES] = settings.bedtimeAudio.fadeDurationMinutes
         preferences[KEY_PAUSE_WHEN_ASLEEP] = settings.bedtimeAudio.pauseWhenAsleep
         preferences[KEY_RATING_ENABLED] = settings.sleepRating.enabled
         preferences[KEY_RATING_ASK_AGAIN_LATER] = settings.sleepRating.askAgainLater
