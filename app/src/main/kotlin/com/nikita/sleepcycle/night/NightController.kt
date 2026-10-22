@@ -38,9 +38,19 @@ import java.time.ZoneId
 
 private val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 private val nightStateFlow = MutableStateFlow<NightState?>(null)
+private val pendingFollowUpFlow = MutableStateFlow<PendingFollowUp?>(null)
 
 /** The current night state for the UI to observe; updated by every call in this file. */
 val observedNightState: StateFlow<NightState?> = nightStateFlow.asStateFlow()
+
+/**
+ * PER-127 (owner-reported, 2026-10-03): the pending follow-up record (OutOfBedNudgeStore.kt) as of the last
+ * [refreshNightStateFromDisk], read under the same lock as the state it is published with. A ring ending moves
+ * the nudge without changing [NightState] at all, so [observedNightState] cannot carry that news (a StateFlow
+ * drops an equal value); this one does. Only the refresh writes it: the Night screen's own ticker still re-reads
+ * the record for every other writer (Nap, I'm up, a tick's re-arm, the night ending).
+ */
+val observedPendingFollowUp: StateFlow<PendingFollowUp?> = pendingFollowUpFlow.asStateFlow()
 
 /**
  * Loads the persisted night state into [observedNightState] off the main thread; call when the UI (re)attaches,
@@ -50,11 +60,14 @@ val observedNightState: StateFlow<NightState?> = nightStateFlow.asStateFlow()
  * other publisher, so it can never publish a state some commit has since replaced. Opening the app runs this next
  * to an immediate tick; when that tick finished the night (cleared the state, published null), this refresh,
  * which had read the disk first, published the finished night again and the Night screen sat on it.
+ *
+ * PER-127: also publishes the pending follow-up record, see [observedPendingFollowUp].
  */
 fun refreshNightStateFromDisk(context: Context) {
     controllerScope.launch {
         withNightTransactionLock {
             nightStateFlow.value = withContext(Dispatchers.IO) { loadNightState(context) }
+            pendingFollowUpFlow.value = withContext(Dispatchers.IO) { readPendingFollowUp(context) }
         }
     }
 }

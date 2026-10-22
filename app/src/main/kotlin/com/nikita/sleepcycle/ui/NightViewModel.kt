@@ -30,6 +30,7 @@ import com.nikita.sleepcycle.night.UI_TICKER_INTERVAL_MS
 import com.nikita.sleepcycle.night.nowInstant
 import com.nikita.sleepcycle.night.uiTickerIntervalMillis
 import com.nikita.sleepcycle.night.observedNightState
+import com.nikita.sleepcycle.night.observedPendingFollowUp
 import com.nikita.sleepcycle.night.publishNightState
 import com.nikita.sleepcycle.night.readAppSettings
 import com.nikita.sleepcycle.night.PendingFollowUp
@@ -210,6 +211,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * `readPendingFollowUp`) on the 500 ms-floored ticker - at the debug screen's 600x speed that is two
      * blocking main-thread file reads a second, on every screen, not just the Night screen. P3: the record now
      * also says whether it is the nudge or the owner's own nap, which decides the label and the Nap button.
+     * PER-127: also re-read whenever `refreshNightStateFromDisk` publishes a changed record (a ring ending).
      */
     private val pendingFollowUp = MutableStateFlow<PendingFollowUp?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
@@ -458,6 +460,12 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 // "I'm up" for "Nap" in one step.
                 refreshPendingOutOfBedNudge()
             }
+        }
+        viewModelScope.launch {
+            // PER-127: a ring ending moves the nudge without changing the night state, so the collect above never
+            // sees it; the refresh publishes the record itself. Re-read rather than taking the published value,
+            // so this stays the one place that sets it from disk.
+            observedPendingFollowUp.collect { refreshPendingOutOfBedNudge() }
         }
     }
 
