@@ -43,7 +43,7 @@ A row whose switch above it is off stays visible, dimmed and inert. The fade nee
 
 ## Later rating notification
 
-At the "Ask at" time on the day the night ended, a notification: "Still feel the same about last night?" with "This morning you said Good." - or "How do you feel about last night?" when the morning rating was skipped. Three buttons, Good / Okay / Bad. Good rates without opening the app; Okay and Bad (owner spec, 2026-10-04) rate and open the app on that night's "How is your afternoon?" dialog, over whatever screen it opens on. Asked once per night; not asked when the night ended after that time or the time already passed.
+At the "Ask at" time on the day the night ended, a notification: "Still feel the same about last night?" with "This morning you said Good." - or "How do you feel about last night?" when the morning rating was skipped. Three buttons, Good / Okay / Bad. Good rates without opening the app; Okay and Bad (owner spec, 2026-10-04) rate and open the app on that night's "How is your afternoon?" dialog. Owner spec, 2026-10-21 (PER-124): Okay and Bad open that night's Past night screen with the dialog on top, prefilled with any ticks already given, and a tap on the notification itself opens that night's Past night without the dialog ("if I click good, it's fine, it just resolves it. But if I click anything else, it should open the log for me, so I can pick the symptoms there."). This holds whether the app was closed or already open on another screen. Back from that Past night goes to the Logs list, and Back again to Before bed (or the Night screen while a night runs), as from any Past night. Asked once per night; not asked when the night ended after that time or the time already passed.
 
 ## Alarm ring screen
 

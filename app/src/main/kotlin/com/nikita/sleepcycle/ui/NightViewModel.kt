@@ -53,7 +53,7 @@ import com.nikita.sleepcycle.night.recordSleepRating
 import com.nikita.sleepcycle.night.syncLaterRatingAsk
 import com.nikita.sleepcycle.night.PastNightLog
 import com.nikita.sleepcycle.night.RatingSymptom
-import com.nikita.sleepcycle.night.recordLaterRatingFromNotification
+import com.nikita.sleepcycle.night.handleLaterRatingNotificationTap
 import com.nikita.sleepcycle.night.recordRatingSymptoms
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
 import com.nikita.sleepcycle.ui.state.SymptomsDialogState
@@ -92,6 +92,7 @@ import com.nikita.sleepcycle.ui.state.PastNightUiState
 import com.nikita.sleepcycle.ui.state.PermissionStatus
 import com.nikita.sleepcycle.ui.state.Screen
 import com.nikita.sleepcycle.ui.state.UiState
+import com.nikita.sleepcycle.ui.state.buildNightLogSummary
 import com.nikita.sleepcycle.ui.state.buildPastNightUiState
 import com.nikita.sleepcycle.ui.state.buildSetupUiState
 import com.nikita.sleepcycle.ui.state.buildUiState
@@ -102,6 +103,7 @@ import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -255,8 +257,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(TICKER_INTERVAL_MS), UiState.initial())
 
+    /** The cold start's own choice of first screen; [openFromIntent] waits for it so a notification's screen is not overwritten. */
+    private val initialScreenResolution: Job
+
     init {
-        viewModelScope.launch { resolveInitialScreen() }
+        initialScreenResolution = viewModelScope.launch { resolveInitialScreen() }
         watchScreenVisibilityTicker()
         watchSleepLengthFallback()
         watchNightStateClearedWhileViewing()
@@ -427,17 +432,20 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Owner spec, 2026-10-04: the app opened from the later question's Okay or Bad button. Records that rating
-     * and opens that night's 15:00 dialog over whichever screen the app opens on. Any other intent (a plain
-     * launch) does nothing.
+     * Owner spec, 2026-10-04: the app opened from the later question's Okay or Bad button, which records that
+     * rating and opens that night's 15:00 dialog. Owner spec, 2026-10-21 (PER-124): it opens on that night's Past
+     * night screen with the dialog on top, and a tap on the notification itself opens that Past night without
+     * one. Back from there goes to the Logs list as usual. Any other intent (a plain launch) does nothing.
      */
     fun openFromIntent(intent: Intent) {
         viewModelScope.launch {
-            val (opened, parsed) = withContext(Dispatchers.IO) {
-                recordLaterRatingFromNotification(context, intent)?.let { it to readPastNightLog(it.logFile) }
+            val (tap, parsed) = withContext(Dispatchers.IO) {
+                handleLaterRatingNotificationTap(context, intent)?.let { it to readPastNightLog(it.logFile) }
             } ?: return@launch
-            showRatingsOf(opened.logFile, parsed)
-            openSymptomsDialog(opened.logFile, RatingMoment.LATER, parsed)
+            // A cold start works out its first screen at the same time; once that is done it cannot replace this one.
+            initialScreenResolution.join()
+            showPastNight(buildNightLogSummary(tap.logFile, parsed.ratings, currentZone()), parsed)
+            if (tap.rating != null) openSymptomsDialog(tap.logFile, RatingMoment.LATER, parsed)
         }
     }
 
@@ -566,11 +574,14 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** Reopens one saved night as its own summary screen. Reading and parsing the log is disk I/O, so it happens off the main thread before the screen switches. */
     fun openNightLog(log: NightLogSummary) {
         viewModelScope.launch {
-            val parsed = withContext(Dispatchers.IO) { readPastNightLog(log.file) }
-            openedPastNightRow = log
-            openedPastNight.value = buildPastNightUiState(log, parsed, currentZone())
-            screen.value = Screen.PastNight
+            showPastNight(log, withContext(Dispatchers.IO) { readPastNightLog(log.file) })
         }
+    }
+
+    private fun showPastNight(row: NightLogSummary, parsed: PastNightLog) {
+        openedPastNightRow = row
+        openedPastNight.value = buildPastNightUiState(row, parsed, currentZone())
+        screen.value = Screen.PastNight
     }
 
     fun closePastNight() {
