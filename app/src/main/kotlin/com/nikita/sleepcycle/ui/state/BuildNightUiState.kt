@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.state
 // status.
 
 import com.nikita.sleepcycle.engine.AlarmMode
+import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.PendingFollowUp
@@ -31,6 +32,8 @@ import java.time.ZoneId
  * (dropping it at a call site used to compile clean and leave all tests green), so a dropped argument is now a
  * compile error instead of something only a test can catch. See `BuildUiStateTest.kt`'s
  * `OutOfBedNudgeWiringTest` for the one test that pins the argument actually reaching the screen.
+ * [debugOptions] is the current effective debug options, the same ones the screen's simulation block is drawn
+ * from (not the night's own frozen snapshot), so the live volume line hides exactly when that block shows.
  */
 fun buildNightUiState(
     nightState: NightState?,
@@ -43,6 +46,7 @@ fun buildNightUiState(
     endingNight: Boolean = false,
     pendingFollowUp: PendingFollowUp?,
     confirmingImUp: Boolean = false,
+    debugOptions: DebugOptions = DebugOptions(),
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
@@ -80,6 +84,7 @@ fun buildNightUiState(
             activeDebugSwitches = debugSwitches,
             simulatedTimeValue = simulatedTimeValue,
             bandNotSyncingWarning = bandNotSyncingWarning,
+            showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
         )
     }
 
@@ -105,6 +110,7 @@ fun buildNightUiState(
         showImUpButton = showImUp,
         confirmingImUp = confirmingImUp,
         discardsNight = isShortNight(state.startedAt, now),
+        showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
     )
 }
 
