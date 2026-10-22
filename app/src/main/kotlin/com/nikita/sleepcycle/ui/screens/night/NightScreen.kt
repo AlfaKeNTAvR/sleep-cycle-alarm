@@ -155,27 +155,50 @@ fun NightScreen(
 
     // Item 1: never shown while ending, even if a stray onRequestEndNight slipped through - the confirmation
     // dialog must not be re-openable while ending.
+    // Owner spec, 2026-10-21 (PER-126): under 1 h after Start night, confirming either button discards the night,
+    // so both ask the same discard question instead of their usual one.
     if (state.confirmingImUp && !state.endingNight) {
-        ConfirmDialog(
-            title = stringResource(R.string.night_confirm_im_up_early_title),
-            message = null,
-            confirmText = stringResource(R.string.night_im_up),
-            dismissText = stringResource(R.string.action_cancel),
-            onConfirm = onConfirmImUp,
-            onDismiss = onCancelImUp,
-        )
+        if (state.discardsNight) {
+            DiscardNightDialog(onConfirm = onConfirmImUp, onDismiss = onCancelImUp)
+        } else {
+            ConfirmDialog(
+                title = stringResource(R.string.night_confirm_im_up_early_title),
+                message = null,
+                confirmText = stringResource(R.string.night_im_up),
+                dismissText = stringResource(R.string.action_cancel),
+                onConfirm = onConfirmImUp,
+                onDismiss = onCancelImUp,
+            )
+        }
     }
     if (state.confirmingEndNight && !state.endingNight) {
-        // Owner request, 2026-10-02: the title alone, centred, no explanation underneath.
-        ConfirmDialog(
-            title = stringResource(R.string.night_confirm_end_title),
-            message = null,
-            confirmText = stringResource(R.string.night_end_night),
-            dismissText = stringResource(R.string.action_cancel),
-            onConfirm = onConfirmEndNight,
-            onDismiss = onCancelEndNight,
-        )
+        if (state.discardsNight) {
+            DiscardNightDialog(onConfirm = onConfirmEndNight, onDismiss = onCancelEndNight)
+        } else {
+            // Owner request, 2026-10-02: the title alone, centred, no explanation underneath.
+            ConfirmDialog(
+                title = stringResource(R.string.night_confirm_end_title),
+                message = null,
+                confirmText = stringResource(R.string.night_end_night),
+                dismissText = stringResource(R.string.action_cancel),
+                onConfirm = onConfirmEndNight,
+                onDismiss = onCancelEndNight,
+            )
+        }
     }
+}
+
+/** Owner spec, 2026-10-21 (PER-126): End night or I'm up under 1 h after Start night - the night will be discarded, not saved. */
+@Composable
+private fun DiscardNightDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ConfirmDialog(
+        title = stringResource(R.string.night_confirm_discard_title),
+        message = stringResource(R.string.night_confirm_discard_message),
+        confirmText = stringResource(R.string.night_discard),
+        dismissText = stringResource(R.string.action_cancel),
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    )
 }
 
 /** P1: the "band not syncing" warning - the alarm is still armed, but it is only the engine's estimate. */
