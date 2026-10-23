@@ -163,8 +163,11 @@ private fun nightLogsDir(context: Context): File = File(context.filesDir, NIGHT_
 private fun setupLogFile(context: Context): File = File(nightLogsDir(context), SETUP_LOG_FILE_NAME)
 
 /** [debugNight] picks between the real-night and the simulated-night file name prefix (see [NIGHT_LOG_SIMULATED_PREFIX]). [startedAt] is the night's real start (NightState.realStartedAt, owner request, 2026-10-03). */
-internal fun nightLogFile(context: Context, startedAt: Instant, debugNight: Boolean): File {
+internal fun nightLogFile(context: Context, startedAt: Instant, debugNight: Boolean): File =
+    File(nightLogsDir(context), nightLogFileName(startedAt, debugNight, ZoneId.systemDefault()))
+
+/** The name [nightLogFile] gives the log of a night started at [startedAt] in [zone]. Pure, so the Logs list can tell the running night's log apart (PER-148). */
+fun nightLogFileName(startedAt: Instant, debugNight: Boolean, zone: ZoneId): String {
     val prefix = if (debugNight) NIGHT_LOG_SIMULATED_PREFIX else NIGHT_LOG_REAL_PREFIX
-    val name = "$prefix${LOG_FILE_NAME_FORMAT.withZone(ZoneId.systemDefault()).format(startedAt)}.jsonl"
-    return File(nightLogsDir(context), name)
+    return "$prefix${LOG_FILE_NAME_FORMAT.withZone(zone).format(startedAt)}.jsonl"
 }

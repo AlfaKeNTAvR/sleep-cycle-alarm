@@ -16,9 +16,13 @@ private const val BYTES_PER_KILOBYTE = 1024.0
 private const val BYTES_PER_MEGABYTE = BYTES_PER_KILOBYTE * 1024.0
 private val LOG_DISPLAY_NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.US)
 
-/** Builds the Logs screen's state, newest first. [ratings] is each file's night ratings, read by the caller (absent or null: none). */
-fun buildLogsUiState(logFiles: List<File>, ratings: Map<File, NightRatings?>, zone: ZoneId): LogsUiState =
-    LogsUiState(logFiles.map { buildNightLogSummary(it, ratings[it], zone) })
+/**
+ * Builds the Logs screen's state, newest first. [ratings] is each file's night ratings, read by the caller (absent
+ * or null: none). Owner spec, 2026-10-23 (PER-148): History opens from the Night screen too and lists past nights
+ * only, so the log of the night still running ([runningNightLogName], null with none) is left out until End night.
+ */
+fun buildLogsUiState(logFiles: List<File>, ratings: Map<File, NightRatings?>, zone: ZoneId, runningNightLogName: String?): LogsUiState =
+    LogsUiState(logFiles.filter { it.name != runningNightLogName }.map { buildNightLogSummary(it, ratings[it], zone) })
 
 /** One Logs row for [file]. Also what a night opened straight from the 15:00 notification uses, never having passed through the list. */
 fun buildNightLogSummary(file: File, ratings: NightRatings?, zone: ZoneId): NightLogSummary = NightLogSummary(

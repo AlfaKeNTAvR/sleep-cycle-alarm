@@ -101,7 +101,6 @@ fun startNight(
     settings: NightSettings,
     now: Instant,
     afterAlarm: AfterAlarmSettings,
-    bedtimeAudio: BedtimeAudioSettings,
     debugOptions: DebugOptions = DebugOptions(),
 ) {
     clearMorningReport(context)
@@ -176,10 +175,11 @@ fun startNight(
                 debugOptions.isAnyEnabled
             )
             logAlarmReadiness(context, realStartedAt, now, debugOptions.isAnyEnabled)
-            // Fade off in Settings (or the pause it leads into is off): still finish a fade left over from a night that never ended cleanly, so its volume comes back.
-            // Armed, not started: the fade begins on the first tick that sees media playing (MediaFade.kt).
-            if (shouldFadeMedia(bedtimeAudio)) armMediaFade(context, realStartedAt, now, debugOptions.isAnyEnabled)
-            else endMediaFade(context, realStartedAt, now, debugOptions.isAnyEnabled)
+            // Armed, not started: the fade begins on the first tick that sees media playing (MediaFade.kt). Armed
+            // even with the fade off in Settings: PER-148 (owner spec, 2026-10-23) honors fade on or off at each
+            // fade start (startWakeFadeIfDue), so switching it on mid-night fades the next playback. Arming also
+            // finishes a fade left over from a night that never ended cleanly, so its volume comes back.
+            armMediaFade(context, realStartedAt, now, debugOptions.isAnyEnabled)
             // The new night is now the newest log and has not ended: drops a later rating question still armed for the last one.
             syncLaterRatingAsk(context)
         }
@@ -577,5 +577,29 @@ private suspend fun logNightClosingSummary(context: Context, state: NightState, 
         context, state.realStartedAt,
         NightLogEvent(now, "night_summary", encodeNightClosingSummaryFields(summary)),
         state.debugOptions.isAnyEnabled
+    )
+}
+
+/**
+ * Owner spec, 2026-10-23 (PER-148): Settings opens from the Night screen, so the nap length and the out-of-bed
+ * nudge delay changed there apply to the running night from their next use - the next nap or nudge armed. A
+ * follow-up already armed keeps its own instant (PendingFollowUp.at), and the morning alarm depends on neither.
+ * Under the night lock, so a tick in flight cannot save its older copy of the state over this one. No night, or
+ * nothing changed: nothing to do.
+ */
+suspend fun applyAfterAlarmSettingsToNight(context: Context, afterAlarm: AfterAlarmSettings, now: Instant) = withNightTransactionLock {
+    val state = loadNightState(context) ?: return@withNightTransactionLock
+    if (state.afterAlarm == afterAlarm) return@withNightTransactionLock
+    val updated = state.copy(afterAlarm = afterAlarm)
+    val debugNight = state.debugOptions.isAnyEnabled
+    if (!saveNightState(context, updated)) {
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to save the changed after-alarm settings")), debugNight)
+        return@withNightTransactionLock
+    }
+    publishNightState(updated)
+    appendNightLog(
+        context, state.realStartedAt,
+        NightLogEvent(now, "after_alarm_settings_changed", mapOf("nudgeMinutes" to afterAlarm.nudgeMinutes.toString(), "napMinutes" to afterAlarm.napMinutes.toString())),
+        debugNight
     )
 }

@@ -28,6 +28,7 @@ private fun state(
     confirmingEndNight: Boolean = false,
     endingNight: Boolean = false,
     pendingOutOfBedNudgeAt: String? = null,
+    nightLogFiles: List<java.io.File> = emptyList(),
 ): UiState = buildUiState(
     appSettings = appSettings,
     nightState = nightState,
@@ -38,7 +39,7 @@ private fun state(
     gadgetbridgeInstalled = gadgetbridgeInstalled,
     screen = screen,
     connectionTest = ConnectionTestState.Idle,
-    nightLogFiles = emptyList(),
+    nightLogFiles = nightLogFiles,
     nightLogRatings = emptyMap(),
     confirmingEndNight = confirmingEndNight,
     showingMorningReport = showingMorningReport,
@@ -289,5 +290,22 @@ class OutOfBedNudgeWiringTest {
         check(content is NightScreenContent.NextAlarm) { "expected a live night, got $content" }
         assertEquals(AlarmLabel.OUT_OF_BED, content.modeLabel)
         assertEquals("07:15", content.alarmTimeLabel)
+    }
+}
+
+// PER-148: History opens from the Night screen mid-night, and lists past nights only.
+class LogsWithNightRunningTest {
+    private val past = java.io.File("night-20260916-2340.jsonl")
+    // testNightState starts at 2026-09-17T00:00 in testZone, the zone buildUiState is given.
+    private val tonight = java.io.File("night-20260917-0000.jsonl")
+
+    @Test fun `the running night's log is not listed`() {
+        val result = state(nightState = testNightState(), screen = Screen.Logs, nightLogFiles = listOf(tonight, past))
+        assertEquals(listOf(past), result.logs.logs.map { it.file })
+    }
+
+    @Test fun `tonight is listed once the night has ended`() {
+        val result = state(nightState = null, screen = Screen.Logs, nightLogFiles = listOf(tonight, past))
+        assertEquals(listOf(tonight, past), result.logs.logs.map { it.file })
     }
 }

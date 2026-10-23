@@ -11,7 +11,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.night.AfterAlarmSettings
-import com.nikita.sleepcycle.night.BedtimeAudioSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.SimulatedSleepEventKind
 import com.nikita.sleepcycle.night.appendSimulatedSleepEvent
@@ -41,7 +40,7 @@ class SimulatedAwakeningScenarioTest {
         val now = Instant.now()
         startNight(
             context, NightSettings(deadline = null, pickedCycles = 5), now.minus(Duration.ofMinutes(31)),
-            AfterAlarmSettings(), BedtimeAudioSettings(), DebugOptions(simulatedBandData = true),
+            AfterAlarmSettings(), DebugOptions(simulatedBandData = true),
         )
         withTimeout(10_000) { while (loadNightState(context) == null) delay(20) }
 

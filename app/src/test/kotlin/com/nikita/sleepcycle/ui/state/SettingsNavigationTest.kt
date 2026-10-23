@@ -25,11 +25,18 @@ class SettingsGroupsTest {
 class CloseToNightOrBeforeBedTest {
     @Test
     fun `lands on Before bed with no night running`() {
-        assertEquals(Screen.BeforeBed, closeToNightOrBeforeBed(nightActive = false))
+        assertEquals(Screen.BeforeBed, closeToNightOrBeforeBed(nightActive = false, showingMorningReport = false))
     }
 
     @Test
     fun `lands on Night instead when one is running behind the screen being closed`() {
-        assertEquals(Screen.Night, closeToNightOrBeforeBed(nightActive = true))
+        assertEquals(Screen.Night, closeToNightOrBeforeBed(nightActive = true, showingMorningReport = false))
+    }
+
+    // PER-148: Settings and History open from every Night screen state, the morning report included, where the
+    // night has already ended - back still returns to it.
+    @Test
+    fun `lands on Night while the morning report is showing, though the night itself has ended`() {
+        assertEquals(Screen.Night, closeToNightOrBeforeBed(nightActive = false, showingMorningReport = true))
     }
 }

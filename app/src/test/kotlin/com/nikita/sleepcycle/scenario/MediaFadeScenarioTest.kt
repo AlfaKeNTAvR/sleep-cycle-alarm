@@ -147,7 +147,7 @@ class MediaFadeScenarioTest {
     private fun startSimulatedNight(startedAt: Instant, deadline: Instant? = null) = runBlocking {
         startNight(
             context, NightSettings(deadline = deadline, pickedCycles = 5), startedAt,
-            AfterAlarmSettings(), BedtimeAudioSettings(), DebugOptions(simulatedBandData = true),
+            AfterAlarmSettings(), DebugOptions(simulatedBandData = true),
         )
         withTimeout(10_000) { while (loadNightState(context) == null) delay(20) }
     }
@@ -508,5 +508,24 @@ class MediaFadeScenarioTest {
 
         changeBedtimeAudio { BedtimeAudioSettings() }
         endNight(context, nowInstant())
+    }
+
+    // PER-148: Settings opens from the Night screen, so fade on or off is honored at the next fade start rather
+    // than decided once at Start night.
+    @Test
+    fun `a fade switched off at Start night and on mid-night fades the next playback`() = runBlocking<Unit> {
+        changeBedtimeAudio { it.copy(fadeEnabled = false) }
+        startSimulatedNight(Instant.now().minus(Duration.ofMinutes(5)))
+        setVolume(10)
+        play()
+        assertFalse("fade off: playing starts no fade", runMediaFadeCheck(context))
+        assertEquals(10, volume)
+
+        changeBedtimeAudio { it.copy(fadeEnabled = true) }
+        assertTrue("switched on mid-night: the next check starts a fade", runMediaFadeCheck(context))
+        assertEquals(startStep, volume)
+
+        endNight(context, nowInstant())
+        assertEquals("End night puts the night's own volume back", 10, volume)
     }
 }

@@ -10,6 +10,7 @@ import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.PendingFollowUp
+import com.nikita.sleepcycle.night.nightLogFileName
 import com.nikita.sleepcycle.night.SimulatedSleepEvent
 import java.io.File
 import java.time.Instant
@@ -55,7 +56,10 @@ fun buildUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart, connectionTest
         ),
         night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp, debugOptions),
-        logs = buildLogsUiState(nightLogFiles, nightLogRatings, zone),
+        logs = buildLogsUiState(
+            nightLogFiles, nightLogRatings, zone,
+            runningNightLogName = nightState?.let { nightLogFileName(it.realStartedAt, it.debugOptions.isAnyEnabled, zone) },
+        ),
         debug = buildDebugUiState(debugOptions, simulatedSleepEvents, nightActive),
         errorMessage = errorMessage,
     )

@@ -9,7 +9,6 @@ import androidx.test.core.app.ApplicationProvider
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.night.AfterAlarmSettings
 import com.nikita.sleepcycle.night.AppClock
-import com.nikita.sleepcycle.night.BedtimeAudioSettings
 import com.nikita.sleepcycle.night.ClockWarp
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.cancelTick
@@ -47,7 +46,7 @@ class SimulatedNightLogNameScenarioTest {
         DateTimeFormatter.ofPattern("yyyyMMdd-HHmm").withZone(ZoneId.systemDefault()).format(at)
 
     private fun runNight(startedAt: Instant, debugOptions: DebugOptions) = runBlocking {
-        startNight(context, NightSettings(deadline = null, pickedCycles = 5), startedAt, AfterAlarmSettings(), BedtimeAudioSettings(), debugOptions)
+        startNight(context, NightSettings(deadline = null, pickedCycles = 5), startedAt, AfterAlarmSettings(), debugOptions)
         withTimeout(10_000) { while (loadNightState(context) == null) delay(20) }
         endNight(context, nowInstant())
     }
