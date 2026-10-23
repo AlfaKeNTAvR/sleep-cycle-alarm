@@ -26,12 +26,23 @@ Run: PER-148 (Settings and History on the Night screen), PER-149 (One more cycle
 - "No alarm" is a fifth equal-width chip in the same row; its label may wrap on a narrow screen.
 - Log: noAlarm=true on night_start and night_end; plan events have mode NO_ALARM and an empty wakeAt.
 
+### PER-151 Are you up? ask (branch nikita/feat/are-you-up-ask)
+- Checked on each tick: No-alarm night, before I'm up, 6 h asleep in total, and a band awakening of 15+ min.
+- Notification channel is default importance with sound, vibration and light off, not low importance: Pixel hides low-importance (silent) notifications from the lock screen by default.
+- I'm up on the banner skips the usual confirmation dialog, since it answers the app's own question.
+- A dismissed ask, or one found missing after a reboot, is posted again. Ending the night removes it.
+- Still sleeping asks again only after the band shows sleep and then a new 15+ min awakening.
+- Log: are_you_up_asked, are_you_up_reposted, are_you_up_answered.
+
 ### Merging
 - Two docs/app-spec.md conflicts (the Night and Past night paragraphs) were resolved by keeping every ticket's addition. 994 tests green after all three merges.
 
 ## Open questions for the owner
 - PER-150: Past night reads "Picked: No alarm". Good wording?
 - PER-150: is the 5-chip row readable on the Pixel, or should No alarm get its own line?
+- PER-151: on the Pixel, does the ask show on the lock screen and stay silent?
+- PER-151: the ask can come up to about 15 min after the awakening reaches 15 min (normal tick). Book an extra tick at the 15 min mark?
+- PER-151: if band data stops updating, the awakening length is measured from the band data, not the clock. Acceptable?
 - PER-148: should a mid-night nap length change also leave an already armed engine nap (the rare in-between-cycles nap before the morning alarm) untouched? Today it moves it.
 - PER-149: ring headline "One more cycle" or "One more cycle alarm" (the nap rings as "Nap alarm")?
 - PER-149: should One more cycle be the filled (main) button instead of Nap?
