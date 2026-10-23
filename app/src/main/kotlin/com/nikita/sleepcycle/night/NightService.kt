@@ -106,7 +106,7 @@ class NightService : Service() {
             stopTracking(startId)
             return
         }
-        updateNotification(this, newState.lastPlan?.wakeAt, newState.debugOptions)
+        updateNotification(this, newState.lastPlan?.wakeAt, newState.settings.noAlarm, newState.debugOptions)
         if (newState.lastPlan?.mode == AlarmMode.FINISHED) {
             // G1 SUPERSEDES F7: FINISHED ends the night's own bookkeeping - clears the persisted state, stops
             // this service - but deliberately leaves a ringing alarm and an already-armed out-of-bed nudge
@@ -204,9 +204,10 @@ private fun openAppIntent(context: Context): PendingIntent =
 private fun buildNotification(
     context: Context,
     plannedWake: Instant?,
+    noAlarm: Boolean = false,
     debugOptions: DebugOptions = DebugOptions(),
 ): Notification {
-    val wakeLine = plannedWakeLine(plannedWake)
+    val wakeLine = plannedWakeLine(plannedWake, noAlarm)
     return NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
         .setContentTitle("Tracking your sleep")
         .setContentText(debugBannerPrefix(context, debugOptions) + wakeLine)
@@ -222,8 +223,12 @@ private fun buildNotification(
  * (ISSUES.md #15, 2026-10-03): the zone used to be captured at class load, so after a time zone change mid-night
  * the notification showed the old zone's time until the process restarted.
  */
-internal fun plannedWakeLine(plannedWake: Instant?): String =
-    plannedWake?.let { "Planned wake time: ${NOTIFICATION_TIME_FORMAT.withZone(ZoneId.systemDefault()).format(it)}" } ?: "Waiting for first sync"
+internal fun plannedWakeLine(plannedWake: Instant?, noAlarm: Boolean = false): String = when {
+    // PER-150: a No-alarm night never has a planned wake time, so it must not read as waiting for one.
+    noAlarm -> "No alarm. Tracking your sleep."
+    plannedWake != null -> "Planned wake time: ${NOTIFICATION_TIME_FORMAT.withZone(ZoneId.systemDefault()).format(plannedWake)}"
+    else -> "Waiting for first sync"
+}
 
 /**
  * T12: SIMULATED_TIME's own notification label carries the live clock reading, so the tracking notification
@@ -250,8 +255,9 @@ private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): Str
 private fun updateNotification(
     context: Context,
     plannedWake: Instant?,
+    noAlarm: Boolean = false,
     debugOptions: DebugOptions = DebugOptions(),
 ) {
     val manager = context.getSystemService<NotificationManager>() ?: return
-    manager.notify(NOTIFICATION_ID, buildNotification(context, plannedWake, debugOptions))
+    manager.notify(NOTIFICATION_ID, buildNotification(context, plannedWake, noAlarm, debugOptions))
 }

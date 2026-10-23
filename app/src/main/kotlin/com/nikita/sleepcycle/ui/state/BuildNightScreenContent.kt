@@ -144,7 +144,9 @@ internal fun alarmModeLabel(plan: AlarmPlan, morningAlarmAt: Instant?): AlarmLab
  * genuinely ended, which cancels the nudge, and Loading has no alarm to talk about yet.
  */
 internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingFollowUp: PendingFollowUp?, planWakeAt: Instant?, now: Instant, zone: ZoneId): NightScreenContent {
-    if (content !is NightScreenContent.NextAlarm && content !is NightScreenContent.NightFinished) return content
+    // PER-150: a No-alarm night's own screen gives way to the nudge (or the owner's nap) the same way.
+    val overridable = content is NightScreenContent.NextAlarm || content is NightScreenContent.NightFinished || content is NightScreenContent.NoAlarm
+    if (!overridable) return content
     val pendingOutOfBedNudgeAt = pendingFollowUp?.at
     if (pendingOutOfBedNudgeAt == null || !pendingOutOfBedNudgeAt.isAfter(now)) return content
     val nudgeRingsFirst = planWakeAt == null || planWakeAt.isAfter(pendingOutOfBedNudgeAt)

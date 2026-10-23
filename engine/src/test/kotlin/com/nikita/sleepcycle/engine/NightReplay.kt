@@ -527,7 +527,7 @@ internal class NightReplay(
     /** NightOrchestrator.latchMorningAlarmAt: only a FULL_CYCLES or DEADLINE_ONLY plan sets the night's morning alarm time, and a null wakeAt never erases it (H8). */
     private fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? = when (plan.mode) {
         AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> plan.wakeAt ?: previous
-        AlarmMode.NAP, AlarmMode.FINISHED -> previous
+        AlarmMode.NAP, AlarmMode.FINISHED, AlarmMode.NO_ALARM -> previous
     }
 
     /** BandDataSimulator.buildSimulatedSegments: each mark opens a segment that runs to the next mark, or to [now] for the most recent one. */

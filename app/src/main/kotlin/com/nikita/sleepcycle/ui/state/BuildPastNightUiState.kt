@@ -26,8 +26,9 @@ fun buildPastNightUiState(row: NightLogSummary, log: PastNightLog, zone: ZoneId)
     isSimulated = row.isSimulated,
     report = toMorningReport(log, zone),
     deadlineTimeLabel = log.deadline?.let { formatClockTime(it, zone) },
-    pickedLengthLabel = log.pickedCycles?.let { pickedLengthLabel(it) },
+    pickedLengthLabel = log.pickedCycles?.takeUnless { log.noAlarm }?.let { pickedLengthLabel(it) },
     recordedStretchCount = (log.summary as? PastNightSummary.TotalOnly)?.stretchCount,
+    noAlarm = log.noAlarm,
     ratings = log.ratings?.let { PastNightRatings(toRatingRow(it.afterEndNight, zone), toRatingRow(it.later, zone)) },
 )
 

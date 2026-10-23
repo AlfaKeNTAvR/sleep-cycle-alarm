@@ -54,6 +54,7 @@ fun BeforeBedScreen(
     onDeadlineEnabledChange: (Boolean) -> Unit,
     onDeadlineTimeChange: (LocalTime) -> Unit,
     onSleepLengthPicked: (Int) -> Unit,
+    onNoAlarmPicked: () -> Unit,
     onStartNight: () -> Unit,
     onConfirmDebugNightStart: () -> Unit = {},
     onCancelDebugNightStart: () -> Unit = {},
@@ -108,6 +109,15 @@ fun BeforeBedScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                // PER-150: a No-alarm night, after the cycle chips. Always available: it needs no deadline to fit.
+                SleepLengthChip(
+                    label = stringResource(R.string.sleep_length_no_alarm),
+                    selected = state.noAlarmSelected,
+                    available = true,
+                    onClick = onNoAlarmPicked,
+                    contentDescription = stringResource(R.string.content_description_sleep_length_no_alarm),
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
 

@@ -38,4 +38,5 @@ internal fun validateSettings(settings: NightSettings, config: EngineConfig) {
     require(settings.pickedCycles in config.allowedCycleCounts) {
         "pickedCycles must be one of ${config.allowedCycleCounts}"
     }
+    require(!settings.noAlarm || settings.deadline == null) { "a No-alarm night cannot have a deadline" }
 }

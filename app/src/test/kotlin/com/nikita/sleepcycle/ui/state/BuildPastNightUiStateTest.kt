@@ -222,6 +222,15 @@ class BuildPastNightUiStateTest {
     }
 
     @Test
+    fun `PER-150 a No-alarm night says so instead of naming a picked length`() {
+        val state = buildPastNightUiState(row(), log(detailed, deadline = null).copy(noAlarm = true), TEST_ZONE)
+
+        assertTrue(state.noAlarm)
+        assertNull(state.pickedLengthLabel)
+        assertNull(state.deadlineTimeLabel)
+    }
+
+    @Test
     fun `a rateable night not rated yet still offers both ratings, empty`() {
         val state = buildPastNightUiState(row(), log(detailed).copy(ratings = NightRatings(null, null, false)), TEST_ZONE)
 

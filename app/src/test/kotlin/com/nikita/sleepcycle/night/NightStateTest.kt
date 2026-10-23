@@ -82,6 +82,22 @@ class NightStateTest {
     }
 
     @Test
+    fun `PER-150 a No-alarm night and its plan survive a save and reload`() {
+        val plan = AlarmPlan(AlarmMode.NO_ALARM, null, 0, Instant.parse("2026-09-16T21:30:00Z"), false, "No-alarm night, no alarm.")
+        val state = baseState().copy(settings = NightSettings(deadline = null, pickedCycles = 5, noAlarm = true), lastPlan = plan)
+
+        assertEquals(state, decodeNightState(encodeNightState(state)))
+    }
+
+    @Test
+    fun `PER-150 a night saved before No-alarm nights existed reads back as a normal night`() {
+        val json = fullStateJson()
+        json.getJSONObject("settings").remove("noAlarm")
+
+        assertEquals(false, decodeNightState(json.toString()).settings.noAlarm)
+    }
+
+    @Test
     fun `round trips debug options`() {
         val warp = ClockWarp(60, Instant.parse("2026-09-17T20:00:00Z"), Instant.parse("2026-09-17T20:00:00Z"))
         val state = baseState().copy(debugOptions = DebugOptions(simulatedBandData = true, warp = warp))

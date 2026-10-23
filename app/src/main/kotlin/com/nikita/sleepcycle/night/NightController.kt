@@ -168,6 +168,8 @@ fun startNight(
                     mapOf(
                         "pickedCycles" to settings.pickedCycles.toString(),
                         "deadline" to (settings.deadline?.toString() ?: "none"),
+                        // PER-150: a No-alarm night arms no morning alarm; pickedCycles is then unused.
+                        "noAlarm" to settings.noAlarm.toString(),
                         "simulatedBandData" to debugOptions.simulatedBandData.toString(),
                         "speed" to debugOptions.speed.toString()
                     ) + nightStartTimezoneFields(now, zone) + nightStartRatingFields()

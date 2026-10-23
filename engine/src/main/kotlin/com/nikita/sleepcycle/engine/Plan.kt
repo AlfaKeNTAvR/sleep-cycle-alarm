@@ -69,6 +69,7 @@ fun computeAlarmPlan(
 
     // Step 2: the plan.
     val reference = findReferenceOnset(state, stretches, now, config)
+    if (settings.noAlarm) return noAlarmPlan(reference, stretches, state, zone)
     // Rule 2 as a night total: what is still owed once the sleep already had is subtracted, then capped by
     // what still fits before the deadline. `sleptSoFar` deliberately excludes the stretch the new alarm is
     // measured from, so that stretch is never subtracted twice.
@@ -95,6 +96,19 @@ fun computeAlarmPlan(
 
     val reason = describePlan(mode, reference, settings, cycles, wakeAt, zone, sleptSoFar)
     return AlarmPlan(mode, wakeAt, cycles, referenceOnset, onsetIsProjected, reason, sleptSoFar, owedCycles)
+}
+
+/**
+ * PER-150: a No-alarm night's plan. Rules 1-7 are skipped outright rather than taught a new case, so a normal
+ * night's path is untouched: nothing is armed (`wakeAt` null), no nap is ever offered, and the night never
+ * reaches FINISHED. The onset and the sleep had so far are still filled in, so the night log keeps tracking them.
+ */
+private fun noAlarmPlan(reference: ReferenceOnset, stretches: List<SleepStretch>, state: SleepState, zone: ZoneId): AlarmPlan {
+    val sleptSoFar = sumSleepAlreadyHad(stretches, state)
+    val onsetLabel = if (reference.projected) "estimated asleep at" else "asleep since"
+    val sleptText = if (sleptSoFar.isZero) "" else ", ${formatSleepDuration(sleptSoFar)} slept tonight"
+    val reason = "No-alarm night, $onsetLabel ${formatTime(reference.onset, zone)}$sleptText, no alarm."
+    return AlarmPlan(AlarmMode.NO_ALARM, null, 0, reference.onset, reference.projected, reason, sleptSoFar, owedCycles = 0)
 }
 
 private fun modeOf(rule: PlanRule): AlarmMode = when (rule) {
@@ -141,6 +155,8 @@ internal fun describePlan(
     val alarmText = wakeAt?.let { formatTime(it, zone) } ?: "none"
     val onsetLabel = if (reference.projected) "Estimated asleep at" else "Asleep since"
     return when (mode) {
+        // PER-150: noAlarmPlan writes its own reason and never comes here; listed so the `when` stays exhaustive.
+        AlarmMode.NO_ALARM -> "No-alarm night, no alarm."
         // Rule 1, or D5's nap cap with no deadline left to fall back on (F4: a cap spent with a deadline still
         // ahead is DEADLINE_ONLY, not FINISHED - so FINISHED with a deadline present can only mean the
         // deadline itself is what ended the night, never the cap). D3: band-detected wake no longer ends the

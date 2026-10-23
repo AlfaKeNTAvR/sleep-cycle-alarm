@@ -86,14 +86,16 @@ fun PastNightScreen(
                 )
             }
         }
-        if (state.deadlineTimeLabel != null || state.pickedLengthLabel != null) {
+        // PER-150: a No-alarm night shows "No alarm" where the picked length would be.
+        val pickedLengthValue = if (state.noAlarm) stringResource(R.string.sleep_length_no_alarm) else state.pickedLengthLabel
+        if (state.deadlineTimeLabel != null || pickedLengthValue != null) {
             SettingsCard {
                 if (state.deadlineTimeLabel != null) {
                     LabeledValueRow(label = stringResource(R.string.past_night_deadline), value = state.deadlineTimeLabel)
-                    if (state.pickedLengthLabel != null) CardDivider()
+                    if (pickedLengthValue != null) CardDivider()
                 }
-                if (state.pickedLengthLabel != null) {
-                    LabeledValueRow(label = stringResource(R.string.past_night_picked_length), value = state.pickedLengthLabel)
+                if (pickedLengthValue != null) {
+                    LabeledValueRow(label = stringResource(R.string.past_night_picked_length), value = pickedLengthValue)
                 }
             }
         }

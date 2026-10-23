@@ -78,6 +78,13 @@ sealed interface NightScreenContent {
         val noBandData: Boolean = false,
     ) : NightScreenContent
 
+    /**
+     * PER-150: a No-alarm night with nothing armed - "No alarm. Tracking your sleep." in place of an alarm time
+     * and countdown. Once I'm up arms the out-of-bed nudge (or Nap the owner's own nap), that alarm replaces this
+     * like on any night (see [applyPendingOutOfBedNudge]).
+     */
+    data object NoAlarm : NightScreenContent
+
     data object Loading : NightScreenContent
 }
 

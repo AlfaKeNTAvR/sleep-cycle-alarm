@@ -40,6 +40,30 @@ fun resolvePickedCycles(current: Int, now: Instant, deadline: Instant?, debugOpt
     }
 }
 
+/** PER-150: a cycle chip picked on Before bed; it replaces a picked "No alarm". */
+fun withSleepLengthPicked(settings: AppSettings, cycles: Int): AppSettings = settings.copy(pickedCycles = cycles, noAlarm = false)
+
+/** PER-150: "No alarm" picked on Before bed. It turns the "Wake me by" deadline off: a deadline is an alarm, so the two contradict each other. */
+fun withNoAlarmPicked(settings: AppSettings): AppSettings = settings.copy(noAlarm = true, deadlineEnabled = false)
+
+/**
+ * The "Wake me by" switch flipped on Before bed. PER-150: turning it on while "No alarm" is picked moves the
+ * selection back to the longest cycle chip that fits before the deadline (the longest of all when none does,
+ * the same answer [resolvePickedCycles] gives). Otherwise only the switch changes.
+ */
+fun withDeadlineSwitched(
+    settings: AppSettings,
+    enabled: Boolean,
+    now: Instant,
+    zone: ZoneId,
+    debugOptions: DebugOptions = DebugOptions(),
+): AppSettings {
+    val switched = settings.copy(deadlineEnabled = enabled)
+    if (!enabled || !settings.noAlarm) return switched
+    val deadline = deadlineInstantFor(switched, now, zone)
+    return switched.copy(noAlarm = false, pickedCycles = resolvePickedCycles(sleepLengthCycleOptions.max(), now, deadline, debugOptions))
+}
+
 /**
  * Builds the Before-bed screen's state. [nightActive] disables "Start night" outright regardless of the
  * checklist - a night must be ended before another can begin (D2). [debugOptions] is the currently effective
@@ -66,7 +90,7 @@ fun buildBeforeBedUiState(
         SleepLengthOption(
             cycles = cycles,
             hoursLabel = formatSleepLengthLabel(sleepLengthFor(cycles, debugOptions)),
-            selected = cycles == resolvedCycles,
+            selected = !appSettings.noAlarm && cycles == resolvedCycles,
             available = sleepLengthIsAvailable(cycles, now, deadline, debugOptions),
         )
     }
@@ -79,6 +103,7 @@ fun buildBeforeBedUiState(
         deadlineEnabled = appSettings.deadlineEnabled,
         deadlineTime = appSettings.lastDeadline ?: DEFAULT_DEADLINE_TIME,
         sleepLengthOptions = sleepLengthOptions,
+        noAlarmSelected = appSettings.noAlarm,
         startNightEnabled = gate.enabled && !nightActive,
         startNightBlocker = startNightBlocker(appSettings, permissionStatus, gadgetbridgeInstalled, debugOptions),
         startNightBlockedBySetupCheck = gate.blockedBySetupCheck,

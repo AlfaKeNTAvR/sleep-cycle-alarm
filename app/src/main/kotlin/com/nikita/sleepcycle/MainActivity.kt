@@ -129,6 +129,7 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
                         onDeadlineEnabledChange = viewModel::setDeadlineEnabled,
                         onDeadlineTimeChange = viewModel::setDeadlineTime,
                         onSleepLengthPicked = viewModel::setPickedCycles,
+                        onNoAlarmPicked = viewModel::pickNoAlarm,
                         onStartNight = viewModel::requestStartNight,
                         onConfirmDebugNightStart = viewModel::confirmDebugNightStart,
                         onCancelDebugNightStart = viewModel::cancelDebugNightStart,

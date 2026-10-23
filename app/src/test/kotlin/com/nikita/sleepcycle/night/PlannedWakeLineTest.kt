@@ -30,4 +30,9 @@ class PlannedWakeLineTest {
     fun `before the first sync there is no planned wake time yet`() {
         assertEquals("Waiting for first sync", plannedWakeLine(null))
     }
+
+    @Test
+    fun `PER-150 a No-alarm night names no wake time at all`() {
+        assertEquals("No alarm. Tracking your sleep.", plannedWakeLine(null, noAlarm = true))
+    }
 }
