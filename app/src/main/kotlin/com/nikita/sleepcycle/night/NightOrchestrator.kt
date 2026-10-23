@@ -449,7 +449,8 @@ internal fun latchMorningAlarmAt(previous: Instant?, plan: AlarmPlan): Instant? 
     // that must never ERASE the latch. Erasing it would take away the one fact rule 7's AWAKE branch has left
     // once a firing goes unrecorded, which is the whole reason H1 introduced this latch.
     AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> plan.wakeAt ?: previous
-    AlarmMode.NAP, AlarmMode.FINISHED -> previous
+    // PER-150: a No-alarm night has no morning alarm to latch.
+    AlarmMode.NAP, AlarmMode.FINISHED, AlarmMode.NO_ALARM -> previous
 }
 
 /**

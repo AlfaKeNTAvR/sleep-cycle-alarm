@@ -93,6 +93,7 @@ fun buildNightUiState(
     val rawContent = when (plan.mode) {
         AlarmMode.FINISHED -> buildFinishedContent(plan)
         AlarmMode.NAP, AlarmMode.FULL_CYCLES, AlarmMode.DEADLINE_ONLY -> buildNextAlarmContent(plan, zone, state.morningAlarmAt, now)
+        AlarmMode.NO_ALARM -> NightScreenContent.NoAlarm
     }
     // Round 2 of the 09/21 review, must-fix 1, extended by round 3's should-fix 1: see
     // applyPendingOutOfBedNudge's own doc for why the plan's own wakeAt (plan.wakeAt, not the FINISHED case's
@@ -119,6 +120,9 @@ fun buildNightUiState(
  * the morning alarm still ahead on a live night, or his own nap still ahead (even past a FINISHED deadline,
  * which L2 keeps running). Otherwise he is up: the nudge is ahead or the night is over, and the screen offers
  * Nap and End night instead.
+ *
+ * PER-150: a No-alarm night has no morning alarm, so "not rung yet" holds all night until I'm up is pressed
+ * (which records its press as that alarm's stop): I'm up is its main button all night.
  */
 private fun imUpOffered(state: NightState, mode: AlarmMode, pendingFollowUp: PendingFollowUp?, now: Instant): Boolean {
     val ownNapAhead = pendingFollowUp?.kind == FollowUpKind.NAP && pendingFollowUp.at.isAfter(now)

@@ -28,6 +28,7 @@ private val KEY_EXPORT_URI = stringPreferencesKey("export_uri")
 private val KEY_LAST_DEADLINE = stringPreferencesKey("last_deadline")
 private val KEY_DEADLINE_ENABLED = booleanPreferencesKey("deadline_enabled")
 private val KEY_PICKED_CYCLES = intPreferencesKey("picked_cycles")
+private val KEY_NO_ALARM = booleanPreferencesKey("no_alarm")
 private val KEY_LAST_SETUP_CHECK_PASSED_AT = longPreferencesKey("last_setup_check_passed_at_epoch_ms")
 private val KEY_NUDGE_MINUTES = intPreferencesKey("nudge_minutes")
 private val KEY_NAP_MINUTES = intPreferencesKey("nap_minutes")
@@ -52,6 +53,8 @@ data class AppSettings(
     val lastDeadline: LocalTime?,
     val deadlineEnabled: Boolean,
     val pickedCycles: Int,
+    /** PER-150: the "No alarm" chip is picked instead of a cycle chip; [pickedCycles] is kept for when a chip is picked again. */
+    val noAlarm: Boolean = false,
     val lastSetupCheckPassedAt: Instant?,
     /** The Settings screen's own choices (UserSettings.kt), each at its default until changed there. */
     val afterAlarm: AfterAlarmSettings = AfterAlarmSettings(),
@@ -68,6 +71,7 @@ fun readAppSettings(context: Context): Flow<AppSettings> =
             lastDeadline = preferences[KEY_LAST_DEADLINE]?.let(LocalTime::parse),
             deadlineEnabled = preferences[KEY_DEADLINE_ENABLED] ?: DEFAULT_DEADLINE_ENABLED,
             pickedCycles = preferences[KEY_PICKED_CYCLES] ?: DEFAULT_PICKED_CYCLES,
+            noAlarm = preferences[KEY_NO_ALARM] ?: false,
             lastSetupCheckPassedAt = preferences[KEY_LAST_SETUP_CHECK_PASSED_AT]?.let(Instant::ofEpochMilli),
             afterAlarm = readAfterAlarmSettings(preferences),
             bedtimeAudio = readBedtimeAudioSettings(preferences),
@@ -129,6 +133,7 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         settings.lastDeadline?.let { preferences[KEY_LAST_DEADLINE] = it.toString() } ?: preferences.remove(KEY_LAST_DEADLINE)
         preferences[KEY_DEADLINE_ENABLED] = settings.deadlineEnabled
         preferences[KEY_PICKED_CYCLES] = settings.pickedCycles
+        preferences[KEY_NO_ALARM] = settings.noAlarm
         settings.lastSetupCheckPassedAt?.let { preferences[KEY_LAST_SETUP_CHECK_PASSED_AT] = it.toEpochMilli() }
             ?: preferences.remove(KEY_LAST_SETUP_CHECK_PASSED_AT)
         preferences[KEY_NUDGE_MINUTES] = settings.afterAlarm.nudgeMinutes

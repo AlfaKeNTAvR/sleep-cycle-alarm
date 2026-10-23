@@ -285,11 +285,14 @@ private fun decodeClockWarpTolerant(json: JSONObject?): ClockWarp? {
 private fun encodeNightSettings(settings: NightSettings): JSONObject = JSONObject().apply {
     put("deadline", settings.deadline?.toString() ?: JSONObject.NULL)
     put("pickedCycles", settings.pickedCycles)
+    put("noAlarm", settings.noAlarm)
 }
 
+/** PER-150: a state saved before No-alarm nights existed has no `noAlarm` and reads back as a normal night. */
 private fun decodeNightSettings(json: JSONObject): NightSettings = NightSettings(
     deadline = json.optStringOrNull("deadline")?.let(Instant::parse),
-    pickedCycles = json.getInt("pickedCycles")
+    pickedCycles = json.getInt("pickedCycles"),
+    noAlarm = json.optBoolean("noAlarm", false)
 )
 
 private fun encodeAlarmPlan(plan: AlarmPlan): JSONObject = JSONObject().apply {

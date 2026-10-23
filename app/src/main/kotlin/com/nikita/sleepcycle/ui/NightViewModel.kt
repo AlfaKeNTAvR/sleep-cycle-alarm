@@ -102,6 +102,9 @@ import com.nikita.sleepcycle.ui.state.closeToNightOrBeforeBed
 import com.nikita.sleepcycle.ui.state.deadlineInstantFor
 import com.nikita.sleepcycle.ui.state.isSetupComplete
 import com.nikita.sleepcycle.ui.state.resolvePickedCycles
+import com.nikita.sleepcycle.ui.state.withDeadlineSwitched
+import com.nikita.sleepcycle.ui.state.withNoAlarmPicked
+import com.nikita.sleepcycle.ui.state.withSleepLengthPicked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -756,9 +759,13 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Before-bed screen actions.
-    fun setDeadlineEnabled(enabled: Boolean) = persistSettings { it.copy(deadlineEnabled = enabled) }
+    fun setDeadlineEnabled(enabled: Boolean) = persistSettings {
+        withDeadlineSwitched(it, enabled, nowInstant(), currentZone(), debug.effectiveOptions())
+    }
     fun setDeadlineTime(time: LocalTime) = persistSettings { it.copy(lastDeadline = time) }
-    fun setPickedCycles(cycles: Int) = persistSettings { it.copy(pickedCycles = cycles) }
+    fun setPickedCycles(cycles: Int) = persistSettings { withSleepLengthPicked(it, cycles) }
+    /** PER-150: the "No alarm" chip - also turns the deadline off (see withNoAlarmPicked). */
+    fun pickNoAlarm() = persistSettings { withNoAlarmPicked(it) }
 
     /** What "Start night" actually calls: if any debug option is on, this is a simulated night, so it asks for confirmation first rather than starting straight away (task spec: "asks for confirmation so it cannot happen by accident at real bedtime"). */
     fun requestStartNight() {
@@ -777,11 +784,14 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         val debugOptions = debug.effectiveOptions()
         // T4: virtual - becomes NightState.startedAt.
         val startedAt = nowInstant()
-        val deadline = deadlineInstantFor(settings, startedAt, currentZone())
+        // PER-150: a No-alarm night never has a deadline (the engine rejects the pair); picking No alarm already
+        // turns the switch off, this only guards a settings file written some other way.
+        val deadline = if (settings.noAlarm) null else deadlineInstantFor(settings, startedAt, currentZone())
         val cycles = resolvePickedCycles(settings.pickedCycles, startedAt, deadline, debugOptions)
         val nightSettings = NightSettings(
             deadline = deadline,
             pickedCycles = cycles,
+            noAlarm = settings.noAlarm,
         )
         // startNightTracking already arms the initial plan and triggers the first real tick as one ordered
         // sequence (see NightController.startNight); requesting a second immediate tick here would race it

@@ -14,8 +14,11 @@ data class PastNightUiState(
     val isSimulated: Boolean,
     val report: NightScreenContent.MorningReport?,
     val deadlineTimeLabel: String?,
+    /** Null on a No-alarm night ([noAlarm]): its picked length was never used. */
     val pickedLengthLabel: String?,
     val recordedStretchCount: Int?,
+    /** PER-150: the night ran with no morning alarm, shown where the picked length would be. */
+    val noAlarm: Boolean = false,
     /** The night's two ratings, each changeable here; null for a night started before the rating existed. */
     val ratings: PastNightRatings? = null,
 )

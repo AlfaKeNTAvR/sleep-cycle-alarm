@@ -151,6 +151,7 @@ fun NightScreen(
                         is NightScreenContent.Loading -> Text(stringResource(R.string.night_loading), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
                         is NightScreenContent.NextAlarm -> NextAlarmContent(centred)
                         is NightScreenContent.NightFinished -> FinishedContent(centred)
+                        is NightScreenContent.NoAlarm -> NoAlarmContent()
                         is NightScreenContent.MorningReport -> Unit
                     }
                 }

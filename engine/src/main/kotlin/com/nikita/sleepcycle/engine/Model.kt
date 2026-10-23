@@ -18,13 +18,22 @@ data class SleepStretch(val onset: Instant, val end: Instant, val followsAwakeni
 /** The band-derived state as of `now`, per rule 6's meaningful-awakening boundary. */
 enum class SleepState { NOT_YET_ASLEEP, ASLEEP, AWAKE }
 
-/** Which alarm rule produced the current plan. [FINISHED] is an amendment layered on top of rules 1-7. */
-enum class AlarmMode { FULL_CYCLES, DEADLINE_ONLY, NAP, FINISHED }
+/**
+ * Which alarm rule produced the current plan. [FINISHED] is an amendment layered on top of rules 1-7.
+ * [NO_ALARM] (PER-150) is a No-alarm night's only mode: rules 1-7 are never consulted, nothing is armed, and the
+ * night never finishes by itself.
+ */
+enum class AlarmMode { FULL_CYCLES, DEADLINE_ONLY, NAP, FINISHED, NO_ALARM }
 
-/** The picker choice for one night (rule 2), and the optional deadline (rules 4, 5). */
+/**
+ * The picker choice for one night (rule 2), and the optional deadline (rules 4, 5). [noAlarm] (PER-150) makes it
+ * a No-alarm night: no morning alarm, no engine naps, never FINISHED. [pickedCycles] is then unused but still
+ * validated, and [deadline] must be null, since the two contradict each other.
+ */
 data class NightSettings(
     val deadline: Instant?,
-    val pickedCycles: Int
+    val pickedCycles: Int,
+    val noAlarm: Boolean = false
 )
 
 /**

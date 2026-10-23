@@ -78,6 +78,9 @@
     <string name="before_bed_sleep_up_to">Sleep up to</string>
     <string name="content_description_sleep_length_option">Sleep %1$s</string>
     <string name="content_description_sleep_length_option_unavailable">Sleep %1$s, does not fit before the deadline</string>
+    <!-- PER-150: the chip after the cycle chips that starts a No-alarm night: no morning alarm, sleep tracked. -->
+    <string name="sleep_length_no_alarm">No alarm</string>
+    <string name="content_description_sleep_length_no_alarm">No alarm, track sleep only</string>
     <string name="before_bed_start_night">Start night</string>
 
     <!-- Night screen: common -->
@@ -101,6 +104,9 @@
     <!-- Night screen: the label above the hero time (owner request, 09/21 review's must-fix 1) - what the
          owner sees when the engine has nothing armed at all, instead of a wrong alarm name. -->
     <string name="night_no_alarm_armed">No alarm armed</string>
+    <!-- PER-150: a No-alarm night, all night until I'm up: there is no alarm time to show. -->
+    <string name="night_no_alarm_title">No alarm</string>
+    <string name="night_no_alarm_detail">Tracking your sleep.</string>
 
     <!-- Night screen: the one line under the hero time (N1). The countdown carries an already-formatted
          duration ("20 min", "5 h 38") from formatTimeUntil. -->

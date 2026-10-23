@@ -104,6 +104,22 @@ class PastNightLogTest {
     }
 
     @Test
+    fun `PER-150 a No-alarm night reads back as one`() {
+        val settings = NightSettings(deadline = null, pickedCycles = 5, noAlarm = true)
+
+        val parsed = parsePastNightLog(listOf(nightEndLine(twoStretchSummary, settings, Instant.parse("2026-09-18T04:25:00Z"))))
+
+        assertTrue(parsed.noAlarm)
+    }
+
+    @Test
+    fun `PER-150 a night logged before No-alarm nights existed reads back as a normal night`() {
+        val parsed = parsePastNightLog(listOf(REAL_NIGHT_START_LINE, REAL_OLD_FORMAT_NIGHT_END_LINE))
+
+        assertEquals(false, parsed.noAlarm)
+    }
+
+    @Test
     fun `a night that recorded no sleep round trips as an empty stretch list, not as missing`() {
         val emptySummary = NightSummary(Duration.ZERO, emptyList())
 

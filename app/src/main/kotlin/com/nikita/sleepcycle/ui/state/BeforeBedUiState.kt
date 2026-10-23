@@ -57,6 +57,8 @@ data class BeforeBedUiState(
     val deadlineEnabled: Boolean,
     val deadlineTime: LocalTime,
     val sleepLengthOptions: List<SleepLengthOption>,
+    /** PER-150: the "No alarm" chip after the cycle chips is picked; no cycle chip is selected alongside it. */
+    val noAlarmSelected: Boolean = false,
     val startNightEnabled: Boolean,
     val startNightBlocker: SetupItemKind?,
     /** True when the checklist itself is complete but no setup check has passed recently enough (see [SETUP_CHECK_VALIDITY_WINDOW]); mutually exclusive with [startNightBlocker] being non-null. */
