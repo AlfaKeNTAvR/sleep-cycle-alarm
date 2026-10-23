@@ -18,6 +18,16 @@ class PendingFollowUpRecordTest {
         assertEquals(nap, parsePendingFollowUp(formatPendingFollowUp(nap)))
     }
 
+    @Test fun `a One more cycle record reads back as the same One more cycle, not as a nap`() {
+        val cycle = PendingFollowUp(FollowUpKind.ONE_MORE_CYCLE, at)
+
+        assertEquals(cycle, parsePendingFollowUp(formatPendingFollowUp(cycle)))
+    }
+
+    @Test fun `a nap record written before One more cycle existed still reads back as a nap`() {
+        assertEquals(PendingFollowUp(FollowUpKind.NAP, at), parsePendingFollowUp("NAP 2026-09-30T11:25:00Z"))
+    }
+
     @Test fun `a nudge record reads back as the same nudge`() {
         val nudge = PendingFollowUp(FollowUpKind.NUDGE, at)
 

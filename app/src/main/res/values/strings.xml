@@ -92,6 +92,8 @@
     <!-- P3 (owner spec, 2026-09-30): shown while the out-of-bed nudge is pending; trades it for a nap alarm
          this many minutes out. Exact wording set by the owner. -->
     <string name="night_nap_for_minutes">Nap for %1$d min</string>
+    <!-- PER-149: under Nap after a ring; arms an alarm one cycle (90 min) out, offered only if that is not past the deadline. -->
+    <string name="night_one_more_cycle">One more cycle</string>
     <string name="night_ending">Ending night…</string>
     <string name="night_confirm_end_title">End night?</string>
     <string name="night_confirm_discard_title">Discard this night?</string>
@@ -152,6 +154,7 @@
     <!-- W18 (owner request): four different rings reach the same screen, so each one says its own name. -->
     <string name="alarm_label_morning">Morning alarm</string>
     <string name="alarm_label_nap">Nap alarm</string>
+    <string name="alarm_label_one_more_cycle">One more cycle</string>
     <string name="alarm_label_out_of_bed">Out-of-bed nudge</string>
     <string name="alarm_label_test">Test ring</string>
     <string name="alarm_instruction_wake">Wake up</string>

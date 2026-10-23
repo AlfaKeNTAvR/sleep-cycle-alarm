@@ -818,6 +818,14 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** PER-149: the Night screen's "One more cycle" - like [startNap], an alarm one cycle (90 min) out, no confirmation. */
+    fun startOneMoreCycle() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { com.nikita.sleepcycle.night.startOneMoreCycle(context, nowInstant()) }
+            refreshPendingOutOfBedNudge()
+        }
+    }
+
     /** Owner spec, 2026-10-02: "I'm up" asks first - a mis-tap at 3am would cancel the smart alarm for the rest of the night. */
     fun requestImUp() { confirmingImUp.value = true }
     fun cancelImUp() { confirmingImUp.value = false }

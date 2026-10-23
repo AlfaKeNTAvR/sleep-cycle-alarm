@@ -2,9 +2,9 @@ package com.nikita.sleepcycle.night
 
 // File purpose: P3 (owner spec, 2026-09-30) - the Android side of the post-alarm cycle. Every decision is
 // PostAlarmCycle.kt's pure `nextFollowUp`; this file only reads the current record, asks it, and arms what it
-// says in the one out-of-bed slot (request code 2003), persisting the record and logging it. Four callers, one
+// says in the one out-of-bed slot (request code 2003), persisting the record and logging it. Five callers, one
 // per event: PhoneAlarmReceiver (an alarm fired), AlarmRingService (a ring ended by Stop or auto-stop), and the
-// Night screen's "Nap 20 min" and "I'm up" buttons (NightViewModel).
+// Night screen's "Nap 20 min", "One more cycle" (PER-149) and "I'm up" buttons (NightViewModel).
 //
 // The H7.3/M1 pre-nudge check is armed ONLY for a nudge pending before the morning alarm has rung (a pre-wake
 // rule 7 nap's own nudge, which a still-pending morning alarm can legitimately take over - M1). After the
@@ -25,9 +25,12 @@ import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import java.time.Instant
 
-/** P3: the wording the follow-up rings under - the owner's own nap rings as "Nap alarm", the nudge as itself. */
-fun alarmLabelForFollowUp(kind: FollowUpKind): AlarmLabel =
-    if (kind == FollowUpKind.NAP) AlarmLabel.NAP else AlarmLabel.OUT_OF_BED
+/** P3: the wording the follow-up rings under - the owner's own nap rings as "Nap alarm", One more cycle and the nudge as themselves. */
+fun alarmLabelForFollowUp(kind: FollowUpKind): AlarmLabel = when (kind) {
+    FollowUpKind.NAP -> AlarmLabel.NAP
+    FollowUpKind.ONE_MORE_CYCLE -> AlarmLabel.ONE_MORE_CYCLE
+    FollowUpKind.NUDGE -> AlarmLabel.OUT_OF_BED
+}
 
 /**
  * P3: an alarm just fired (any real one - morning, engine nap, nudge, or the owner's nap): arms the safety-net
@@ -76,6 +79,29 @@ fun startManualNap(context: Context, now: Instant): Boolean {
 }
 
 /**
+ * PER-149: the Night screen's "One more cycle". Trades the pending nudge for an alarm one cycle (90 min) out, the
+ * same way [startManualNap] does, but only if it rings at or before the deadline - it never caps. Returns whether
+ * it was armed; a press with no nudge pending, or one past the deadline, changes nothing and is logged.
+ */
+fun startOneMoreCycle(context: Context, now: Instant): Boolean {
+    val state = loadNightState(context) ?: return false
+    val pending = readPendingFollowUp(context)
+    val next = nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(now), pending, state.settings.deadline, resolveEngineConfig(state))
+    if (next == null || next == pending) {
+        appendNightLog(
+            context, state.realStartedAt,
+            NightLogEvent(
+                now, "one_more_cycle_refused",
+                mapOf("cause" to "no out-of-bed nudge pending, or a cycle from now would ring after the deadline", "pending" to pending.toString(), "deadline" to state.settings.deadline.toString()),
+            ),
+            state.debugOptions.isAnyEnabled
+        )
+        return false
+    }
+    return armFollowUp(context, state, next, now, "one_more_cycle_pressed")
+}
+
+/**
  * Owner spec, 2026-10-02: the Night screen's "I'm up", pressed before the morning alarm rang. Stands in for
  * that alarm being stopped right now: records [now] as the morning alarm's firing (so the engine arms nothing
  * more, WakeAlarm.kt's `morningAlarmHasRung`), cancels the pending phone alarm, and arms the out-of-bed nudge
@@ -91,11 +117,13 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
     val debugNight = state.debugOptions.isAnyEnabled
     val pending = readPendingFollowUp(context)
     if (morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)) {
-        if (pending?.kind != FollowUpKind.NAP || !pending.at.isAfter(now)) {
-            appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang and no nap is ahead")), debugNight)
+        if (pending?.kind?.isChosenSleep != true || !pending.at.isAfter(now)) {
+            appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_refused", mapOf("cause" to "the morning alarm already rang and no nap or One more cycle is ahead")), debugNight)
             return@withNightTransactionLock false
         }
-        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledNapAt" to pending.at.toString())), debugNight)
+        // PER-149: One more cycle is ended exactly like a nap, under its own key so the log tells them apart.
+        val cancelledKey = if (pending.kind == FollowUpKind.ONE_MORE_CYCLE) "cancelledOneMoreCycleAt" else "cancelledNapAt"
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_pressed", mapOf(cancelledKey to pending.at.toString())), debugNight)
         val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, state.settings.deadline, resolveEngineConfig(state))
             ?: return@withNightTransactionLock false
         return@withNightTransactionLock armFollowUp(context, state, next, now, "im_up_pressed")
@@ -134,7 +162,11 @@ private fun armFollowUp(context: Context, state: NightState, followUp: PendingFo
         )
         return false
     }
-    val event = if (followUp.kind == FollowUpKind.NAP) "manual_nap_armed" else "out_of_bed_nudge_armed"
+    val event = when (followUp.kind) {
+        FollowUpKind.NAP -> "manual_nap_armed"
+        FollowUpKind.ONE_MORE_CYCLE -> "one_more_cycle_armed"
+        FollowUpKind.NUDGE -> "out_of_bed_nudge_armed"
+    }
     appendNightLog(context, state.realStartedAt, NightLogEvent(now, event, mapOf("at" to followUp.at.toString(), "cause" to cause)), debugNight)
     if (!savePendingFollowUp(context, followUp)) {
         appendNightLog(

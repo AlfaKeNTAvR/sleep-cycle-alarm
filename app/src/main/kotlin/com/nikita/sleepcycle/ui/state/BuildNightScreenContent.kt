@@ -10,7 +10,7 @@ import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.PendingFollowUp
-import com.nikita.sleepcycle.night.FollowUpKind
+import com.nikita.sleepcycle.night.alarmLabelForFollowUp
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import com.nikita.sleepcycle.ui.format.formatCycles
 import com.nikita.sleepcycle.ui.format.formatDuration
@@ -150,8 +150,9 @@ internal fun applyPendingOutOfBedNudge(content: NightScreenContent, pendingFollo
     val nudgeRingsFirst = planWakeAt == null || planWakeAt.isAfter(pendingOutOfBedNudgeAt)
     if (!nudgeRingsFirst) return content
     return NightScreenContent.NextAlarm(
-        // P3: the owner's own nap shares the nudge's slot and record, and is named as the nap it is.
-        modeLabel = if (pendingFollowUp.kind == FollowUpKind.NAP) AlarmLabel.NAP else AlarmLabel.OUT_OF_BED,
+        // P3: the owner's own nap (and PER-149's One more cycle) shares the nudge's slot and record, and is named
+        // by the same label it rings under.
+        modeLabel = alarmLabelForFollowUp(pendingFollowUp.kind),
         alarmTimeLabel = formatClockTime(pendingOutOfBedNudgeAt, zone),
         countdownLabel = formatTimeUntil(pendingOutOfBedNudgeAt, now),
         rangAtTimeLabel = null,

@@ -22,7 +22,7 @@ package com.nikita.sleepcycle.night
 // P3 (owner spec, 2026-09-30): the same record now also holds the owner's own "Nap for 20 min" alarm, which
 // shares the nudge's slot - one follow-up at a time, with its kind ([PendingFollowUp]). A nap is written as
 // `NAP <instant>`; a nudge stays the bare instant it always was, so a record from an older build still reads
-// back as the nudge it is.
+// back as the nudge it is. PER-149: One more cycle is written the same way, as `ONE_MORE_CYCLE <instant>`.
 
 import android.content.Context
 import android.util.Log
@@ -86,22 +86,23 @@ fun readPendingFollowUp(context: Context): PendingFollowUp? {
     }
 }
 
-/** P3: the record's marker for the owner's own nap. A nudge is written as the bare instant, exactly as before P3. */
-private const val NAP_RECORD_PREFIX = "NAP "
-
-/** P3: the record's text - `NAP <instant>` for a nap, the bare instant for a nudge (the pre-P3 format, unchanged). */
-internal fun formatPendingFollowUp(followUp: PendingFollowUp): String = when (followUp.kind) {
-    FollowUpKind.NAP -> NAP_RECORD_PREFIX + followUp.at
-    FollowUpKind.NUDGE -> followUp.at.toString()
-}
+/**
+ * P3: the record's text - `<KIND> <instant>` for the sleep the owner chose (`NAP ...`, and since PER-149
+ * `ONE_MORE_CYCLE ...`), the bare instant for a nudge (the pre-P3 format, unchanged).
+ */
+internal fun formatPendingFollowUp(followUp: PendingFollowUp): String =
+    if (followUp.kind == FollowUpKind.NUDGE) followUp.at.toString() else "${followUp.kind.name} ${followUp.at}"
 
 /** P3: reads [formatPendingFollowUp]'s text back; a bare instant (every record before P3) is a nudge. Null when unparsable. */
 internal fun parsePendingFollowUp(text: String): PendingFollowUp? {
-    val trimmed = text.trim()
-    val isNap = trimmed.startsWith(NAP_RECORD_PREFIX)
-    val instantText = if (isNap) trimmed.removePrefix(NAP_RECORD_PREFIX) else trimmed
-    val at = runCatching { Instant.parse(instantText) }.getOrNull() ?: return null
-    return PendingFollowUp(if (isNap) FollowUpKind.NAP else FollowUpKind.NUDGE, at)
+    val parts = text.trim().split(' ')
+    val kind = when (parts.size) {
+        1 -> FollowUpKind.NUDGE
+        2 -> FollowUpKind.entries.firstOrNull { it != FollowUpKind.NUDGE && it.name == parts[0] } ?: return null
+        else -> return null
+    }
+    val at = runCatching { Instant.parse(parts.last()) }.getOrNull() ?: return null
+    return PendingFollowUp(kind, at)
 }
 
 /**

@@ -56,6 +56,7 @@ fun NightScreen(
     onConfirmEndNight: () -> Unit,
     onCancelEndNight: () -> Unit,
     onStartNap: () -> Unit,
+    onStartOneMoreCycle: () -> Unit,
     onRequestImUp: () -> Unit,
     onConfirmImUp: () -> Unit,
     onCancelImUp: () -> Unit,
@@ -121,6 +122,10 @@ fun NightScreen(
             val napMinutes = state.napButtonMinutes
             if (napMinutes != null && !state.endingNight && content !is NightScreenContent.MorningReport) {
                 PrimaryActionButton(text = stringResource(R.string.night_nap_for_minutes, napMinutes), onClick = onStartNap)
+            }
+            // PER-149: "One more cycle" between Nap and End night, outlined so Nap stays the one filled choice.
+            if (state.showOneMoreCycleButton && !state.endingNight && content !is NightScreenContent.MorningReport) {
+                SecondaryActionButton(text = stringResource(R.string.night_one_more_cycle), onClick = onStartOneMoreCycle)
             }
             // Owner spec, 2026-10-02: one choice at a time. "I'm up" while asleep (morning alarm or his own nap
             // ahead); it starts the out-of-bed cycle, which then offers Nap and End night.

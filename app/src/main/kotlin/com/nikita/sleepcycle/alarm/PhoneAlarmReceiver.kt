@@ -341,6 +341,7 @@ class PhoneAlarmReceiver : BroadcastReceiver() {
         val cause = when {
             !isOutOfBed -> "wake_or_nap_alarm_fired"
             label == AlarmLabel.NAP -> "manual_nap_fired"
+            label == AlarmLabel.ONE_MORE_CYCLE -> "one_more_cycle_fired"
             else -> "out_of_bed_nudge_fired"
         }
         armFollowUpAfterAlarmFired(context, state, now, cause)
