@@ -94,6 +94,7 @@
 
         <receiver android:name=".alarm.PhoneAlarmReceiver" android:exported="false" />
         <receiver android:name=".night.LaterRatingReceiver" android:exported="false" />
+        <receiver android:name=".night.AreYouUpReceiver" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

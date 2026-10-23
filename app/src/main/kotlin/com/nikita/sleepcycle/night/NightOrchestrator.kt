@@ -306,6 +306,9 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         )
     }
     logDataAndPlan(context, state, outcome, plan, decisionNow)
+    // PER-151: a No-alarm night asks "Are you up?" once the band shows a long morning awakening. It only asks:
+    // the plan above is untouched, so the night never moves on or ends because of it.
+    val areYouUp = stepAreYouUpAsk(context, state, outcome.segments, decisionNow)
 
     // Owner spec, 2026-10-02: Auto sets the clock's speed for where the night now is BEFORE anything below arms
     // an alarm or books the next tick, so all of them land under the new speed. Simulated nights only.
@@ -347,7 +350,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         wakeAlarmFiredAt = state.wakeAlarmFiredAt,
         napAlarmsUsed = state.napAlarmsUsed,
         morningAlarmAt = latchMorningAlarmAt(state.morningAlarmAt, plan),
-        lastNapAlarmFiredAt = state.lastNapAlarmFiredAt
+        lastNapAlarmFiredAt = state.lastNapAlarmFiredAt,
+        areYouUp = areYouUp
     )
     if (!saveNightState(context, newState)) {
         // V9: decisionNow, not the tick's stale entry-time `now` - this line is appended after the data/plan/

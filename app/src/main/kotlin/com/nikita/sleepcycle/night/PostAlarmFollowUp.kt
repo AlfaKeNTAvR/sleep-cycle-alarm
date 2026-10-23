@@ -111,8 +111,11 @@ fun startOneMoreCycle(context: Context, now: Instant): Boolean {
  * Owner spec, 2026-10-02 (one choice at a time): also pressed during his own nap, after the morning alarm. Then
  * the nudge simply replaces the nap in the shared out-of-bed slot; the morning alarm's own record is left as it
  * rang. A press with neither ahead (a stale screen) changes nothing and is logged.
+ *
+ * PER-151: on a No-alarm night this also answers an open Are you up? ask (AreYouUpNotification.kt), whichever
+ * I'm up was pressed - the Night screen's, the ask's banner or its notification ([via], for the night log).
  */
-suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransactionLock {
+suspend fun pressImUp(context: Context, now: Instant, via: String = ARE_YOU_UP_VIA_NIGHT_SCREEN): Boolean = withNightTransactionLock {
     val state = loadNightState(context) ?: return@withNightTransactionLock false
     val debugNight = state.debugOptions.isAnyEnabled
     val pending = readPendingFollowUp(context)
@@ -138,10 +141,14 @@ suspend fun pressImUp(context: Context, now: Instant): Boolean = withNightTransa
     }
     cancelPhoneAlarm(context)
     appendNightLog(context, state.realStartedAt, NightLogEvent(now, "im_up_pressed", mapOf("cancelledAlarmAt" to (state.lastPlan?.wakeAt?.toString() ?: "none"))), debugNight)
-    val upState = state.copy(wakeAlarmFiredAt = now)
+    val pressedState = state.copy(wakeAlarmFiredAt = now)
     // Seen on the phone 2026-10-02: without this the screen kept offering "I'm up" next to Nap until the
-    // follow-up tick committed, which waits on a band sync of up to 20 s.
-    publishNightState(upState)
+    // follow-up tick committed, which waits on a band sync of up to 20 s. Closing an open ask publishes too.
+    val upState = if (pressedState.areYouUp?.isOpen == true) {
+        closeOpenAreYouUpAsk(context, pressedState, AreYouUpAnswer.IM_UP, now, via)
+    } else {
+        pressedState.also(::publishNightState)
+    }
     val next = nextFollowUp(PostAlarmEvent.ImUpPressed(now), pending, upState.settings.deadline, resolveEngineConfig(upState))
         ?: return@withNightTransactionLock false
     armFollowUp(context, upState, next, now, "im_up_pressed")

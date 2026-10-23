@@ -117,6 +117,7 @@ fun buildNightUiState(
         confirmingImUp = confirmingImUp,
         discardsNight = isShortNight(state.startedAt, now),
         showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
+        showAreYouUpAsk = state.areYouUp?.isOpen == true,
     )
 }
 

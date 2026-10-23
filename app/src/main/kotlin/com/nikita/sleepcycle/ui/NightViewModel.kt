@@ -40,6 +40,9 @@ import com.nikita.sleepcycle.night.readPendingFollowUp
 import com.nikita.sleepcycle.night.startManualNap
 import com.nikita.sleepcycle.night.SpeedChoice
 import com.nikita.sleepcycle.night.pressImUp
+import com.nikita.sleepcycle.night.ARE_YOU_UP_VIA_BANNER
+import com.nikita.sleepcycle.night.ARE_YOU_UP_VIA_NIGHT_SCREEN
+import com.nikita.sleepcycle.night.answerStillSleeping
 import com.nikita.sleepcycle.night.dropSimulationToRealSpeed
 import com.nikita.sleepcycle.night.readPastNightLog
 import com.nikita.sleepcycle.night.AfterAlarmSettings
@@ -855,11 +858,28 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         confirmingImUp.value = false
         // Owner spec, 2026-10-21 (PER-126): under 1 h after Start night the dialog said "Discard this night?".
         if (shortNightShown()) { discardShortNight(); return }
+        pressImUpNow(ARE_YOU_UP_VIA_NIGHT_SCREEN)
+    }
+
+    /**
+     * PER-151: I'm up on the Are you up? banner - the confirmed I'm up itself, without the dialog: it answers a
+     * question the app asked, so it is no mis-tap. Also closes the ask (pressImUp does).
+     */
+    fun answerAreYouUpImUp() = pressImUpNow(ARE_YOU_UP_VIA_BANNER)
+
+    /** PER-151: Still sleeping on the Are you up? banner - closes the ask and arms nothing. */
+    fun answerAreYouUpStillSleeping() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { answerStillSleeping(context, nowInstant(), ARE_YOU_UP_VIA_BANNER) }
+        }
+    }
+
+    private fun pressImUpNow(via: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 // Owner spec, 2026-10-02: a simulated night drops to 1x first, so the nudge is armed at real speed.
                 dropSimulationToRealSpeed(context)
-                pressImUp(context, nowInstant())
+                pressImUp(context, nowInstant(), via)
             }
             refreshPendingOutOfBedNudge()
             requestImmediateTick(context)

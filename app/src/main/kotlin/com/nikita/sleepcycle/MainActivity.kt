@@ -150,6 +150,8 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
                             onRequestImUp = viewModel::requestImUp,
                             onConfirmImUp = viewModel::confirmImUp,
                             onCancelImUp = viewModel::cancelImUp,
+                            onAreYouUpImUp = viewModel::answerAreYouUpImUp,
+                            onAreYouUpStillSleeping = viewModel::answerAreYouUpStillSleeping,
                             onDone = viewModel::finishMorningReport,
                             morningRating = morningRating,
                             onRateMorning = viewModel::rateMorning,

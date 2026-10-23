@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.ui.theme.CardCornerRadius
+import com.nikita.sleepcycle.ui.theme.NightSurface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -64,6 +65,8 @@ fun NightScreen(
     onRequestImUp: () -> Unit,
     onConfirmImUp: () -> Unit,
     onCancelImUp: () -> Unit,
+    onAreYouUpImUp: () -> Unit,
+    onAreYouUpStillSleeping: () -> Unit,
     onDone: () -> Unit,
     morningRating: MorningRatingCard?,
     onRateMorning: (SleepRating) -> Unit,
@@ -107,6 +110,10 @@ fun NightScreen(
             if (state.bandNotSyncingWarning) BandNotSyncingWarning()
 
             val content = state.content
+            // PER-151: a No-alarm night's Are you up? ask, at the top of the content like the warning above.
+            if (state.showAreYouUpAsk && !state.endingNight && content !is NightScreenContent.MorningReport) {
+                AreYouUpBanner(onImUp = onAreYouUpImUp, onStillSleeping = onAreYouUpStillSleeping)
+            }
             if (content is NightScreenContent.MorningReport) {
                 // Centred while it fits; scrolls once the rating card makes a many-stretch night taller than the screen.
                 BoxWithConstraints(modifier = Modifier.weight(1f)) {
@@ -219,6 +226,29 @@ private fun DiscardNightDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
         onConfirm = onConfirm,
         onDismiss = onDismiss,
     )
+}
+
+/** PER-151: the Are you up? ask as a banner, with the same two answers as its notification. */
+@Composable
+private fun AreYouUpBanner(onImUp: () -> Unit, onStillSleeping: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NightSurface, RoundedCornerShape(CardCornerRadius))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.are_you_up_title),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PrimaryActionButton(text = stringResource(R.string.night_im_up), onClick = onImUp, modifier = Modifier.weight(1f))
+            SecondaryActionButton(text = stringResource(R.string.are_you_up_still_sleeping), onClick = onStillSleeping, modifier = Modifier.weight(1f))
+        }
+    }
 }
 
 /** P1: the "band not syncing" warning - the alarm is still armed, but it is only the engine's estimate. */
