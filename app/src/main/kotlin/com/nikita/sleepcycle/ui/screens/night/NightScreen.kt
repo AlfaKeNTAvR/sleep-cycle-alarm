@@ -29,6 +29,8 @@ import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.DebugBanner
 import com.nikita.sleepcycle.ui.components.DebugQuickControls
 import com.nikita.sleepcycle.ui.components.LiveVolumeLine
+import com.nikita.sleepcycle.ui.components.MenuLinesButton
+import com.nikita.sleepcycle.ui.components.SlidersButton
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
@@ -52,6 +54,8 @@ import com.nikita.sleepcycle.ui.theme.ScreenHorizontalPadding
 fun NightScreen(
     state: NightUiState,
     debug: DebugUiState,
+    onOpenSettings: () -> Unit,
+    onOpenLogs: () -> Unit,
     onRequestEndNight: () -> Unit,
     onConfirmEndNight: () -> Unit,
     onCancelEndNight: () -> Unit,
@@ -79,8 +83,13 @@ fun NightScreen(
                 // Owner request, 2026-09-30: "Not synced yet" is not good news, so no green dot - grey (null) until
                 // the first sync answers, then green or red.
                 StatusLine(text = statusLineText(state), ok = state.lastSyncOk)
-                // Owner spec, 2026-10-02: no Debug shortcut here any more - the simulator's controls are in the
-                // banner below, and the Debug screen it opened is now a Settings section, inert mid-night anyway.
+                // Owner spec, 2026-10-23 (PER-148): the same History and Settings icons as Before bed, in every
+                // state, so checking or changing anything no longer means ending the night. Back returns here.
+                // Still no Debug shortcut (owner spec, 2026-10-02): its Settings section stays locked mid-night.
+                Row {
+                    MenuLinesButton(stringResource(R.string.content_description_open_logs), onOpenLogs)
+                    SlidersButton(stringResource(R.string.content_description_open_settings), onOpenSettings)
+                }
             }
             // W11 (owner request): the simulated-clock banner sits UNDER the sync line and the debug button, not
             // above them - the sync line is the one thing worth reading first, and the banner only ever renders on

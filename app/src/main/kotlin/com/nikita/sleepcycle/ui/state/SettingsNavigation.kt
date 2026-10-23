@@ -24,5 +24,9 @@ fun settingsGroups(isDebugBuild: Boolean): List<SettingsGroup> =
  * Logs - Night if one is running behind the screen being closed, otherwise Before bed. All three reach this
  * only when no screen already answers "where did I come from" more specifically than that (Setup's checklist
  * mode always returns to Settings instead - see [Screen.Settings] itself as its target).
+ *
+ * Owner spec, 2026-10-23 (PER-148): Settings and History open from every Night screen state, so the morning
+ * report ([showingMorningReport]), whose night has already ended, also counts as a Night screen to return to.
  */
-fun closeToNightOrBeforeBed(nightActive: Boolean): Screen = if (nightActive) Screen.Night else Screen.BeforeBed
+fun closeToNightOrBeforeBed(nightActive: Boolean, showingMorningReport: Boolean): Screen =
+    if (nightActive || showingMorningReport) Screen.Night else Screen.BeforeBed

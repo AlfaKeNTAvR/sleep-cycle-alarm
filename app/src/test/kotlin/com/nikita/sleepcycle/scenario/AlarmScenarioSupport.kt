@@ -14,7 +14,6 @@ import com.nikita.sleepcycle.alarm.EXTRA_ALARM_SCHEDULED_FOR_EPOCH_MILLI
 import com.nikita.sleepcycle.alarm.PhoneAlarmReceiver
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.night.AfterAlarmSettings
-import com.nikita.sleepcycle.night.BedtimeAudioSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightService
 import com.nikita.sleepcycle.night.listNightLogs
@@ -28,7 +27,7 @@ import java.time.Instant
 
 /** Starts a night through the same entry point as the Start night button and waits for its state to land. */
 internal fun startNightAndWait(context: Context, settings: NightSettings, startedAt: Instant, debugOptions: DebugOptions = DebugOptions()) = runBlocking {
-    startNight(context, settings, startedAt, AfterAlarmSettings(), BedtimeAudioSettings(), debugOptions)
+    startNight(context, settings, startedAt, AfterAlarmSettings(), debugOptions)
     withTimeout(10_000) { while (loadNightState(context) == null) delay(20) }
 }
 

@@ -139,6 +139,8 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
                         NightScreen(
                             state = nightState,
                             debug = uiState.debug,
+                            onOpenSettings = viewModel::openSettings,
+                            onOpenLogs = viewModel::openLogs,
                             onRequestEndNight = viewModel::requestEndNight,
                             onConfirmEndNight = viewModel::confirmEndNight,
                             onCancelEndNight = viewModel::cancelEndNight,

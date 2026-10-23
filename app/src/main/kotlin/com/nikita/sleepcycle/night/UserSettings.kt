@@ -23,8 +23,9 @@ private const val FULL_RANGE_PERCENT = 100.0
 
 /**
  * After the alarm: how long after a ring ends the out-of-bed nudge rings, and the one nap length used by both
- * the Night screen's Nap button and the engine's naps between cycles. A night captures these once at Start
- * night (NightState.afterAlarm), the same way it captures its debug options.
+ * the Night screen's Nap button and the engine's naps between cycles. A night captures these at Start night
+ * (NightState.afterAlarm); since PER-148 (owner spec, 2026-10-23) a change mid-night is copied into the running
+ * night and applies from the next nap or nudge armed, never moving one already armed.
  */
 data class AfterAlarmSettings(
     val nudgeMinutes: Int = DEFAULT_NUDGE_MINUTES,

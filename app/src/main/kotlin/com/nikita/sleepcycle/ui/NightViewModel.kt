@@ -67,6 +67,7 @@ import com.nikita.sleepcycle.night.runSetupCheck
 import com.nikita.sleepcycle.night.CONNECTION_TEST_DEADLINE
 import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendSetupLog
+import com.nikita.sleepcycle.night.applyAfterAlarmSettingsToNight
 import com.nikita.sleepcycle.night.runConnectionTestWithin
 import com.nikita.sleepcycle.night.runWithOneRetry
 import com.nikita.sleepcycle.night.AUTO_CONNECTION_TEST_RETRY_PAUSE
@@ -125,6 +126,9 @@ import java.time.ZoneId
 
 /** W1: the flow-sharing timeout keeps the app's ordinary half-minute cadence - it is about how long to keep collecting after the last subscriber leaves, not about how often the clock is read. */
 private const val TICKER_INTERVAL_MS = UI_TICKER_INTERVAL_MS
+
+/** The Night screen and the screens it opens (PER-148: Settings and History, and a past night from History). */
+private val SCREENS_OVER_NIGHT: Set<Screen> = setOf(Screen.Night, Screen.Settings, Screen.Logs, Screen.PastNight)
 
 private data class CoreInputs(
     val appSettings: AppSettings?,
@@ -462,7 +466,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             // ISSUES.md #10 (deadline.md #2, 2026-10-03): collect, not collectLatest - a later emission used to
             // cancel the restore half way, leaving the dead Night screen up until the app was reopened.
             observedNightState.collect { state ->
-                if (state == null && screen.value == Screen.Night && !showingMorningReport.value && !endingNight.value) {
+                // PER-148: also while Settings or History is open over the Night screen, so back returns to the report.
+                if (state == null && screen.value in SCREENS_OVER_NIGHT && !showingMorningReport.value && !endingNight.value) {
                     restoreMorningReportFromDiskIfAny(nightStateFromDisk = null)
                 }
                 // ISSUES.md #11: a new night state (an alarm that just fired, a tick) usually comes with a new
@@ -563,7 +568,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Navigation.
-    /** X1: the gear icon on Before bed - opens the short Settings menu, not Setup directly. */
+    /** X1: the gear icon on Before bed, and since PER-148 on the Night screen - opens the short Settings menu, not Setup directly. */
     fun openSettings() { screen.value = Screen.Settings }
 
     /** Settings' "Setup" row: always opens the one-page checklist, never the wizard - re-checks stay quick. */
@@ -624,7 +629,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** X5: Settings' own back arrow and its "Done" button both land here - Night if one is running behind Settings, otherwise Before bed. */
-    fun closeSettings() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
+    fun closeSettings() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null, showingMorningReport.value) }
 
     /** X2/X5: Setup's checklist-mode back arrow (and its own "Done", once everything is complete) - always Settings, since checklist mode is only ever reached from there. */
     fun closeSetup() { screen.value = Screen.Settings; setupWizardPageState.value = null }
@@ -635,11 +640,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * (fresh install, before Settings is reachable at all) as well as from the checklist's "Run setup again".
      */
     fun exitSetupWizard() {
-        screen.value = closeToNightOrBeforeBed(observedNightState.value != null)
+        screen.value = closeToNightOrBeforeBed(observedNightState.value != null, showingMorningReport.value)
         setupWizardPageState.value = null
     }
 
-    fun closeLogs() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null) }
+    fun closeLogs() { screen.value = closeToNightOrBeforeBed(observedNightState.value != null, showingMorningReport.value) }
 
     // Setup wizard navigation. The wizard is entered either by resolveInitialScreen (fresh install) or by
     // runSetupWizardAgain (the checklist's "Run setup again"); openSetup/closeSetup/exitSetupWizard above
@@ -786,7 +791,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         // startNightTracking already arms the initial plan and triggers the first real tick as one ordered
         // sequence (see NightController.startNight); requesting a second immediate tick here would race it
         // and could let out-of-order work overwrite the tick's own (Opus review 3.2).
-        startNightTracking(context, nightSettings, startedAt, settings.afterAlarm, settings.bedtimeAudio, debugOptions)
+        startNightTracking(context, nightSettings, startedAt, settings.afterAlarm, debugOptions)
         // startNight clears any leftover nudge/nap record on disk; drop this screen's own copy of it now too,
         // rather than showing the previous night's Nap button until the 30 s ticker re-reads the file.
         pendingFollowUp.value = null
@@ -924,9 +929,16 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { writeAppSettings(context, transform(current)) }
     }
 
-    // Settings screen actions (owner spec, 2026-10-02). The nudge and nap length apply from the next Start night;
-    // the audio switches and the rating apply at once.
-    fun setAfterAlarmSettings(settings: AfterAlarmSettings) = persistSettings { it.copy(afterAlarm = settings) }
+    // Settings screen actions (owner spec, 2026-10-02). The audio switches and the rating apply at once; fade on
+    // or off at the next fade start. PER-148 (owner spec, 2026-10-23): Settings opens mid-night from the Night
+    // screen, so the nudge and nap length are copied into a running night too, for the next nap or nudge armed.
+    fun setAfterAlarmSettings(settings: AfterAlarmSettings) {
+        val current = appSettings.value ?: return
+        viewModelScope.launch {
+            writeAppSettings(context, current.copy(afterAlarm = settings))
+            withContext(Dispatchers.IO) { applyAfterAlarmSettingsToNight(context, settings, nowInstant()) }
+        }
+    }
     fun setBedtimeAudioSettings(settings: BedtimeAudioSettings) = persistSettings { it.copy(bedtimeAudio = settings) }
 
     /** Also re-arms (or cancels) the later rating question, which depends on these switches and the ask time. */

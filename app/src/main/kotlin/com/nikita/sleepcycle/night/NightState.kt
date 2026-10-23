@@ -101,7 +101,12 @@ data class NightState(
      * as wakeAlarmFiredAt/napAlarmsUsed - see PhoneAlarmFiredStore.kt.
      */
     val lastNapAlarmFiredAt: Instant? = null,
-    /** Owner spec, 2026-10-02: the Settings screen's nudge and nap length, captured once at Start night like [debugOptions], so a change in Settings applies from the next night on. A state saved before Settings existed decodes as the defaults, which are exactly the timing it was started with. */
+    /**
+     * Owner spec, 2026-10-02: the Settings screen's nudge and nap length, captured at Start night. Owner spec,
+     * 2026-10-23 (PER-148): a change in Settings mid-night is written here too (applyAfterAlarmSettingsToNight),
+     * so it applies from the next nap or nudge armed. A state saved before Settings existed decodes as the
+     * defaults, which are exactly the timing it was started with.
+     */
     val afterAlarm: AfterAlarmSettings = AfterAlarmSettings(),
     /**
      * Owner request, 2026-10-03: the REAL wall-clock instant Start night was tapped, recorded once at startNight.

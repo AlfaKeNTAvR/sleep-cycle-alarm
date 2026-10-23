@@ -128,4 +128,13 @@ class NightLogTest {
         assertEquals(firstAt, Instant.parse(JSONObject(lines[0]).getString("at")))
         assertEquals(secondAt, Instant.parse(JSONObject(lines[1]).getString("at")))
     }
+
+    @Test
+    fun `a night's log is named by its real start in the given zone, with the simulated prefix on a debug night`() {
+        val startedAt = Instant.parse("2026-10-23T20:10:00Z")
+        val zone = java.time.ZoneId.of("Europe/Moscow")
+
+        assertEquals("night-20261023-2310.jsonl", nightLogFileName(startedAt, debugNight = false, zone))
+        assertEquals("night-sim-20261023-2310.jsonl", nightLogFileName(startedAt, debugNight = true, zone))
+    }
 }

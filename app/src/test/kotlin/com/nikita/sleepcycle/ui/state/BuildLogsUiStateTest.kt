@@ -28,7 +28,7 @@ class BuildLogsUiStateTest {
         // Owner request, 2026-10-02: the start is what he remembers a night by.
         val file = logFile(dir, "night-20260918-0011.jsonl", sizeBytes = 10, modifiedAt = Instant.parse("2026-09-18T06:17:31Z"))
 
-        val state = buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE)
+        val state = buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE, runningNightLogName = null)
 
         assertEquals(1, state.logs.size)
         assertEquals("2026-09-18 00:11", state.logs.single().displayName)
@@ -39,14 +39,14 @@ class BuildLogsUiStateTest {
     fun `a simulated night is named by its start too`(@TempDir dir: Path) {
         val file = logFile(dir, "night-sim-20261002-1830.jsonl", 10, Instant.parse("2026-10-02T17:00:00Z"))
 
-        assertEquals("2026-10-02 18:30", buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE).logs.single().displayName)
+        assertEquals("2026-10-02 18:30", buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE, runningNightLogName = null).logs.single().displayName)
     }
 
     @Test
     fun `a file whose name carries no start falls back to when it was last written`(@TempDir dir: Path) {
         val file = logFile(dir, "night-unknown.jsonl", 10, Instant.parse("2026-09-18T06:17:31Z"))
 
-        assertEquals("2026-09-18 08:17", buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE).logs.single().displayName)
+        assertEquals("2026-09-18 08:17", buildLogsUiState(listOf(file), emptyMap(), TEST_ZONE, runningNightLogName = null).logs.single().displayName)
     }
 
     @Test
@@ -54,7 +54,7 @@ class BuildLogsUiStateTest {
         val newest = logFile(dir, "night-20260918-0011.jsonl", 10, Instant.parse("2026-09-18T06:17:00Z"))
         val oldest = logFile(dir, "night-20260916-2340.jsonl", 10, Instant.parse("2026-09-16T21:40:00Z"))
 
-        val state = buildLogsUiState(listOf(newest, oldest), emptyMap(), TEST_ZONE)
+        val state = buildLogsUiState(listOf(newest, oldest), emptyMap(), TEST_ZONE, runningNightLogName = null)
 
         assertEquals(listOf("2026-09-18 00:11", "2026-09-16 23:40"), state.logs.map { it.displayName })
     }
@@ -64,7 +64,7 @@ class BuildLogsUiStateTest {
         val small = logFile(dir, "night-20260918-0011.jsonl", 512, Instant.parse("2026-09-18T06:17:00Z"))
         val large = logFile(dir, "night-20260917-0011.jsonl", 2048, Instant.parse("2026-09-17T06:17:00Z"))
 
-        val state = buildLogsUiState(listOf(small, large), emptyMap(), TEST_ZONE)
+        val state = buildLogsUiState(listOf(small, large), emptyMap(), TEST_ZONE, runningNightLogName = null)
 
         assertEquals("512 B", state.logs[0].sizeLabel)
         assertEquals("2 KB", state.logs[1].sizeLabel)
@@ -75,7 +75,7 @@ class BuildLogsUiStateTest {
         val real = logFile(dir, "night-20260918-0011.jsonl", 10, Instant.parse("2026-09-18T06:17:00Z"))
         val simulated = logFile(dir, "night-sim-20260917-1430.jsonl", 10, Instant.parse("2026-09-17T12:30:00Z"))
 
-        val state = buildLogsUiState(listOf(real, simulated), emptyMap(), TEST_ZONE)
+        val state = buildLogsUiState(listOf(real, simulated), emptyMap(), TEST_ZONE, runningNightLogName = null)
 
         assertFalse(state.logs[0].isSimulated)
         assertTrue(state.logs[1].isSimulated)
@@ -83,7 +83,7 @@ class BuildLogsUiStateTest {
 
     @Test
     fun `an empty listing derives an empty list rather than a placeholder row`() {
-        assertEquals(emptyList<NightLogSummary>(), buildLogsUiState(emptyList(), emptyMap(), TEST_ZONE).logs)
+        assertEquals(emptyList<NightLogSummary>(), buildLogsUiState(emptyList(), emptyMap(), TEST_ZONE, runningNightLogName = null).logs)
     }
 
     @Test
@@ -98,11 +98,22 @@ class BuildLogsUiStateTest {
             unrated to null,
         )
 
-        val state = buildLogsUiState(listOf(rated, laterOnly, unrated), ratings, TEST_ZONE)
+        val state = buildLogsUiState(listOf(rated, laterOnly, unrated), ratings, TEST_ZONE, runningNightLogName = null)
 
         assertEquals(
             listOf(listOf(SleepRating.GOOD, SleepRating.OKAY), listOf(SleepRating.BAD), emptyList()),
             state.logs.map { it.ratingChips }
         )
+    }
+
+    // PER-148: History opens from the Night screen too, and lists past nights only - tonight joins after End night.
+    @Test
+    fun `leaves out the night still running`(@TempDir dir: Path) {
+        val running = logFile(dir, "night-20261023-2310.jsonl", 10, Instant.parse("2026-10-23T21:00:00Z"))
+        val past = logFile(dir, "night-20261022-2300.jsonl", 10, Instant.parse("2026-10-23T05:00:00Z"))
+
+        val state = buildLogsUiState(listOf(running, past), emptyMap(), TEST_ZONE, runningNightLogName = running.name)
+
+        assertEquals(listOf(past), state.logs.map { it.file })
     }
 }
