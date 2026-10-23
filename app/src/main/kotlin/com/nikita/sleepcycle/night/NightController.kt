@@ -308,6 +308,8 @@ private suspend fun tearDownNight(context: Context) {
     // cleared (the other is the nudge firing itself) - see OutOfBedNudgeStore.kt's own header for why
     // G1's FINISHED-bookkeeping path below must NOT do the same.
     clearOutOfBedNudgePendingAt(context)
+    // PER-151: an Are you up? ask still showing belongs to the night that just ended.
+    cancelAreYouUpNotification(context)
     clearNightState(context)
     stopNightService(context)
     nightStateFlow.value = null

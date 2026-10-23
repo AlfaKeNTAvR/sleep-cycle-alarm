@@ -90,6 +90,30 @@ class NightStateTest {
     }
 
     @Test
+    fun `PER-151 an open Are you up ask survives a save and reload`() {
+        val open = AreYouUpAsk(awakeningStartedAt = Instant.parse("2026-09-17T06:00:00Z"), askedAt = Instant.parse("2026-09-17T06:16:00Z"))
+        val state = baseState().copy(areYouUp = open)
+
+        assertEquals(state, decodeNightState(encodeNightState(state)))
+    }
+
+    @Test
+    fun `PER-151 an answered Are you up ask survives a save and reload`() {
+        val answered = AreYouUpAsk(
+            Instant.parse("2026-09-17T06:00:00Z"), Instant.parse("2026-09-17T06:16:00Z"),
+            AreYouUpAnswer.STILL_SLEEPING, Instant.parse("2026-09-17T06:17:00Z"),
+        )
+        val state = baseState().copy(areYouUp = answered)
+
+        assertEquals(state, decodeNightState(encodeNightState(state)))
+    }
+
+    @Test
+    fun `PER-151 a night saved before the Are you up ask existed reads back with no ask`() {
+        assertNull(decodeNightState(fullStateJson().toString()).areYouUp)
+    }
+
+    @Test
     fun `PER-150 a night saved before No-alarm nights existed reads back as a normal night`() {
         val json = fullStateJson()
         json.getJSONObject("settings").remove("noAlarm")

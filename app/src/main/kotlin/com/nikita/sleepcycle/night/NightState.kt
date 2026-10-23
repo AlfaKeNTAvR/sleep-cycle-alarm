@@ -117,7 +117,13 @@ data class NightState(
      * dies with the process (V8) and Auto re-anchors it mid-night. A state saved before this field existed
      * decodes as [startedAt], the start its log is already named for, so a night in progress keeps one log.
      */
-    val realStartedAt: Instant = startedAt
+    val realStartedAt: Instant = startedAt,
+    /**
+     * PER-151: the No-alarm night's latest Are you up? ask (AreYouUpAsk.kt), open or answered - null until the
+     * first one. Kept here so an ask open when the app is killed is still open after it restarts. Written by the
+     * tick that raises it and by the answer, both under the night lock.
+     */
+    val areYouUp: AreYouUpAsk? = null
 )
 
 /** Turns a night state into its JSON text form, the inverse of [decodeNightState]. */
@@ -140,6 +146,7 @@ fun encodeNightState(state: NightState): String {
     json.put("lastNapAlarmFiredAt", state.lastNapAlarmFiredAt?.toString() ?: JSONObject.NULL)
     json.put("afterAlarm", encodeAfterAlarmSettings(state.afterAlarm))
     json.put("realStartedAt", state.realStartedAt.toString())
+    json.put("areYouUp", state.areYouUp?.let(::encodeAreYouUpAsk) ?: JSONObject.NULL)
     return json.toString()
 }
 
@@ -189,8 +196,31 @@ fun decodeNightState(text: String): NightState {
         // this field existed (absent, decodes as null).
         lastNapAlarmFiredAt = json.optStringOrNull("lastNapAlarmFiredAt")?.let(Instant::parse),
         afterAlarm = decodeAfterAlarmSettingsTolerant(json.optJSONObject("afterAlarm")),
-        realStartedAt = decodeRealStartedAtTolerant(json, startedAt)
+        realStartedAt = decodeRealStartedAtTolerant(json, startedAt),
+        areYouUp = decodeAreYouUpAskTolerant(json.optJSONObject("areYouUp"))
     )
+}
+
+private fun encodeAreYouUpAsk(ask: AreYouUpAsk): JSONObject = JSONObject().apply {
+    put("awakeningStartedAt", ask.awakeningStartedAt.toString())
+    put("askedAt", ask.askedAt.toString())
+    put("answer", ask.answer?.name ?: JSONObject.NULL)
+    put("answeredAt", ask.answeredAt?.toString() ?: JSONObject.NULL)
+}
+
+/** PER-151: absent (a state saved before the ask existed) or malformed decodes as no ask; the next tick asks afresh if it still applies. */
+private fun decodeAreYouUpAskTolerant(json: JSONObject?): AreYouUpAsk? {
+    if (json == null) return null
+    return try {
+        AreYouUpAsk(
+            awakeningStartedAt = Instant.parse(json.getString("awakeningStartedAt")),
+            askedAt = Instant.parse(json.getString("askedAt")),
+            answer = json.optStringOrNull("answer")?.let(AreYouUpAnswer::valueOf),
+            answeredAt = json.optStringOrNull("answeredAt")?.let(Instant::parse),
+        )
+    } catch (error: Exception) {
+        null
+    }
 }
 
 /** Owner request, 2026-10-03: absent (a state saved before [NightState.realStartedAt] existed) or unparseable decodes as [startedAt], the start that night's log is already named for. */

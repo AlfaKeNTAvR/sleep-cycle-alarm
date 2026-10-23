@@ -8,6 +8,8 @@ import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SleepState
+import com.nikita.sleepcycle.night.AreYouUpAnswer
+import com.nikita.sleepcycle.night.AreYouUpAsk
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.PendingFollowUp
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -70,5 +72,18 @@ class NightScreenNoAlarmTest {
 
         assertEquals(NightScreenContent.NoAlarm, screen.content)
         assertTrue(screen.showEndNightButton)
+    }
+
+    @Test fun `PER-151 an open Are you up ask shows its banner`() {
+        val asked = noAlarmNight.copy(areYouUp = AreYouUpAsk(instant("2026-09-17T06:00"), instant("2026-09-17T06:16")))
+
+        assertTrue(screenAt("2026-09-17T06:20", asked).showAreYouUpAsk)
+    }
+
+    @Test fun `PER-151 no banner before the ask, or once it is answered`() {
+        val answered = AreYouUpAsk(instant("2026-09-17T06:00"), instant("2026-09-17T06:16"), AreYouUpAnswer.STILL_SLEEPING, instant("2026-09-17T06:17"))
+
+        assertFalse(screenAt("2026-09-17T06:20", noAlarmNight).showAreYouUpAsk)
+        assertFalse(screenAt("2026-09-17T06:20", noAlarmNight.copy(areYouUp = answered)).showAreYouUpAsk)
     }
 }

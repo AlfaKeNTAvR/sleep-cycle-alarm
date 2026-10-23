@@ -109,6 +109,12 @@
     <!-- PER-150: a No-alarm night, all night until I'm up: there is no alarm time to show. -->
     <string name="night_no_alarm_title">No alarm</string>
     <string name="night_no_alarm_detail">Tracking your sleep.</string>
+    <!-- PER-151: a No-alarm night's question once the band shows a long morning awakening, as a silent
+         notification and as a banner on the Night screen. I'm up reuses night_im_up. -->
+    <string name="are_you_up_channel_name">Are you up?</string>
+    <string name="are_you_up_title">Are you up?</string>
+    <string name="are_you_up_body">Your band shows you awake.</string>
+    <string name="are_you_up_still_sleeping">Still sleeping</string>
 
     <!-- Night screen: the one line under the hero time (N1). The countdown carries an already-formatted
          duration ("20 min", "5 h 38") from formatTimeUntil. -->

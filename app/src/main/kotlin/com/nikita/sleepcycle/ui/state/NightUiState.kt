@@ -144,4 +144,9 @@ data class NightUiState(
      * shows the volume (see [isLiveVolumeLineShown]).
      */
     val showLiveVolumeLine: Boolean = false,
+    /**
+     * PER-151: a No-alarm night's Are you up? ask is open (NightState.areYouUp), so the screen shows it as a
+     * banner with I'm up and Still sleeping, alongside the silent notification asking the same.
+     */
+    val showAreYouUpAsk: Boolean = false,
 )
