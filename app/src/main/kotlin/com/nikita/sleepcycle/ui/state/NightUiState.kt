@@ -113,6 +113,11 @@ data class NightUiState(
      */
     val napButtonMinutes: Int? = null,
     /**
+     * PER-149: whether "One more cycle" sits between Nap and End night - offered wherever [napButtonMinutes] is,
+     * unless one cycle from now would ring after the night's deadline (it never caps, it hides).
+     */
+    val showOneMoreCycleButton: Boolean = false,
+    /**
      * Owner spec, 2026-10-02: whether the "I'm up" button is offered - a live night whose morning alarm has not
      * rung yet. Pressing it (after [confirmingImUp]'s dialog) stands in for that alarm being stopped now, so
      * [napButtonMinutes] is offered at once instead of after the alarm rings.

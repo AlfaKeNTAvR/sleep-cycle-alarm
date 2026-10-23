@@ -19,8 +19,8 @@ import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.night.firedAlarmIsWakeAlarm
 import java.time.Instant
 
-/** Which of the app's four rings this is, for the ring screen's and the notification's own wording. */
-enum class AlarmLabel { MORNING, NAP, OUT_OF_BED, TEST }
+/** Which of the app's rings this is, for the ring screen's and the notification's own wording (PER-149 added ONE_MORE_CYCLE). */
+enum class AlarmLabel { MORNING, NAP, ONE_MORE_CYCLE, OUT_OF_BED, TEST }
 
 /** Names the ring on the firing intent; absent on an intent from an older build, which [readAlarmLabel] covers. */
 const val EXTRA_ALARM_LABEL = "alarmLabel"
@@ -53,6 +53,7 @@ fun alarmLabelFor(mode: AlarmMode, armedFor: Instant, morningAlarmAt: Instant?):
 fun alarmLabelNameRes(label: AlarmLabel): Int = when (label) {
     AlarmLabel.MORNING -> R.string.alarm_label_morning
     AlarmLabel.NAP -> R.string.alarm_label_nap
+    AlarmLabel.ONE_MORE_CYCLE -> R.string.alarm_label_one_more_cycle
     AlarmLabel.OUT_OF_BED -> R.string.alarm_label_out_of_bed
     AlarmLabel.TEST -> R.string.alarm_label_test
 }

@@ -21,12 +21,20 @@ package com.nikita.sleepcycle.night
 //
 // The manual nap is never counted against MAX_NAP_ALARMS: its firing arrives on the out-of-bed slot, which
 // PhoneAlarmReceiver.firedAlarmRecordsPlanBookkeeping already keeps out of every engine fact (D1/F2/G8/H2).
+//
+// PER-149 (owner spec, 2026-10-23): One more cycle is a third kind in the same slot - a whole cycle
+// (EngineConfig.cycleLength, 90 min) from the tap instead of a nap. It is offered and armed only when it ends
+// at or before a wake-by deadline: unlike a nap it never caps, so a cycle cut short would not be a cycle.
 
 import com.nikita.sleepcycle.engine.EngineConfig
 import java.time.Instant
 
-/** P3: which kind of follow-up alarm is pending in the out-of-bed slot - the repeating nudge (D4/L1) or a nap the owner chose. */
-enum class FollowUpKind { NUDGE, NAP }
+/**
+ * P3: which kind of follow-up alarm is pending in the out-of-bed slot - the repeating nudge (D4/L1), or extra
+ * sleep the owner chose: a nap, or (PER-149) One more cycle. [isChosenSleep] is true for the two he chose, which
+ * Stop leaves alone and I'm up ends.
+ */
+enum class FollowUpKind(val isChosenSleep: Boolean) { NUDGE(false), NAP(true), ONE_MORE_CYCLE(true) }
 
 /** P3: the one follow-up alarm pending after an alarm has rung, and when it rings (virtual - T4). */
 data class PendingFollowUp(val kind: FollowUpKind, val at: Instant)
@@ -41,6 +49,9 @@ sealed interface PostAlarmEvent {
 
     /** The owner pressed the Night screen's "Nap 20 min" button. */
     data class NapPressed(val at: Instant) : PostAlarmEvent
+
+    /** PER-149: the owner pressed the Night screen's "One more cycle" button. */
+    data class OneMoreCyclePressed(val at: Instant) : PostAlarmEvent
 
     /**
      * The owner pressed the Night screen's "I'm up" before the morning alarm rang (owner spec, 2026-10-02:
@@ -59,11 +70,14 @@ sealed interface PostAlarmEvent {
  *   end) so a ring whose end is never observed - the ring service killed mid-ring - still has a nudge behind it.
  *   Replaces whatever was pending: a fresh ring is a fresh cycle.
  * - [PostAlarmEvent.RingEnded]: the nudge moves to `end + outOfBedDelay` ("once I stop it ... in 10 minutes"),
- *   unless a nap is pending - a nap chosen while the alarm was still ringing must survive the Stop after it.
+ *   unless a nap or One more cycle is pending - a nap chosen while the alarm was still ringing must survive the Stop after it.
  * - [PostAlarmEvent.NapPressed]: only a pending NUDGE can be traded for a nap, at `press + napLength`, never
  *   later than a wake-by deadline still ahead (the deadline is the hardest promise this app makes). A deadline
  *   already past caps nothing: capping at a past instant would ring at once, and L2 keeps the cycle running past
  *   the deadline anyway. A press with a nap already pending, or nothing pending, changes nothing.
+ * - [PostAlarmEvent.OneMoreCyclePressed] (PER-149): like Nap, only a pending NUDGE can be traded, for an alarm at
+ *   `press + cycleLength` - but only if that is at or before the deadline ([oneMoreCycleEndsAt]); otherwise,
+ *   including a deadline already past, nothing changes. Stop and I'm up treat it exactly like a nap.
  * - [PostAlarmEvent.ImUpPressed]: the nudge at `press + outOfBedDelay`, exactly as if the morning alarm had
  *   just been stopped, replacing whatever was pending - so the Nap button is offered at once.
  */
@@ -72,12 +86,26 @@ fun nextFollowUp(event: PostAlarmEvent, pending: PendingFollowUp?, deadline: Ins
         is PostAlarmEvent.AlarmFired ->
             PendingFollowUp(FollowUpKind.NUDGE, event.at.plus(config.ringAutoStopAfter).plus(config.outOfBedDelay))
         is PostAlarmEvent.RingEnded ->
-            if (pending?.kind == FollowUpKind.NAP) pending else PendingFollowUp(FollowUpKind.NUDGE, event.at.plus(config.outOfBedDelay))
+            if (pending?.kind?.isChosenSleep == true) pending else PendingFollowUp(FollowUpKind.NUDGE, event.at.plus(config.outOfBedDelay))
         is PostAlarmEvent.NapPressed ->
             if (pending?.kind != FollowUpKind.NUDGE) pending else PendingFollowUp(FollowUpKind.NAP, napEndsAt(event.at, deadline, config))
+        is PostAlarmEvent.OneMoreCyclePressed -> {
+            val endsAt = oneMoreCycleEndsAt(event.at, deadline, config)
+            if (pending?.kind != FollowUpKind.NUDGE || endsAt == null) pending else PendingFollowUp(FollowUpKind.ONE_MORE_CYCLE, endsAt)
+        }
         is PostAlarmEvent.ImUpPressed ->
             PendingFollowUp(FollowUpKind.NUDGE, event.at.plus(config.outOfBedDelay))
     }
+
+/**
+ * PER-149: when One more cycle pressed at [pressedAt] would ring - `press + cycleLength` - or null when that is
+ * after [deadline], so the button is hidden and a press is refused. The Night screen's button and [nextFollowUp]
+ * both ask this, so what is offered and what is armed cannot disagree.
+ */
+fun oneMoreCycleEndsAt(pressedAt: Instant, deadline: Instant?, config: EngineConfig): Instant? {
+    val endsAt = pressedAt.plus(config.cycleLength)
+    return if (deadline != null && endsAt.isAfter(deadline)) null else endsAt
+}
 
 /** P3: `press + napLength`, capped by a deadline that is still ahead of [pressedAt] - see [nextFollowUp]. */
 private fun napEndsAt(pressedAt: Instant, deadline: Instant?, config: EngineConfig): Instant {

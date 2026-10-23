@@ -10,6 +10,7 @@ import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
 import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.FollowUpKind
+import com.nikita.sleepcycle.night.oneMoreCycleEndsAt
 import com.nikita.sleepcycle.night.resolveEngineConfig
 import com.nikita.sleepcycle.engine.EngineConfig
 import com.nikita.sleepcycle.engine.morningAlarmHasRung
@@ -99,6 +100,8 @@ fun buildNightUiState(
     // null) is passed alongside the nudge - it can also override a NON-null modeLabel now, not just a null one.
     val content = applyPendingOutOfBedNudge(rawContent, pendingFollowUp, plan.wakeAt, now, zone)
     val showImUp = imUpOffered(state, plan.mode, pendingFollowUp, now)
+    val config = resolveEngineConfig(state)
+    val napMinutes = napButtonMinutes(pendingFollowUp, morningAlarmHasRung(state), now, config)
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content,
         // Owner spec, 2026-10-02: one choice at a time - End night only once he is up (see imUpOffered).
@@ -106,7 +109,9 @@ fun buildNightUiState(
         activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
         bandNotSyncingWarning = bandNotSyncingWarning,
-        napButtonMinutes = napButtonMinutes(pendingFollowUp, morningAlarmHasRung(state), now, resolveEngineConfig(state)),
+        napButtonMinutes = napMinutes,
+        // PER-149: One more cycle sits with Nap, wherever Nap is offered, unless it would ring after the deadline.
+        showOneMoreCycleButton = napMinutes != null && oneMoreCycleEndsAt(now, state.settings.deadline, config) != null,
         showImUpButton = showImUp,
         confirmingImUp = confirmingImUp,
         discardsNight = isShortNight(state.startedAt, now),
@@ -121,10 +126,13 @@ fun buildNightUiState(
  * Nap and End night instead.
  */
 private fun imUpOffered(state: NightState, mode: AlarmMode, pendingFollowUp: PendingFollowUp?, now: Instant): Boolean {
-    val ownNapAhead = pendingFollowUp?.kind == FollowUpKind.NAP && pendingFollowUp.at.isAfter(now)
     val morningAlarmAhead = mode != AlarmMode.FINISHED && !morningAlarmHasRung(state)
-    return ownNapAhead || morningAlarmAhead
+    return chosenSleepAhead(pendingFollowUp, now) || morningAlarmAhead
 }
+
+/** P3 / PER-149: the owner's own nap or One more cycle is pending and still ahead of [now]. */
+private fun chosenSleepAhead(pendingFollowUp: PendingFollowUp?, now: Instant): Boolean =
+    pendingFollowUp?.kind?.isChosenSleep == true && pendingFollowUp.at.isAfter(now)
 
 private fun morningAlarmHasRung(state: NightState): Boolean =
     morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
@@ -143,7 +151,6 @@ private fun morningAlarmHasRung(state: NightState): Boolean =
  */
 private fun napButtonMinutes(pendingFollowUp: PendingFollowUp?, morningAlarmRang: Boolean, now: Instant, config: EngineConfig): Int? {
     val nudgePending = pendingFollowUp?.kind == FollowUpKind.NUDGE && pendingFollowUp.at.isAfter(now)
-    val ownNapAhead = pendingFollowUp?.kind == FollowUpKind.NAP && pendingFollowUp.at.isAfter(now)
-    val offered = nudgePending || (morningAlarmRang && !ownNapAhead)
+    val offered = nudgePending || (morningAlarmRang && !chosenSleepAhead(pendingFollowUp, now))
     return if (offered) config.napLength.toMinutes().toInt() else null
 }

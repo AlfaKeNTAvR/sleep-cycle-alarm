@@ -16,6 +16,7 @@ class PostAlarmCycleTest {
     private fun at(time: String): Instant = Instant.parse("2026-09-30T${time}:00Z")
     private fun nudge(time: String) = PendingFollowUp(FollowUpKind.NUDGE, at(time))
     private fun nap(time: String) = PendingFollowUp(FollowUpKind.NAP, at(time))
+    private fun cycle(time: String) = PendingFollowUp(FollowUpKind.ONE_MORE_CYCLE, at(time))
 
     @Test fun `stopping the morning alarm at 07_03 arms the nudge for 07_13`() {
         val afterStop = nextFollowUp(PostAlarmEvent.RingEnded(at("07:03")), pending = nudge("07:19"), deadline = null, config = config)
@@ -139,5 +140,83 @@ class PostAlarmCycleTest {
         apply(PostAlarmEvent.RingEnded(at("07:31")))
 
         assertEquals(nudge("07:41"), pending)
+    }
+
+    // PER-149: One more cycle - a whole 90 min cycle from the tap instead of a 20 min nap.
+
+    @Test fun `pressing One more cycle at 07_05 replaces the pending nudge with an alarm at 08_35`() {
+        val afterPress = nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(at("07:05")), pending = nudge("07:13"), deadline = null, config = config)
+
+        assertEquals(cycle("08:35"), afterPress)
+    }
+
+    @Test fun `One more cycle at 07_05 with an 08_35 deadline rings exactly at the deadline`() {
+        val afterPress = nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(at("07:05")), pending = nudge("07:13"), deadline = at("08:35"), config = config)
+
+        assertEquals(cycle("08:35"), afterPress)
+    }
+
+    @Test fun `One more cycle at 07_05 with an 08_30 deadline is refused and the nudge stays - it never caps`() {
+        val afterPress = nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(at("07:05")), pending = nudge("07:13"), deadline = at("08:30"), config = config)
+
+        assertEquals(nudge("07:13"), afterPress)
+    }
+
+    @Test fun `One more cycle after a 07_00 deadline already passed is refused`() {
+        val afterPress = nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(at("07:15")), pending = nudge("07:20"), deadline = at("07:00"), config = config)
+
+        assertEquals(nudge("07:20"), afterPress)
+    }
+
+    @Test fun `One more cycle with a nap already pending, or nothing pending, changes nothing`() {
+        assertEquals(nap("07:25"), nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(at("07:10")), pending = nap("07:25"), deadline = null, config = config))
+        assertEquals(null, nextFollowUp(PostAlarmEvent.OneMoreCyclePressed(at("03:10")), pending = null, deadline = null, config = config))
+    }
+
+    @Test fun `a Nap press while One more cycle is pending does not shorten it`() {
+        val afterPress = nextFollowUp(PostAlarmEvent.NapPressed(at("07:10")), pending = cycle("08:35"), deadline = null, config = config)
+
+        assertEquals(cycle("08:35"), afterPress)
+    }
+
+    @Test fun `One more cycle chosen while the alarm is still ringing survives the Stop that follows`() {
+        val afterStop = nextFollowUp(PostAlarmEvent.RingEnded(at("07:02")), pending = cycle("08:31"), deadline = null, config = config)
+
+        assertEquals(cycle("08:31"), afterStop)
+    }
+
+    @Test fun `pressing I'm up at 07_40 during One more cycle ends it and arms the nudge for 07_50`() {
+        val afterImUp = nextFollowUp(PostAlarmEvent.ImUpPressed(at("07:40")), pending = cycle("08:35"), deadline = null, config = config)
+
+        assertEquals(nudge("07:50"), afterImUp)
+    }
+
+    @Test fun `One more cycle repeats without limit, each ring offering the next`() {
+        // Morning alarm 07:00, stopped 07:01; then three rounds of: One more cycle pressed 1 min after the stop,
+        // its alarm rings 90 min later and is stopped 1 min after that.
+        var pending: PendingFollowUp? = null
+        fun apply(event: PostAlarmEvent) { pending = nextFollowUp(event, pending, deadline = null, config = config) }
+        apply(PostAlarmEvent.AlarmFired(at("07:00")))
+        apply(PostAlarmEvent.RingEnded(at("07:01")))
+        // (pressed, cycle rings, stopped)
+        val rounds = listOf(
+            Triple("07:02", "08:32", "08:33"),
+            Triple("08:34", "10:04", "10:05"),
+            Triple("10:06", "11:36", "11:37"),
+        )
+        for ((pressed, rings, stopped) in rounds) {
+            apply(PostAlarmEvent.OneMoreCyclePressed(at(pressed)))
+            assertEquals(cycle(rings), pending)
+            apply(PostAlarmEvent.AlarmFired(at(rings)))
+            apply(PostAlarmEvent.RingEnded(at(stopped)))
+        }
+
+        assertEquals(nudge("11:47"), pending)
+    }
+
+    @Test fun `One more cycle fits a deadline exactly when tap plus 90 min is at or before it`() {
+        assertEquals(at("08:35"), oneMoreCycleEndsAt(at("07:05"), deadline = at("08:35"), config = config))
+        assertEquals(null, oneMoreCycleEndsAt(at("07:06"), deadline = at("08:35"), config = config))
+        assertEquals(at("08:36"), oneMoreCycleEndsAt(at("07:06"), deadline = null, config = config))
     }
 }
