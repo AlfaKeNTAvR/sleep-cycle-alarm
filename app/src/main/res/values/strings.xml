@@ -83,7 +83,7 @@
     <string name="content_description_sleep_length_option">Sleep %1$s</string>
     <string name="content_description_sleep_length_option_unavailable">Sleep %1$s, does not fit before the deadline</string>
     <!-- PER-150: the chip after the cycle chips that starts a No-alarm night: no morning alarm, sleep tracked. -->
-    <string name="sleep_length_no_alarm">No alarm</string>
+    <string name="sleep_length_no_alarm">None</string>
     <string name="content_description_sleep_length_no_alarm">No alarm, track sleep only</string>
     <string name="before_bed_start_night">Start night</string>
 
