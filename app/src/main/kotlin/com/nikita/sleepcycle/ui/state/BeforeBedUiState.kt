@@ -19,8 +19,11 @@ sealed interface BandCheckStatus {
     /** A test is running right now (bounded by CONNECTION_TEST_DEADLINE). */
     data object Checking : BandCheckStatus
 
-    /** The last test failed; [reason] is its first action-needed line, shown in amber with a "Test again" button. */
-    data class Failed(val reason: String) : BandCheckStatus
+    /**
+     * The last test failed; [reason] is its first action-needed line, shown in amber with a "Test again" button.
+     * [notMeasuring]: it failed because the band syncs but measures no heart rate (PER-130), not for want of an answer.
+     */
+    data class Failed(val reason: String, val notMeasuring: Boolean = false) : BandCheckStatus
 }
 
 /**
@@ -42,8 +45,14 @@ enum class BandStatus {
     /** Set up, and a connection test is running right now: the corner does not claim an answer before it has one (owner-reported on the phone, 2026-09-30). */
     CHECKING,
 
-    /** Set up, but the latest connection test failed. */
+    /** Set up, but the latest connection test failed: no sync finished, or nothing new arrived. */
     NOT_RESPONDING,
+
+    /**
+     * P5: set up, and the band answers, but the latest connection test failed because it measures no heart rate
+     * (PER-130). "Not responding" was untrue there: the band synced, and a reconnect does not fix it.
+     */
+    NOT_MEASURING,
 
     /** Gadgetbridge missing, or no band address or export file chosen yet. */
     SETUP_INCOMPLETE,
@@ -73,6 +82,8 @@ data class BeforeBedUiState(
     val bandCheck: BandCheckStatus = BandCheckStatus.None,
     /** Owner request, 2026-10-05: a failed band check offers "Open Gadgetbridge" above Start night, to reconnect the band there. */
     val offerOpenGadgetbridge: Boolean = false,
+    /** P5: the latest test passed but Gadgetbridge did not answer a Bluetooth CONNECT, so its Intent API Bluetooth toggle looks off: a quiet hint, never a blocker. */
+    val showBluetoothIntentApiHint: Boolean = false,
     /** Owner spec, 2026-10-22 (PER-133): the live media output and volume line above Start night; false while the simulation block shows the volume instead (see [isLiveVolumeLineShown]). */
     val showLiveVolumeLine: Boolean = false,
 )

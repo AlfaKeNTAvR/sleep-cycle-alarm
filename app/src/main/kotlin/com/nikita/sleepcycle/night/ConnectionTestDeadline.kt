@@ -8,7 +8,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Duration
 
@@ -37,20 +36,11 @@ suspend fun runConnectionTestWithin(deadline: Duration, attempt: suspend () -> S
 /**
  * P2: the automatic test's pause before its one retry. In 3 of the 4 failed tests on record, a manual retry soon
  * after passed - the first sync request seems to nudge Gadgetbridge - so one quiet retry hides most one-off
- * failures. Short, because the owner is waiting at bedtime: worst case is 20 s + 5 s + 20 s.
+ * failures. Short, because the owner is waiting at bedtime: worst case is 20 s + 5 s + 20 s. P5: used only when
+ * the failure is one a reconnect cannot fix (not measuring heart rate); every other failure reconnects instead of
+ * pausing (see runConnectionTestAttempts in BandReconnectPolicy.kt), worst case 20 s + 3 s + 30 s + 20 s.
  */
 val AUTO_CONNECTION_TEST_RETRY_PAUSE: Duration = Duration.ofSeconds(5)
-
-/**
- * P2: runs [attempt] (numbered 1, then 2) and, if the first report is not ready, waits [pause] and tries exactly
- * once more, returning the second report whatever it is. Used for the automatic test only; a tapped test runs once.
- */
-suspend fun runWithOneRetry(pause: Duration, attempt: suspend (attemptNumber: Int) -> SetupCheckReport): SetupCheckReport {
-    val first = attempt(1)
-    if (first.isReady) return first
-    delay(pause.toMillis())
-    return attempt(2)
-}
 
 /**
  * P2: the failed report a timed-out attempt shows. It names the fix, not just the symptom: on 2026-09-30

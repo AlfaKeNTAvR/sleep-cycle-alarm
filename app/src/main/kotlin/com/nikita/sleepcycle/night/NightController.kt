@@ -561,7 +561,7 @@ private fun logAlarmReadiness(context: Context, realStartedAt: Instant, now: Ins
 private fun nightEndFields(state: NightState, now: Instant): Map<String, String> {
     val view = buildNightEngineView(state, now)
     // P1: the same noBandData the morning report shows, so the Past night screen says the same thing later.
-    return encodeNightEndFields(view.summary, state.settings, view.noBandData)
+    return encodeNightEndFields(view.summary, state.settings, view.noBandData, view.noBandDataCause)
 }
 
 /**

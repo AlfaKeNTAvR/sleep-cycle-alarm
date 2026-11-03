@@ -3,6 +3,7 @@ package com.nikita.sleepcycle.ui.state
 // File purpose: pure derivation of the Before-bed screen's state - deadline, the "sleep up to" picker with its
 // hatched/disabled options, and "Start night" gating.
 
+import com.nikita.sleepcycle.bridge.StaleReason
 import com.nikita.sleepcycle.night.AppSettings
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
@@ -114,6 +115,7 @@ fun buildBeforeBedUiState(
         confirmingDebugNightStart = confirmingDebugNightStart,
         bandCheck = bandCheck,
         offerOpenGadgetbridge = bandCheck is BandCheckStatus.Failed && gadgetbridgeInstalled,
+        showBluetoothIntentApiHint = (connectionTest as? ConnectionTestState.Done)?.report?.bluetoothIntentApiLooksOff == true,
         showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
     )
 }
@@ -127,7 +129,7 @@ private fun bandCheckStatusFor(connectionTest: ConnectionTestState): BandCheckSt
     } else {
         val lines = connectionTest.report.lines
         val reasonLine = lines.firstOrNull { it.severity == SetupCheckLineSeverity.ACTION_NEEDED } ?: lines.firstOrNull()
-        BandCheckStatus.Failed(reasonLine?.text.orEmpty())
+        BandCheckStatus.Failed(reasonLine?.text.orEmpty(), notMeasuring = connectionTest.report.staleReason == StaleReason.NO_HEART_RATE_VALUES)
     }
 }
 
@@ -138,6 +140,7 @@ private fun bandCheckStatusFor(connectionTest: ConnectionTestState): BandCheckSt
  */
 internal fun bandStatusFor(bandSetUp: Boolean, bandCheck: BandCheckStatus, lastPassedAt: Instant?, now: Instant): BandStatus = when {
     !bandSetUp -> BandStatus.SETUP_INCOMPLETE
+    bandCheck is BandCheckStatus.Failed && bandCheck.notMeasuring -> BandStatus.NOT_MEASURING
     bandCheck is BandCheckStatus.Failed -> BandStatus.NOT_RESPONDING
     bandCheck is BandCheckStatus.Checking -> BandStatus.CHECKING
     passedRecently(lastPassedAt, now) -> BandStatus.CONNECTED

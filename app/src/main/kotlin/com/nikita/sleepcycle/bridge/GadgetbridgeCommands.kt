@@ -37,3 +37,13 @@ fun sendActivitySync(context: Context) {
 fun sendDatabaseExport(context: Context) {
     context.sendBroadcast(gadgetbridgeIntent(ACTION_TRIGGER_DATABASE_EXPORT))
 }
+
+/** P5: asks Gadgetbridge to disconnect the band at [deviceMac]. Ignored unless its Intent API Bluetooth toggle is on. */
+fun sendBluetoothDisconnect(context: Context, deviceMac: String) {
+    context.sendBroadcast(gadgetbridgeIntent(ACTION_BLUETOOTH_DISCONNECT).putExtra(EXTRA_DEVICE_ADDRESS, deviceMac))
+}
+
+/** P5: asks Gadgetbridge to connect the band at [deviceMac]; while it is already connected, Gadgetbridge only replies [ACTION_BLUETOOTH_CONNECTED]. */
+fun sendBluetoothConnect(context: Context, deviceMac: String) {
+    context.sendBroadcast(gadgetbridgeIntent(ACTION_BLUETOOTH_CONNECT).putExtra(EXTRA_DEVICE_ADDRESS, deviceMac))
+}

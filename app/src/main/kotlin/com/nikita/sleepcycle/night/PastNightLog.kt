@@ -27,6 +27,7 @@ private const val DEADLINE_FIELD = "deadline"
 private const val PICKED_CYCLES_FIELD = "pickedCycles"
 private const val SPEED_FIELD = "speed"
 private const val NO_BAND_DATA_FIELD = "noBandData"
+private const val NO_BAND_DATA_CAUSE_FIELD = "noBandDataCause"
 private const val NO_ALARM_FIELD = "noAlarm"
 
 private const val STRETCH_ONSET_KEY = "onset"
@@ -70,6 +71,8 @@ data class PastNightLog(
     val speed: Int,
     /** P1: night_end's `noBandData` flag - no band data reached the app that night. Absent (every log written before P1) reads as false, keeping that night's old "no sleep recorded" wording. */
     val noBandData: Boolean = false,
+    /** P5: night_end's `noBandDataCause`; absent (every log before P5) or unknown reads as [NoBandDataCause.SYNC_FAILED], P1's wording. */
+    val noBandDataCause: NoBandDataCause = NoBandDataCause.SYNC_FAILED,
     /** PER-150: a No-alarm night, from night_end or night_start. Absent (every log written before PER-150) reads as false. */
     val noAlarm: Boolean = false,
     /** The night's two sleep ratings (SleepRating.kt); null for a night started before the rating existed, which cannot be rated. */
@@ -80,16 +83,23 @@ data class PastNightLog(
  * The night_end event's fields: the human-readable summary line the log has always carried, plus the whole
  * summary and the night's settings as structured fields, so a past night can be redrawn from its log alone.
  */
-fun encodeNightEndFields(summary: NightSummary, settings: NightSettings, noBandData: Boolean): Map<String, String> = mapOf(
-    SUMMARY_TEXT_FIELD to nightEndSummaryText(summary),
-    TOTAL_SLEEP_FIELD to summary.totalSleep.toString(),
-    STRETCHES_FIELD to encodeRecordedStretches(summary).toString(),
-    DEADLINE_FIELD to (settings.deadline?.toString() ?: NO_DEADLINE_FIELD_VALUE),
-    PICKED_CYCLES_FIELD to settings.pickedCycles.toString(),
+fun encodeNightEndFields(
+    summary: NightSummary,
+    settings: NightSettings,
+    noBandData: Boolean,
+    noBandDataCause: NoBandDataCause = NoBandDataCause.SYNC_FAILED,
+): Map<String, String> = buildMap {
+    put(SUMMARY_TEXT_FIELD, nightEndSummaryText(summary))
+    put(TOTAL_SLEEP_FIELD, summary.totalSleep.toString())
+    put(STRETCHES_FIELD, encodeRecordedStretches(summary).toString())
+    put(DEADLINE_FIELD, settings.deadline?.toString() ?: NO_DEADLINE_FIELD_VALUE)
+    put(PICKED_CYCLES_FIELD, settings.pickedCycles.toString())
     // P1: see NightEngineView.noBandData - lets the Past night screen say "no band data" for this night too.
-    NO_BAND_DATA_FIELD to noBandData.toString(),
-    NO_ALARM_FIELD to settings.noAlarm.toString(),
-)
+    put(NO_BAND_DATA_FIELD, noBandData.toString())
+    // P5: why, written only for a no-data night, so Past night words it the same way the morning report did.
+    if (noBandData) put(NO_BAND_DATA_CAUSE_FIELD, noBandDataCause.logValue)
+    put(NO_ALARM_FIELD, settings.noAlarm.toString())
+}
 
 /** The one-line human-readable summary, unchanged from before night_end carried structured fields. */
 private fun nightEndSummaryText(summary: NightSummary): String =
@@ -137,6 +147,7 @@ fun parsePastNightLog(lines: List<String>): PastNightLog {
         pickedCycles = endFields[PICKED_CYCLES_FIELD]?.toIntOrNull() ?: startFields[PICKED_CYCLES_FIELD]?.toIntOrNull(),
         speed = readSpeed(startFields),
         noBandData = endFields[NO_BAND_DATA_FIELD] == "true",
+        noBandDataCause = NoBandDataCause.entries.firstOrNull { it.logValue == endFields[NO_BAND_DATA_CAUSE_FIELD] } ?: NoBandDataCause.SYNC_FAILED,
         noAlarm = (endFields[NO_ALARM_FIELD] ?: startFields[NO_ALARM_FIELD]) == "true",
         ratings = readNightRatings(events),
     )

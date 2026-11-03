@@ -72,7 +72,14 @@ import com.nikita.sleepcycle.night.NightLogEvent
 import com.nikita.sleepcycle.night.appendSetupLog
 import com.nikita.sleepcycle.night.applyAfterAlarmSettingsToNight
 import com.nikita.sleepcycle.night.runConnectionTestWithin
-import com.nikita.sleepcycle.night.runWithOneRetry
+import com.nikita.sleepcycle.night.runConnectionTestAttempts
+import com.nikita.sleepcycle.night.ConnectionTestRun
+import com.nikita.sleepcycle.night.ReconnectTrigger
+import com.nikita.sleepcycle.night.shouldCheckIntentApi
+import com.nikita.sleepcycle.night.withBluetoothIntentApiHint
+import com.nikita.sleepcycle.bridge.BandReconnectResult
+import com.nikita.sleepcycle.bridge.checkBluetoothIntentApiAnswers
+import com.nikita.sleepcycle.bridge.reconnectBand
 import com.nikita.sleepcycle.night.AUTO_CONNECTION_TEST_RETRY_PAUSE
 import com.nikita.sleepcycle.ui.state.connectionTestIsDue
 import com.nikita.sleepcycle.ui.state.debugOptionsRelaxSetup
@@ -709,8 +716,10 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * Runs the full setup check and, per its result, sets or keeps [AppSettings.lastSetupCheckPassedAt]
      * (see [lastPassedAtAfterAttempt]; SetupCompleteness.kt for how it gates "Start night"). P2: every attempt
      * is bounded by [CONNECTION_TEST_DEADLINE], so "Testing..." always ends and the button comes back for a retry;
-     * a second start while one is running is ignored. An [automatic] test quietly retries once
-     * ([runWithOneRetry]) before it shows a failure; a tapped one runs once. Each attempt is logged on its own.
+     * a second start while one is running is ignored. P5: a failure a reconnect can fix (any but "not measuring
+     * heart rate") reconnects the band once and tries again, automatic or tapped; otherwise an [automatic] test
+     * quietly retries once after a pause and a tapped one stops ([runConnectionTestAttempts]). A pass then checks
+     * that Gadgetbridge's Intent API answers ([shouldCheckIntentApi]). Each attempt is logged on its own.
      */
     private fun runConnectionTest(automatic: Boolean) {
         val settings = appSettings.value ?: return
@@ -729,12 +738,55 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         val now = Instant.now()
         lastConnectionTestAttemptAt = now
         viewModelScope.launch {
-            val attemptOnce: suspend (Int) -> SetupCheckReport = { attemptNumber -> runOneConnectionTestAttempt(mac, uri, automatic, attemptNumber) }
-            val report = if (automatic) runWithOneRetry(AUTO_CONNECTION_TEST_RETRY_PAUSE, attemptOnce) else attemptOnce(1)
+            val run = runConnectionTestAttempts(
+                automatic,
+                AUTO_CONNECTION_TEST_RETRY_PAUSE,
+                attempt = { attemptNumber -> runOneConnectionTestAttempt(mac, uri, automatic, attemptNumber) },
+                reconnect = { trigger -> reconnectBandForConnectionTest(mac, automatic, trigger) },
+            )
+            run.reconnectTrigger?.let { trigger -> run.reconnectResult?.let { logConnectionTestReconnectResult(automatic, trigger, it, run.report) } }
+            val report = if (shouldCheckIntentApi(run)) withIntentApiCheck(mac, run) else run.report
             connectionTest.value = ConnectionTestState.Done(report)
             // P2: a pass records when the whole test started (real time, see the T4/U4 note above).
             persistSettings { it.copy(lastSetupCheckPassedAt = lastPassedAtAfterAttempt(it.lastSetupCheckPassedAt, report.isReady, now)) }
         }
+    }
+
+    /** P5: the connection test's one reconnect, logged to setup.jsonl as `band_reconnect_started` (never with the MAC). */
+    private suspend fun reconnectBandForConnectionTest(mac: String, automatic: Boolean, trigger: ReconnectTrigger): BandReconnectResult {
+        appendSetupLogOffMain(NightLogEvent(nowInstant(), "band_reconnect_started", mapOf("automatic" to automatic.toString(), "trigger" to trigger.logValue)))
+        return reconnectBand(context, mac)
+    }
+
+    /** P5: `band_reconnect_result`, once the second attempt has shown whether the reconnect brought fresh data. */
+    private suspend fun logConnectionTestReconnectResult(automatic: Boolean, trigger: ReconnectTrigger, result: BandReconnectResult, retryReport: SetupCheckReport) {
+        appendSetupLogOffMain(
+            NightLogEvent(
+                nowInstant(),
+                "band_reconnect_result",
+                mapOf(
+                    "automatic" to automatic.toString(),
+                    "trigger" to trigger.logValue,
+                    "connectedReply" to result.connectedReplyReceived.toString(),
+                    "durationMs" to result.durationMs.toString(),
+                    "resyncFresh" to retryReport.isReady.toString(),
+                )
+            )
+        )
+    }
+
+    /**
+     * P5: after a pass, sends CONNECT to the connected band and adds the Intent API hint when Gadgetbridge does not
+     * answer. Logged as `intent_api_check` (`connectedReply`).
+     */
+    private suspend fun withIntentApiCheck(mac: String, run: ConnectionTestRun): SetupCheckReport {
+        val answered = checkBluetoothIntentApiAnswers(context, mac)
+        appendSetupLogOffMain(NightLogEvent(nowInstant(), "intent_api_check", mapOf("connectedReply" to answered.toString())))
+        return if (answered) run.report else withBluetoothIntentApiHint(run.report)
+    }
+
+    private suspend fun appendSetupLogOffMain(event: NightLogEvent) {
+        withContext(Dispatchers.IO) { appendSetupLog(context, event) }
     }
 
     /** P2: one bounded attempt, never throwing, written to setup.jsonl as its own `connection_test` line. */

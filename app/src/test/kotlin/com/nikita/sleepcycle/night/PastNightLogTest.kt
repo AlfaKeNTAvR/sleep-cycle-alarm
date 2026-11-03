@@ -142,6 +142,28 @@ class PastNightLogTest {
 
         assertTrue(parsed.noBandData)
         assertEquals(PastNightSummary.Detailed(Duration.ZERO, emptyList()), parsed.summary)
+        // P5: a P1-era no-data night_end has no cause field and keeps the "syncs were failing" wording.
+        assertEquals(NoBandDataCause.SYNC_FAILED, parsed.noBandDataCause)
+    }
+
+    @Test
+    fun `P5 a no-data night records its cause, so Past night words it as the morning report did`() {
+        val emptySummary = NightSummary(Duration.ZERO, emptyList())
+        val fields = encodeNightEndFields(emptySummary, NightSettings(deadline = null, pickedCycles = 5), noBandData = true, NoBandDataCause.NOT_MEASURING)
+        val line = formatNightLogLine(NightLogEvent(Instant.parse("2026-11-03T12:00:00Z"), "night_end", fields))
+
+        val parsed = parsePastNightLog(listOf(line))
+
+        assertEquals("no_heart_rate_values", fields["noBandDataCause"])
+        assertTrue(parsed.noBandData)
+        assertEquals(NoBandDataCause.NOT_MEASURING, parsed.noBandDataCause)
+    }
+
+    @Test
+    fun `P5 a night with band data writes no cause`() {
+        val fields = encodeNightEndFields(NightSummary(Duration.ZERO, emptyList()), NightSettings(deadline = null, pickedCycles = 5), noBandData = false, NoBandDataCause.NOT_MEASURING)
+
+        assertFalse(fields.containsKey("noBandDataCause"))
     }
 
     @Test

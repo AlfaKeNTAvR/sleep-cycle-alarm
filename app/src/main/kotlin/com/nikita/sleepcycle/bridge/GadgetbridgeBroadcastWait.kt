@@ -18,18 +18,21 @@ private const val LOG_TAG = "GadgetbridgeBroadcastWait"
 /**
  * Registers a receiver for [actions] first, then runs [send], then waits up to [timeout].
  * Returns the action that arrived, or null on timeout. Registering before sending avoids missing
- * a reply that comes back faster than we could register for it.
+ * a reply that comes back faster than we could register for it. P5: a broadcast [accept] rejects (another
+ * device's BLUETOOTH_CONNECTED) is ignored and the wait goes on.
  */
 suspend fun awaitGadgetbridgeBroadcast(
     context: Context,
     actions: Set<String>,
     timeout: Duration,
+    accept: (Intent) -> Boolean = { true },
     send: () -> Unit
 ): String? = withTimeoutOrNull(timeout.toMillis()) {
     suspendCancellableCoroutine { continuation ->
         lateinit var receiver: BroadcastReceiver
         receiver = object : BroadcastReceiver() {
             override fun onReceive(receivedContext: Context, intent: Intent) {
+                if (!accept(intent)) return
                 unregisterReceiverQuietly(context, this)
                 if (continuation.isActive) continuation.resume(intent.action)
             }

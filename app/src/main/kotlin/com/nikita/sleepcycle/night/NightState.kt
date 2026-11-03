@@ -130,7 +130,12 @@ data class NightState(
      * first one. Kept here so an ask open when the app is killed is still open after it restarts. Written by the
      * tick that raises it and by the answer, both under the night lock.
      */
-    val areYouUp: AreYouUpAsk? = null
+    val areYouUp: AreYouUpAsk? = null,
+    /**
+     * P5: when this night last tried to reconnect the band (BandReconnectPolicy.kt), so the 30 min cooldown
+     * between attempts survives the app being killed. Null until the first attempt.
+     */
+    val lastReconnectAttemptAt: Instant? = null,
 )
 
 /** Turns a night state into its JSON text form, the inverse of [decodeNightState]. */
@@ -155,6 +160,7 @@ fun encodeNightState(state: NightState): String {
     json.put("afterAlarm", encodeAfterAlarmSettings(state.afterAlarm))
     json.put("realStartedAt", state.realStartedAt.toString())
     json.put("areYouUp", state.areYouUp?.let(::encodeAreYouUpAsk) ?: JSONObject.NULL)
+    json.put("lastReconnectAttemptAt", state.lastReconnectAttemptAt?.toString() ?: JSONObject.NULL)
     return json.toString()
 }
 
@@ -207,7 +213,10 @@ fun decodeNightState(text: String): NightState {
         lastNapAlarmFiredAt = json.optStringOrNull("lastNapAlarmFiredAt")?.let(Instant::parse),
         afterAlarm = decodeAfterAlarmSettingsTolerant(json.optJSONObject("afterAlarm")),
         realStartedAt = decodeRealStartedAtTolerant(json, startedAt),
-        areYouUp = decodeAreYouUpAskTolerant(json.optJSONObject("areYouUp"))
+        areYouUp = decodeAreYouUpAskTolerant(json.optJSONObject("areYouUp")),
+        // P5: absent (a state file written before it existed) decodes as "no attempt yet"; unparseable too, since
+        // the worst a lost value costs is one reconnect sooner than the cooldown.
+        lastReconnectAttemptAt = json.optStringOrNull("lastReconnectAttemptAt")?.let { runCatching { Instant.parse(it) }.getOrNull() },
     )
 }
 

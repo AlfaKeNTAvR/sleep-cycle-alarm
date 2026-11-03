@@ -39,7 +39,12 @@ data class SetupCheckReport(
     val isReady: Boolean,
     val lines: List<SetupCheckLine>,
     /** PER-130: why the band data was stale, for setup.jsonl; null when it was fresh or the sync itself failed. */
-    val staleReason: StaleReason? = null
+    val staleReason: StaleReason? = null,
+    /**
+     * P5: true when, after this test passed, Gadgetbridge did not answer a Bluetooth CONNECT: its Intent API
+     * Bluetooth toggle looks off, so the app cannot reconnect the band itself. A hint only; never blocks anything.
+     */
+    val bluetoothIntentApiLooksOff: Boolean = false,
 )
 
 /**

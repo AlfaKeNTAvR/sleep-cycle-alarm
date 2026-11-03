@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.night.NoBandDataCause
 import com.nikita.sleepcycle.night.SleepRating
 import com.nikita.sleepcycle.ui.components.RatingSymptomsLine
 import com.nikita.sleepcycle.ui.components.SleepRatingFaces
@@ -70,6 +71,13 @@ fun MorningReportContent(
     }
 }
 
+/** P5: the no-data line for each cause; P1's "syncs were failing" stays the line for a failed sync. */
+private fun noBandDataTextRes(cause: NoBandDataCause): Int = when (cause) {
+    NoBandDataCause.SYNC_FAILED -> R.string.night_morning_no_band_data
+    NoBandDataCause.NO_NEW_SAMPLES -> R.string.night_morning_no_band_data_no_new_samples
+    NoBandDataCause.NOT_MEASURING -> R.string.night_morning_no_band_data_not_measuring
+}
+
 /**
  * The report itself - the total slept and the per-stretch card - shared by state D and by the Logs screen's
  * past-night view, which shows the same night again later under its own [caption].
@@ -86,7 +94,8 @@ fun MorningReportBody(content: NightScreenContent.MorningReport, caption: String
         if (noSleepRecorded) {
             // P1: "no band data reached the app" is a different fact from "the band reported no sleep" - the
             // night of 2026-09-30 said the latter when every sync had failed.
-            val noSleepText = if (content.noBandData) R.string.night_morning_no_band_data else R.string.night_morning_no_sleep
+            // P5: worded by cause - "syncs were failing" was untrue for a band that synced but did not measure.
+            val noSleepText = if (content.noBandData) noBandDataTextRes(content.noBandDataCause) else R.string.night_morning_no_sleep
             Text(
                 text = stringResource(noSleepText),
                 style = MaterialTheme.typography.headlineSmall,

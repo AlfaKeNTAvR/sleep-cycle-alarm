@@ -63,6 +63,8 @@
     <string name="before_bed_band_check_running">Checking the band connection…</string>
     <string name="before_bed_band_check_failed">Band check failed: %1$s</string>
     <string name="before_bed_band_check_retry">Test again</string>
+    <!-- P5: the test passed but Gadgetbridge did not answer a Bluetooth CONNECT; a hint, never a blocker. -->
+    <string name="before_bed_bluetooth_intent_api_hint">Turn on Gadgetbridge Settings &gt; Developer options &gt; Intent API &gt; Bluetooth so the app can reconnect the band.</string>
 
     <!-- Before bed screen -->
     <string name="before_bed_title">Tonight</string>
@@ -71,6 +73,8 @@
     <string name="before_bed_band_not_ready">Band setup incomplete</string>
     <!-- P2: the latest connection test failed; see BandStatus.NOT_RESPONDING. -->
     <string name="before_bed_band_not_responding">Band not responding</string>
+    <!-- P5: the latest connection test failed because the band measures no heart rate; see BandStatus.NOT_MEASURING. -->
+    <string name="before_bed_band_not_measuring">Band not measuring</string>
     <!-- P2: a connection test is running; see BandStatus.CHECKING. -->
     <string name="before_bed_band_checking">Checking band…</string>
     <string name="before_bed_wake_me_by">Wake me by</string>
@@ -148,6 +152,9 @@
          not the same as the band reporting no sleep. "were failing", not "every sync failed": the flag is
          derived from the LAST sync, so an earlier one may have succeeded with no sleep in it. -->
     <string name="night_morning_no_band_data">No band data reached the app: the band\'s syncs were failing</string>
+    <!-- P5: the same no-data night, worded by night_end's noBandDataCause; a log without it keeps the line above. -->
+    <string name="night_morning_no_band_data_no_new_samples">No band data reached the app: the band sent no new data</string>
+    <string name="night_morning_no_band_data_not_measuring">No heart-rate values reached the app: the band was not measuring</string>
 
     <!-- Logs screen -->
     <string name="logs_title">Night logs</string>

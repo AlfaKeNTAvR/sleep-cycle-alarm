@@ -3,6 +3,7 @@ package com.nikita.sleepcycle.ui.state
 import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
+import com.nikita.sleepcycle.night.NoBandDataCause
 
 /** PER-130: which "alarm is only an estimate" warning the Night screen shows while band data is not reaching the app. */
 enum class BandDataWarning {
@@ -85,6 +86,8 @@ sealed interface NightScreenContent {
         val stretchDetailRecorded: Boolean = true,
         /** P1: no band data reached the app this night (every sync was failing and no stretch exists), so the report says that instead of "No sleep recorded tonight". False for every night logged before P1 - their wording is unchanged. */
         val noBandData: Boolean = false,
+        /** P5: which no-data line [noBandData] shows; P1's "syncs were failing" for every night logged before P5. */
+        val noBandDataCause: NoBandDataCause = NoBandDataCause.SYNC_FAILED,
     ) : NightScreenContent
 
     /**

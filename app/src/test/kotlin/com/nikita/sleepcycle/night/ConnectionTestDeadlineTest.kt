@@ -60,50 +60,5 @@ class ConnectionTestDeadlineTest {
     }
 }
 
-/** P2: the automatic test tries once more after a short pause before it reports a failure; a first pass is final. */
-class ConnectionTestRetryTest {
-    private val noPause: Duration = Duration.ZERO
-
-    @Test
-    fun `a first pass is returned without a second attempt`() {
-        val attempts = mutableListOf<Int>()
-
-        val report = runBlocking { runWithOneRetry(noPause) { number -> attempts += number; PASSING_REPORT } }
-
-        assertEquals(PASSING_REPORT, report)
-        assertEquals(listOf(1), attempts)
-    }
-
-    @Test
-    fun `a first failure followed by a pass returns the pass`() {
-        val attempts = mutableListOf<Int>()
-
-        val report = runBlocking {
-            runWithOneRetry(noPause) { number -> attempts += number; if (number == 1) FAILING_REPORT else PASSING_REPORT }
-        }
-
-        assertEquals(PASSING_REPORT, report)
-        assertEquals(listOf(1, 2), attempts)
-    }
-
-    @Test
-    fun `two failures return the second failure and stop there`() {
-        val secondFailure = SetupCheckReport(isReady = false, lines = listOf(SetupCheckLine("second", SetupCheckLineSeverity.ACTION_NEEDED)))
-        val attempts = mutableListOf<Int>()
-
-        val report = runBlocking {
-            runWithOneRetry(noPause) { number -> attempts += number; if (number == 1) FAILING_REPORT else secondFailure }
-        }
-
-        assertEquals(secondFailure, report)
-        assertEquals(listOf(1, 2), attempts)
-    }
-
-    @Test
-    fun `the app pauses 5 seconds before the retry`() {
-        assertEquals(Duration.ofSeconds(5), AUTO_CONNECTION_TEST_RETRY_PAUSE)
-    }
-}
-
 private val PASSING_REPORT = SetupCheckReport(isReady = true, lines = listOf(SetupCheckLine("Connected.", SetupCheckLineSeverity.INFO)))
-private val FAILING_REPORT = SetupCheckReport(isReady = false, lines = listOf(SetupCheckLine("first", SetupCheckLineSeverity.ACTION_NEEDED)))
+

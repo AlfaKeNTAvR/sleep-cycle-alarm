@@ -59,6 +59,17 @@ class NightStateTest {
         assertEquals(null, decodeNightState(encodeNightState(baseState()).replace("\"lastStaleReason\":null,", "")).lastStaleReason)
     }
 
+    // P5: the 30 min reconnect cooldown survives the app being killed mid-night.
+    @Test
+    fun `round trips the last reconnect attempt, and a state file without one decodes as no attempt`() {
+        val attemptedAt = Instant.parse("2026-11-03T05:10:00Z")
+        val state = baseState().copy(lastReconnectAttemptAt = attemptedAt)
+        val withoutField = JSONObject(encodeNightState(state)).apply { remove("lastReconnectAttemptAt") }.toString()
+
+        assertEquals(attemptedAt, decodeNightState(encodeNightState(state)).lastReconnectAttemptAt)
+        assertNull(decodeNightState(withoutField).lastReconnectAttemptAt)
+    }
+
     @Test
     fun `round trips a night with no plan yet and every optional field null`() {
         val state = baseState()

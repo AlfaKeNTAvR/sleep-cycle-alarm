@@ -2,7 +2,7 @@ package com.nikita.sleepcycle.night
 
 // File purpose: the one function that chooses where a tick's sleep segments come from (NightOrchestrator.kt's
 // own control flow never branches on debug options itself). Two cases:
-// - real data (simulatedBandData off): unchanged real sync, exactly as before this feature existed.
+// - real data (simulatedBandData off): the real sync, plus P5's automatic reconnect (NightBandReconnect.kt).
 // - simulated data (simulatedBandData on): segments come from the Debug screen's simulator instead. D2: there
 //   is no longer a band alarm table to keep real for, so a simulated night never needs a real sync at all.
 
@@ -25,7 +25,8 @@ suspend fun readBandDataForTick(
     now: Instant
 ): SyncOutcome {
     if (!debugOptions.simulatedBandData) {
-        return resolveSyncOutcome(context, state, syncOrFail(context, appSettings, state, now), now)
+        // P5: with at most one automatic band reconnect when the sync fails or brings nothing new.
+        return syncWithReconnect(context, appSettings, state, now)
     }
     return SyncOutcome(
         segments = buildSimulatedSegments(simulatedEvents, now),

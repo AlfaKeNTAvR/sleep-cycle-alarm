@@ -69,12 +69,13 @@ fun BeforeBedScreen(
                     BandStatus.NOT_CHECKED_RECENTLY -> stringResource(R.string.night_status_never_synced)
                     BandStatus.CHECKING -> stringResource(R.string.before_bed_band_checking)
                     BandStatus.NOT_RESPONDING -> stringResource(R.string.before_bed_band_not_responding)
+                    BandStatus.NOT_MEASURING -> stringResource(R.string.before_bed_band_not_measuring)
                     BandStatus.SETUP_INCOMPLETE -> stringResource(R.string.before_bed_band_not_ready)
                 },
                 ok = when (state.bandStatus) {
                     BandStatus.CONNECTED -> true
                     BandStatus.CHECKING, BandStatus.NOT_CHECKED_RECENTLY -> null
-                    BandStatus.NOT_RESPONDING, BandStatus.SETUP_INCOMPLETE -> false
+                    BandStatus.NOT_RESPONDING, BandStatus.NOT_MEASURING, BandStatus.SETUP_INCOMPLETE -> false
                 },
             )
             Row {
@@ -124,6 +125,16 @@ fun BeforeBedScreen(
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
         BandCheckLine(state.bandCheck, onTestAgain)
+        // P5: the app cannot reconnect the band itself until this Gadgetbridge toggle is on. Quiet, never a blocker.
+        if (state.showBluetoothIntentApiHint) {
+            Text(
+                text = stringResource(R.string.before_bed_bluetooth_intent_api_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = NightOnSurfaceMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         // Owner request, 2026-10-05: the band did not answer, so offer Gadgetbridge itself, to reconnect it there.
         if (state.offerOpenGadgetbridge) {
             SecondaryActionButton(text = stringResource(R.string.open_gadgetbridge), onClick = onOpenGadgetbridge)

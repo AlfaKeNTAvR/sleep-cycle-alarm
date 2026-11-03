@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.NightRatings
+import com.nikita.sleepcycle.night.NoBandDataCause
 import com.nikita.sleepcycle.night.PastNightLog
 import com.nikita.sleepcycle.night.PastNightSummary
 import com.nikita.sleepcycle.night.RatingSymptom
@@ -138,6 +139,13 @@ class BuildPastNightUiStateTest {
         val state = buildPastNightUiState(row(), log(PastNightSummary.Detailed(Duration.ZERO, emptyList())).copy(noBandData = true), TEST_ZONE)
 
         assertTrue(requireNotNull(state.report).noBandData)
+    }
+
+    @Test
+    fun `P5 a no-data night shows the cause its log recorded`() {
+        val logged = log(PastNightSummary.Detailed(Duration.ZERO, emptyList())).copy(noBandData = true, noBandDataCause = NoBandDataCause.NOT_MEASURING)
+
+        assertEquals(NoBandDataCause.NOT_MEASURING, requireNotNull(buildPastNightUiState(row(), logged, TEST_ZONE).report).noBandDataCause)
     }
 
     @Test

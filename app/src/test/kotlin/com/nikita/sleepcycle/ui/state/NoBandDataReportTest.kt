@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SegmentKind
 import com.nikita.sleepcycle.engine.SleepSegment
 import com.nikita.sleepcycle.night.NightState
+import com.nikita.sleepcycle.night.NoBandDataCause
 import com.nikita.sleepcycle.night.buildNightEngineView
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -57,6 +58,20 @@ class NoBandDataReportTest {
         val state = realNightState(lastSyncFailureCause = null).copy(lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)
 
         assertTrue(reportAtEndNight(state).noBandData)
+    }
+
+    // P5 (owner choice, 2026-11-03): "the band's syncs were failing" was untrue for this night; the report names
+    // each cause instead.
+    @Test fun `P5 the no-data report names its cause`() {
+        assertEquals(NoBandDataCause.SYNC_FAILED, reportAtEndNight(realNightState()).noBandDataCause)
+        assertEquals(
+            NoBandDataCause.NOT_MEASURING,
+            reportAtEndNight(realNightState(lastSyncFailureCause = null).copy(lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)).noBandDataCause,
+        )
+        assertEquals(
+            NoBandDataCause.NO_NEW_SAMPLES,
+            reportAtEndNight(realNightState(lastSyncFailureCause = null).copy(lastStaleReason = StaleReason.NO_NEW_SAMPLES)).noBandDataCause,
+        )
     }
 
     @Test fun `P1 a night whose band synced fine but reported no sleep keeps the no-sleep wording`() {

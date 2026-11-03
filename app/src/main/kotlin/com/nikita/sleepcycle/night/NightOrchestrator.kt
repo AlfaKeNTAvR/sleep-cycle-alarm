@@ -348,7 +348,8 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         napAlarmsUsed = state.napAlarmsUsed,
         morningAlarmAt = latchMorningAlarmAt(state.morningAlarmAt, plan),
         lastNapAlarmFiredAt = state.lastNapAlarmFiredAt,
-        areYouUp = areYouUp
+        areYouUp = areYouUp,
+        lastReconnectAttemptAt = lastReconnectAttemptAfterTick(state.lastReconnectAttemptAt, outcome.reconnectAttemptedAt),
     )
     if (!saveNightState(context, newState)) {
         // V9: decisionNow, not the tick's stale entry-time `now` - this line is appended after the data/plan/
@@ -694,7 +695,9 @@ data class SyncOutcome(
     val failureCause: String?,
     val source: BandDataSource = BandDataSource.BAND,
     /** PER-130: why the data was stale when the sync itself succeeded but [syncOk] is false; null otherwise. */
-    val staleReason: StaleReason? = null
+    val staleReason: StaleReason? = null,
+    /** P5: when this tick tried a band reconnect before this result (NightBandReconnect.kt); null when it tried none. */
+    val reconnectAttemptedAt: Instant? = null,
 )
 
 /**

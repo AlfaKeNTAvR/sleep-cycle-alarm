@@ -63,7 +63,8 @@ private fun readFromOpenDatabase(
         return BandDataResult.Failure("quick_check", "PRAGMA quick_check did not return ok")
     }
     val deviceId = findDeviceId(database, deviceMac)
-        ?: return BandDataResult.Failure("device_lookup", "no DEVICE row for MAC $deviceMac")
+        // P5: never the MAC itself - this cause is written to the night log and setup.jsonl, and shown on screen.
+        ?: return BandDataResult.Failure("device_lookup", "no DEVICE row for the configured band")
     val samples = readRawActivitySamples(database, deviceId, since)
     return buildBandDataResult(samples, deviceId, exportFileModifiedAt)
 }

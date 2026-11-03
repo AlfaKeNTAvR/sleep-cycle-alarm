@@ -9,6 +9,7 @@ import com.nikita.sleepcycle.night.SetupCheckLine
 import com.nikita.sleepcycle.night.buildSuccessReport
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.SetupCheckReport
+import com.nikita.sleepcycle.night.withBluetoothIntentApiHint
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -83,11 +84,39 @@ class BeforeBedBandCheckTest {
 
         assertEquals(
             BandCheckStatus.Failed(
-                "Band connected but not measuring heart rate. In Gadgetbridge band settings, switch \"Enable automatic heart rate measuring\" off and on."
+                "Band connected but not measuring heart rate. In Gadgetbridge band settings, switch \"Enable automatic heart rate measuring\" off and on.",
+                notMeasuring = true,
             ),
             beforeBed.bandCheck,
         )
         assertEquals(true, beforeBed.offerOpenGadgetbridge)
+    }
+
+    // P5 (owner choice, 2026-11-03): the corner said "Band not responding" for a band that synced fine but did
+    // not measure; that case now has its own corner status.
+    @Test fun `a test failed for not measuring turns the corner to not measuring, not not responding`() {
+        assertEquals(
+            BandStatus.NOT_MEASURING,
+            bandStatusFor(true, BandCheckStatus.Failed("Band connected but not measuring heart rate.", notMeasuring = true), passedTenMinutesAgo, screenNow),
+        )
+    }
+
+    // P5: the test passed, but Gadgetbridge did not answer a Bluetooth CONNECT, so the app cannot reconnect the
+    // band itself. A quiet hint; the pass still counts and the band check shows nothing else.
+    @Test fun `a pass with the Intent API looking off shows the hint and nothing else`() {
+        val passed = SetupCheckReport(isReady = true, lines = listOf(SetupCheckLine("Connected.", SetupCheckLineSeverity.INFO)))
+
+        val beforeBed = beforeBedWith(ConnectionTestState.Done(withBluetoothIntentApiHint(passed)))
+
+        assertEquals(true, beforeBed.showBluetoothIntentApiHint)
+        assertEquals(BandCheckStatus.None, beforeBed.bandCheck)
+        assertEquals(false, beforeBed.offerOpenGadgetbridge)
+    }
+
+    @Test fun `a pass where Gadgetbridge answered shows no hint`() {
+        val passed = SetupCheckReport(isReady = true, lines = listOf(SetupCheckLine("Connected.", SetupCheckLineSeverity.INFO)))
+
+        assertEquals(false, beforeBedWith(ConnectionTestState.Done(passed)).showBluetoothIntentApiHint)
     }
 
     // Owner request, 2026-10-05: when the band check fails, a button above Start night opens Gadgetbridge to

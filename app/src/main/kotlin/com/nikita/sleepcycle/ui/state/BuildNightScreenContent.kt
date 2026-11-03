@@ -83,6 +83,7 @@ fun buildMorningReportContent(
         wokeAtTimeLabel = view.summary.stretches.lastOrNull()?.end?.let { formatClockTime(it, zone) },
         stretches = stretches,
         noBandData = view.noBandData,
+        noBandDataCause = view.noBandDataCause,
     )
 }
 
