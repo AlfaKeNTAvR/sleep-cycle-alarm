@@ -50,6 +50,15 @@ class NightStateTest {
         assertEquals("timed out after PT60S", roundTripped.lastSyncFailureCause)
     }
 
+    // PER-130: the Night screen's "not measuring heart rate" warning survives a process restart.
+    @Test
+    fun `round trips the stale reason, and a state file without one decodes as null`() {
+        val state = baseState().copy(lastSyncOk = false, lastStaleReason = com.nikita.sleepcycle.bridge.StaleReason.NO_HEART_RATE_VALUES)
+
+        assertEquals(com.nikita.sleepcycle.bridge.StaleReason.NO_HEART_RATE_VALUES, decodeNightState(encodeNightState(state)).lastStaleReason)
+        assertEquals(null, decodeNightState(encodeNightState(baseState()).replace("\"lastStaleReason\":null,", "")).lastStaleReason)
+    }
+
     @Test
     fun `round trips a night with no plan yet and every optional field null`() {
         val state = baseState()

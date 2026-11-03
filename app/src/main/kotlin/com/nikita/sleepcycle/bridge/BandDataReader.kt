@@ -19,8 +19,11 @@ private const val TABLE_DEVICE = "DEVICE"
 sealed interface BandDataResult {
     data class Success(
         val segments: List<SleepSegment>,
+        /** Newest heart-rate row with a real value (see [newestHeartRateSampleAt]). */
         val newestSampleAt: Instant?,
-        val exportFileModifiedAt: Instant?
+        val exportFileModifiedAt: Instant?,
+        /** PER-130: newest heart-rate row whatever its value, -1 included (see [newestHeartRateRowAt]). */
+        val newestHeartRateRowAt: Instant?
     ) : BandDataResult
     data class Failure(val step: String, val cause: String) : BandDataResult
 }
@@ -62,9 +65,7 @@ private fun readFromOpenDatabase(
     val deviceId = findDeviceId(database, deviceMac)
         ?: return BandDataResult.Failure("device_lookup", "no DEVICE row for MAC $deviceMac")
     val samples = readRawActivitySamples(database, deviceId, since)
-    val segments = mapRawSamplesToSleepSegments(samples, deviceId)
-    val newestSampleAt = newestHeartRateSampleAt(samples, deviceId)
-    return BandDataResult.Success(segments, newestSampleAt, exportFileModifiedAt)
+    return buildBandDataResult(samples, deviceId, exportFileModifiedAt)
 }
 
 private fun copyUriToFile(context: Context, uri: Uri, destination: File) {
@@ -93,7 +94,7 @@ private fun findDeviceId(database: SQLiteDatabase, deviceMac: String): Int? =
 
 private fun readRawActivitySamples(database: SQLiteDatabase, deviceId: Int, since: Instant): List<RawActivitySample> {
     val query = """
-        SELECT TIMESTAMP, OTHER_TIMESTAMP, RAW_KIND, SOURCE, DEVICE_ID
+        SELECT TIMESTAMP, OTHER_TIMESTAMP, RAW_KIND, SOURCE, DEVICE_ID, HEART_RATE
         FROM $TABLE_ACTIVITY_SAMPLE
         WHERE DEVICE_ID = ? AND SOURCE IN ($SOURCE_HEART_RATE, $SOURCE_SLEEP) AND TIMESTAMP >= ?
     """.trimIndent()
@@ -105,7 +106,9 @@ private fun readRawActivitySamples(database: SQLiteDatabase, deviceId: Int, sinc
                 otherTimestampSeconds = cursor.getLong(1),
                 rawKind = cursor.getInt(2),
                 source = cursor.getInt(3),
-                deviceId = cursor.getInt(4)
+                deviceId = cursor.getInt(4),
+                // PER-130: a NULL reads as 0, which counts as no measurement, the same as Gadgetbridge's -1.
+                heartRate = cursor.getInt(5)
             )
         }
         return samples

@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.state
 // started 00:53:53 local (05:53:53Z), every one of its 36 syncs failed with "timed out after PT1M", zero
 // segments, ended at 08:38:51 local (13:38:51Z). That night's report said "No sleep recorded tonight".
 
+import com.nikita.sleepcycle.bridge.StaleReason
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.NightSettings
 import com.nikita.sleepcycle.engine.SegmentKind
@@ -49,6 +50,13 @@ class NoBandDataReportTest {
         assertTrue(report.noBandData)
         assertEquals(emptyList<StretchLine>(), report.stretches)
         assertEquals("08:38", report.endedAtTimeLabel)
+    }
+
+    // PER-130 (2026-11-02): every sync succeeded, but every heart-rate row carried -1 and no sleep rows came.
+    @Test fun `PER-130 a night whose syncs brought only -1 heart-rate rows reports no band data`() {
+        val state = realNightState(lastSyncFailureCause = null).copy(lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)
+
+        assertTrue(reportAtEndNight(state).noBandData)
     }
 
     @Test fun `P1 a night whose band synced fine but reported no sleep keeps the no-sleep wording`() {

@@ -127,6 +127,13 @@
          app. The fix in the text is what worked on 2026-09-30: Gadgetbridge showed the band connected but with
          no battery level, and syncs never completed until the band was disconnected and reconnected. -->
     <string name="night_band_not_syncing_warning">Band not syncing - alarm is only an estimate. Disconnect and reconnect the band in Gadgetbridge.</string>
+    <!-- PER-130: the band syncs, but every heart-rate value is -1 (2026-10-30 to 2026-11-03). A reconnect does
+         not help: Gadgetbridge sends the measuring setting to the band only when it is toggled. Shown on the
+         Night screen and, silently, on the lock screen. -->
+    <string name="night_band_not_measuring_warning">Band not measuring heart rate - alarm is only an estimate. In Gadgetbridge, switch \"Enable automatic heart rate measuring\" off and on.</string>
+    <string name="band_not_measuring_channel_name">Band not measuring</string>
+    <string name="band_not_measuring_title">Band not measuring heart rate</string>
+    <string name="band_not_measuring_body">Alarm is only an estimate. In Gadgetbridge, switch \"Enable automatic heart rate measuring\" off and on.</string>
 
     <!-- Night screen: finished -->
     <string name="night_finished_title">Night finished</string>

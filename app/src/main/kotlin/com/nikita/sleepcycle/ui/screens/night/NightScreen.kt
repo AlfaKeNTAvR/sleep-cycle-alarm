@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.screens.night
 // report). P3: the "Nap for 20 min" button above the end-night button while the out-of-bed nudge is pending,
 // and the alarm block centred against the whole screen so that button never moves it.
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
 import com.nikita.sleepcycle.ui.components.StatusLine
+import com.nikita.sleepcycle.ui.state.BandDataWarning
 import com.nikita.sleepcycle.ui.state.DebugUiState
 
 import com.nikita.sleepcycle.ui.state.NightScreenContent
@@ -106,8 +108,8 @@ fun NightScreen(
                 DebugBanner(state.activeDebugSwitches, simulatedTimeValue = state.simulatedTimeValue)
             }
             // P1: while band data is not reaching the app, say so where it cannot be missed - see
-            // NightUiState.bandNotSyncingWarning.
-            if (state.bandNotSyncingWarning) BandNotSyncingWarning()
+            // NightUiState.bandDataWarning.
+            state.bandDataWarning?.let { BandDataWarningBanner(it) }
 
             val content = state.content
             // PER-151: a No-alarm night's Are you up? ask, at the top of the content like the warning above.
@@ -251,11 +253,11 @@ private fun AreYouUpBanner(onImUp: () -> Unit, onStillSleeping: () -> Unit) {
     }
 }
 
-/** P1: the "band not syncing" warning - the alarm is still armed, but it is only the engine's estimate. */
+/** P1: the "band not syncing" warning - the alarm is still armed, but it is only the engine's estimate. PER-130: worded per [warning], each with its own fix. */
 @Composable
-private fun BandNotSyncingWarning() {
+private fun BandDataWarningBanner(warning: BandDataWarning) {
     Text(
-        text = stringResource(R.string.night_band_not_syncing_warning),
+        text = stringResource(bandDataWarningText(warning)),
         style = MaterialTheme.typography.bodyLarge,
         color = MaterialTheme.colorScheme.onErrorContainer,
         textAlign = TextAlign.Center,
@@ -264,6 +266,13 @@ private fun BandNotSyncingWarning() {
             .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(CardCornerRadius))
             .padding(12.dp),
     )
+}
+
+/** PER-130: each band warning's text, naming its own fix. `internal` so the wording is testable. */
+@StringRes
+internal fun bandDataWarningText(warning: BandDataWarning): Int = when (warning) {
+    BandDataWarning.NOT_SYNCING -> R.string.night_band_not_syncing_warning
+    BandDataWarning.NOT_MEASURING_HEART_RATE -> R.string.night_band_not_measuring_warning
 }
 
 @Composable

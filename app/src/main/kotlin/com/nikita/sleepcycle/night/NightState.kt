@@ -6,6 +6,7 @@ package com.nikita.sleepcycle.night
 
 import android.content.Context
 import android.util.Log
+import com.nikita.sleepcycle.bridge.StaleReason
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.engine.MAX_NAP_ALARMS
@@ -36,6 +37,12 @@ data class NightState(
     val lastExportFileModifiedAt: Instant?,
     /** Set only when the last sync itself failed (a step timed out or errored); null when it succeeded, even if the data it returned was stale. Lets the UI say which of the two happened. */
     val lastSyncFailureCause: String?,
+    /**
+     * PER-130: set only when the last sync succeeded but its data was stale, saying why (no new samples, or
+     * heart-rate rows with no real value); null when the data was fresh or the sync itself failed. Lets the
+     * Night screen name the right fix.
+     */
+    val lastStaleReason: StaleReason? = null,
     /** The last phone alarm instant that has already fired (wake, nap, or a rule 7 pre-wake nap alike), so armPhoneAlarmIfNeeded never re-arms a past instant Android would fire immediately. Null until the first firing. */
     val phoneAlarmFiredFor: Instant? = null,
     /**
@@ -137,6 +144,7 @@ fun encodeNightState(state: NightState): String {
     json.put("lastSegments", encodeSleepSegments(state.lastSegments))
     json.put("lastExportFileModifiedAt", state.lastExportFileModifiedAt?.toString() ?: JSONObject.NULL)
     json.put("lastSyncFailureCause", state.lastSyncFailureCause ?: JSONObject.NULL)
+    json.put("lastStaleReason", state.lastStaleReason?.name ?: JSONObject.NULL)
     json.put("phoneAlarmFiredFor", state.phoneAlarmFiredFor?.toString() ?: JSONObject.NULL)
     json.put("debugOptions", encodeDebugOptions(state.debugOptions))
     json.put("awakeConfirmedAt", state.awakeConfirmedAt?.toString() ?: JSONObject.NULL)
@@ -175,6 +183,8 @@ fun decodeNightState(text: String): NightState {
         lastSegments = decodeSleepSegmentsTolerant(json.optJSONArray("lastSegments")),
         lastExportFileModifiedAt = json.optStringOrNull("lastExportFileModifiedAt")?.let(Instant::parse),
         lastSyncFailureCause = json.optStringOrNull("lastSyncFailureCause"),
+        // PER-130: absent (a state file written before it existed) or unknown decodes as null, the plain "not syncing" case.
+        lastStaleReason = json.optStringOrNull("lastStaleReason")?.let { name -> StaleReason.entries.firstOrNull { it.name == name } },
         phoneAlarmFiredFor = json.optStringOrNull("phoneAlarmFiredFor")?.let(Instant::parse),
         debugOptions = decodeDebugOptionsTolerant(json.optJSONObject("debugOptions")),
         // G6: absent (a state file written before D3/D6) or unparseable decodes as "not confirmed yet", the

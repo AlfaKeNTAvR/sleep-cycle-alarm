@@ -8,6 +8,7 @@ package com.nikita.sleepcycle.night
 
 import com.nikita.sleepcycle.alarm.AlarmNotificationReadiness
 import com.nikita.sleepcycle.bridge.BandDataResult
+import com.nikita.sleepcycle.bridge.StaleReason
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -75,9 +76,35 @@ class SetupCheckTest {
         assertTrue(loud.none { it.severity != SetupCheckLineSeverity.INFO }, loud.toString())
     }
 
-    private fun success(newestSampleAt: Instant?) = BandDataResult.Success(
+    // PER-130: 2026-11-02 - the sync succeeded and heart-rate rows kept arriving, but every one carried -1.
+    @Test
+    fun `rows arriving with no real heart rate fail the test with the not-measuring line and its fix`() {
+        val result = success(newestSampleAt = null, newestHeartRateRowAt = NOW.minusSeconds(60))
+
+        val report = buildSuccessReport(result, NOW, phoneLines = emptyList())
+
+        assertFalse(report.isReady)
+        assertEquals(StaleReason.NO_HEART_RATE_VALUES, report.staleReason)
+        val bandLine = report.lines.first()
+        assertEquals(SetupCheckLineSeverity.ACTION_NEEDED, bandLine.severity)
+        assertEquals(
+            "Band connected but not measuring heart rate. In Gadgetbridge band settings, switch \"Enable automatic heart rate measuring\" off and on.",
+            bandLine.text
+        )
+    }
+
+    @Test
+    fun `no rows at all keeps the plain stale line, not the not-measuring one`() {
+        val report = buildSuccessReport(success(newestSampleAt = null, newestHeartRateRowAt = null), NOW, phoneLines = emptyList())
+
+        assertEquals(StaleReason.NO_NEW_SAMPLES, report.staleReason)
+        assertTrue(report.lines.first().text.startsWith("Connected."))
+    }
+
+    private fun success(newestSampleAt: Instant?, newestHeartRateRowAt: Instant? = newestSampleAt) = BandDataResult.Success(
         segments = List(3) { com.nikita.sleepcycle.engine.SleepSegment(NOW.minusSeconds(3600), NOW.minusSeconds(1800), com.nikita.sleepcycle.engine.SegmentKind.LIGHT) },
         newestSampleAt = newestSampleAt,
-        exportFileModifiedAt = NOW
+        exportFileModifiedAt = NOW,
+        newestHeartRateRowAt = newestHeartRateRowAt
     )
 }

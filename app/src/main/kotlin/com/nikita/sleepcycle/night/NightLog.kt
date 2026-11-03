@@ -22,7 +22,9 @@ private val LOG_FILE_NAME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPatter
  * band_alarm_requested, band_alarm_confirmed, band_alarm_missing, band_alarm_dismissed, stale_data,
  * phone_alarm_set, phone_alarm_fired, alarm_sound_chosen, clock_changed, error, night_end, setup_check,
  * awakening_started, awakening_ended, night_summary. The last three are first-class events for what used to
- * be reconstructed by hand from night_end's stretches - see AwakeningLog.kt and NightClosingSummary.kt. */
+ * be reconstructed by hand from night_end's stretches - see AwakeningLog.kt and NightClosingSummary.kt.
+ * PER-130: stale_data carries `staleReason` (no_new_samples or no_heart_rate_values), and
+ * band_not_measuring_posted / band_not_measuring_cleared track the band-not-measuring notification. */
 data class NightLogEvent(val at: Instant, val type: String, val fields: Map<String, String>)
 
 /** Formats one log event as a single JSON line, the file's on-disk shape, the inverse of parsing that line back with [org.json.JSONObject]. */

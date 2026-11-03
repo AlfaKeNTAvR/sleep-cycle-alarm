@@ -269,6 +269,8 @@ private suspend fun endNightLocked(context: Context, now: Instant, awakeConfirme
         logNightClosingSummary(context, state, now)
         withContext(Dispatchers.IO) { saveMorningReport(context, MorningReportSnapshot(state, now)) }
         endMediaFade(context, state.realStartedAt, now, state.debugOptions.isAnyEnabled)
+        // PER-130: logged here, while the night's log is still open; tearDownNight then cancels it regardless.
+        clearBandNotMeasuringNotification(context, state, now, cause = "night_ended")
     }
     tearDownNight(context)
     state?.let { EndNightReport(it, now) }
@@ -310,6 +312,8 @@ private suspend fun tearDownNight(context: Context) {
     clearOutOfBedNudgePendingAt(context)
     // PER-151: an Are you up? ask still showing belongs to the night that just ended.
     cancelAreYouUpNotification(context)
+    // PER-130: likewise a band-not-measuring warning.
+    cancelBandNotMeasuringNotification(context)
     clearNightState(context)
     stopNightService(context)
     nightStateFlow.value = null

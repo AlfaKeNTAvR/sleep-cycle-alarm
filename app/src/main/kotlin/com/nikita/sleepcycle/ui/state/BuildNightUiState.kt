@@ -4,6 +4,7 @@ package com.nikita.sleepcycle.ui.state
 // report, the FINISHED amendment and Loading) from the engine's mode, and attaches the always-visible sync
 // status.
 
+import com.nikita.sleepcycle.bridge.StaleReason
 import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
@@ -75,8 +76,8 @@ fun buildNightUiState(
             switches
         }
     }
-    // P1: see NightUiState.bandNotSyncingWarning. Null (no sync finished yet) is not a failure.
-    val bandNotSyncingWarning = state.lastSyncOk == false
+    // P1: see NightUiState.bandDataWarning. Null (no sync finished yet) is not a failure.
+    val bandDataWarning = bandDataWarningFor(state)
     val plan = state.lastPlan
     if (plan == null || engineView == null) {
         return NightUiState(
@@ -84,7 +85,7 @@ fun buildNightUiState(
             NightScreenContent.Loading, showEndNightButton = false, confirmingEndNight = confirmingEndNight, endingNight = endingNight,
             activeDebugSwitches = debugSwitches,
             simulatedTimeValue = simulatedTimeValue,
-            bandNotSyncingWarning = bandNotSyncingWarning,
+            bandDataWarning = bandDataWarning,
             showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
         )
     }
@@ -109,7 +110,7 @@ fun buildNightUiState(
         showEndNightButton = !showImUp, confirmingEndNight = confirmingEndNight, endingNight = endingNight,
         activeDebugSwitches = debugSwitches,
         simulatedTimeValue = simulatedTimeValue,
-        bandNotSyncingWarning = bandNotSyncingWarning,
+        bandDataWarning = bandDataWarning,
         napButtonMinutes = napMinutes,
         // PER-149: One more cycle sits with Nap, wherever Nap is offered, unless it would ring after the deadline.
         showOneMoreCycleButton = napMinutes != null && oneMoreCycleEndsAt(now, state.settings.deadline, config) != null,
@@ -158,4 +159,15 @@ private fun napButtonMinutes(pendingFollowUp: PendingFollowUp?, morningAlarmRang
     val nudgePending = pendingFollowUp?.kind == FollowUpKind.NUDGE && pendingFollowUp.at.isAfter(now)
     val offered = nudgePending || (morningAlarmRang && !chosenSleepAhead(pendingFollowUp, now))
     return if (offered) config.napLength.toMinutes().toInt() else null
+}
+
+/**
+ * P1 / PER-130: the Night screen's band warning, null while the last sync was ok or none has finished yet. A
+ * successful sync whose rows carried no real heart rate gets its own wording and fix; any other not-ok sync (a
+ * failure, or nothing new) is "not syncing".
+ */
+private fun bandDataWarningFor(state: NightState): BandDataWarning? = when {
+    state.lastSyncOk != false -> null
+    state.lastStaleReason == StaleReason.NO_HEART_RATE_VALUES -> BandDataWarning.NOT_MEASURING_HEART_RATE
+    else -> BandDataWarning.NOT_SYNCING
 }

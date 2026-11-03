@@ -104,8 +104,35 @@ class BandSampleMappingTest {
         assertTrue(segments[0].start.epochSecond < since && segments[0].end.epochSecond > since)
     }
 
-    private fun sample(start: Long, end: Long, rawKind: Int, source: Int, deviceId: Int = DEVICE_ID) =
-        RawActivitySample(timestampSeconds = start, otherTimestampSeconds = end, rawKind = rawKind, source = source, deviceId = deviceId)
+    // PER-130: a real 70 bpm unless a test says otherwise; Gadgetbridge writes -1 for a minute with no measurement.
+    private fun sample(start: Long, end: Long, rawKind: Int, source: Int, deviceId: Int = DEVICE_ID, heartRate: Int = 70) =
+        RawActivitySample(timestampSeconds = start, otherTimestampSeconds = end, rawKind = rawKind, source = source, deviceId = deviceId, heartRate = heartRate)
+
+    @Test
+    fun `PER-130 a heart-rate row with -1 or 0 is not a real sample, but still counts as a row`() {
+        val samples = listOf(
+            sample(start = 1000, end = 1000, rawKind = 0, source = SOURCE_HEART_RATE, heartRate = 64),
+            sample(start = 2000, end = 2000, rawKind = 0, source = SOURCE_HEART_RATE, heartRate = -1),
+            sample(start = 3000, end = 3000, rawKind = 0, source = SOURCE_HEART_RATE, heartRate = 0)
+        )
+
+        assertEquals(Instant.ofEpochSecond(1000), newestHeartRateSampleAt(samples, DEVICE_ID))
+        assertEquals(Instant.ofEpochSecond(3000), newestHeartRateRowAt(samples, DEVICE_ID))
+    }
+
+    @Test
+    fun `PER-130 a read where every heart-rate row is -1 has no newest sample, only a newest row`() {
+        val samples = listOf(
+            sample(start = 1000, end = 1000, rawKind = 0, source = SOURCE_HEART_RATE, heartRate = -1),
+            sample(start = 2000, end = 2000, rawKind = 0, source = SOURCE_HEART_RATE, heartRate = -1)
+        )
+
+        val result = buildBandDataResult(samples, DEVICE_ID, exportFileModifiedAt = null)
+
+        assertNull(result.newestSampleAt)
+        assertEquals(Instant.ofEpochSecond(2000), result.newestHeartRateRowAt)
+        assertTrue(result.segments.isEmpty())
+    }
 
     // ---- clipSegmentsToNightStart (J1.6): a segment straddling the night's own start is clipped to it, not
     // dropped whole or kept whole - see the function's own doc for the 40-minutes-late bug this closes. -------

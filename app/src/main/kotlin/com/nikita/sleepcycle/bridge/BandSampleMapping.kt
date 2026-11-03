@@ -20,7 +20,13 @@ data class RawActivitySample(
     val otherTimestampSeconds: Long,
     val rawKind: Int,
     val source: Int,
-    val deviceId: Int
+    val deviceId: Int,
+    /**
+     * The row's `HEART_RATE` column in beats per minute. PER-130: Gadgetbridge writes -1 (or 0) when the band
+     * measured nothing that minute, and from 2026-10-30 every heart-rate row of the night carried -1 while every
+     * sync still succeeded. Only a value above 0 is a real measurement (see [isRealHeartRate]).
+     */
+    val heartRate: Int
 )
 
 /**
@@ -48,12 +54,39 @@ private fun rawKindToSegmentKind(rawKind: Int): SegmentKind? = when (rawKind) {
     else -> null
 }
 
-/** Latest per-minute heart-rate sample time (`SOURCE = 11`) for [deviceId], used to tell stale data from fresh. */
+/** Whether a row's `HEART_RATE` is a real measurement: Gadgetbridge stores -1 (or 0) for a minute with none. */
+fun isRealHeartRate(heartRate: Int): Boolean = heartRate > 0
+
+/**
+ * Latest per-minute heart-rate sample time (`SOURCE = 11`) for [deviceId] that carries a REAL value, used to
+ * tell stale data from fresh. PER-130: a row with `HEART_RATE` -1 does not count - a band that syncs but
+ * measures nothing is stale, not fresh.
+ */
 fun newestHeartRateSampleAt(samples: List<RawActivitySample>, deviceId: Int): Instant? =
+    newestHeartRateRowTimestamp(samples, deviceId) { isRealHeartRate(it.heartRate) }
+
+/**
+ * PER-130: latest heart-rate row time (`SOURCE = 11`) for [deviceId] whatever its value, -1 included. Newer
+ * than [newestHeartRateSampleAt] means rows still arrive but carry no measurement - the band is connected
+ * and syncing, it just is not measuring (see [StaleReason.NO_HEART_RATE_VALUES]).
+ */
+fun newestHeartRateRowAt(samples: List<RawActivitySample>, deviceId: Int): Instant? =
+    newestHeartRateRowTimestamp(samples, deviceId) { true }
+
+private fun newestHeartRateRowTimestamp(samples: List<RawActivitySample>, deviceId: Int, counts: (RawActivitySample) -> Boolean): Instant? =
     samples
-        .filter { it.source == SOURCE_HEART_RATE && it.deviceId == deviceId }
+        .filter { it.source == SOURCE_HEART_RATE && it.deviceId == deviceId && counts(it) }
         .maxOfOrNull { it.timestampSeconds }
         ?.let(Instant::ofEpochSecond)
+
+/** Everything one read of the export yields from its raw rows: the sleep segments and the two heart-rate times freshness is judged from. */
+fun buildBandDataResult(samples: List<RawActivitySample>, deviceId: Int, exportFileModifiedAt: Instant?): BandDataResult.Success =
+    BandDataResult.Success(
+        segments = mapRawSamplesToSleepSegments(samples, deviceId),
+        newestSampleAt = newestHeartRateSampleAt(samples, deviceId),
+        exportFileModifiedAt = exportFileModifiedAt,
+        newestHeartRateRowAt = newestHeartRateRowAt(samples, deviceId)
+    )
 
 /**
  * J1.6 (owner-reported, 2026-09-21): clips every segment in [segments] so none of them starts before

@@ -4,7 +4,9 @@ package com.nikita.sleepcycle.ui.state
 // "failed, with its reason", in the screen's own text, never as a dialog. Goes through buildUiState, the same hop
 // NightViewModel uses, so a dropped connectionTest argument would fail here.
 
+import com.nikita.sleepcycle.bridge.BandDataResult
 import com.nikita.sleepcycle.night.SetupCheckLine
+import com.nikita.sleepcycle.night.buildSuccessReport
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.SetupCheckReport
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -60,6 +62,32 @@ class BeforeBedBandCheckTest {
             BandCheckStatus.Failed("In Gadgetbridge, disconnect and reconnect the band, then test again."),
             beforeBedWith(ConnectionTestState.Done(failed)).bandCheck,
         )
+    }
+
+    // PER-130 (2026-11-02): the band synced, but every heart-rate row carried -1. The test fails with its own
+    // message naming that fix. Start night is gated on the last pass alone (startNightGate never reads the band
+    // check), so an earlier pass still counts, as for any failed test.
+    @Test fun `a band that syncs but measures no heart rate fails the test with its own message`() {
+        val notMeasuring = buildSuccessReport(
+            BandDataResult.Success(
+                segments = emptyList(),
+                newestSampleAt = null,
+                exportFileModifiedAt = instant("2026-09-30T23:00"),
+                newestHeartRateRowAt = instant("2026-09-30T22:59"),
+            ),
+            now = instant("2026-09-30T23:00"),
+            phoneLines = emptyList(),
+        )
+
+        val beforeBed = beforeBedWith(ConnectionTestState.Done(notMeasuring), lastSetupCheckPassedAt = instant("2026-09-30T20:00"))
+
+        assertEquals(
+            BandCheckStatus.Failed(
+                "Band connected but not measuring heart rate. In Gadgetbridge band settings, switch \"Enable automatic heart rate measuring\" off and on."
+            ),
+            beforeBed.bandCheck,
+        )
+        assertEquals(true, beforeBed.offerOpenGadgetbridge)
     }
 
     // Owner request, 2026-10-05: when the band check fails, a button above Start night opens Gadgetbridge to

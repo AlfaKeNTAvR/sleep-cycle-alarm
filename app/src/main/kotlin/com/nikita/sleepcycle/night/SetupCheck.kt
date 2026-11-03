@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.alarm.AlarmNotificationReadiness
 import com.nikita.sleepcycle.alarm.readAlarmNotificationReadiness
 import com.nikita.sleepcycle.bridge.BAND_DATA_FRESHNESS_THRESHOLD
 import com.nikita.sleepcycle.bridge.BandDataResult
+import com.nikita.sleepcycle.bridge.StaleReason
 import com.nikita.sleepcycle.bridge.checkDataFreshness
 import com.nikita.sleepcycle.bridge.syncAndReadBandData
 import java.time.Duration
@@ -36,7 +37,9 @@ data class SetupCheckLine(val text: String, val severity: SetupCheckLineSeverity
 /** Everything the setup checklist needs to know to decide whether tonight can start. */
 data class SetupCheckReport(
     val isReady: Boolean,
-    val lines: List<SetupCheckLine>
+    val lines: List<SetupCheckLine>,
+    /** PER-130: why the band data was stale, for setup.jsonl; null when it was fresh or the sync itself failed. */
+    val staleReason: StaleReason? = null
 )
 
 /**
@@ -48,7 +51,10 @@ suspend fun runSetupCheck(context: Context, deviceMac: String, exportUri: Uri, n
     val since = now.minus(CONNECTION_TEST_LOOKBACK)
     val result = syncAndReadBandData(context, exportUri, deviceMac, since) { event -> appendSetupLog(context, event) }
     val report = buildReport(context, result, now)
-    appendSetupLog(context, NightLogEvent(now, "setup_check", mapOf("isReady" to report.isReady.toString())))
+    appendSetupLog(
+        context,
+        NightLogEvent(now, "setup_check", mapOf("isReady" to report.isReady.toString(), "staleReason" to (report.staleReason?.logValue ?: "")))
+    )
     return report
 }
 
@@ -69,21 +75,35 @@ private fun buildReport(context: Context, result: BandDataResult, now: Instant):
 }
 
 internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, phoneLines: List<SetupCheckLine>): SetupCheckReport {
-    val freshness = checkDataFreshness(result.newestSampleAt, now, result.exportFileModifiedAt, previousExportFileModifiedAt = null, threshold = BAND_DATA_FRESHNESS_THRESHOLD)
+    val freshness = checkDataFreshness(
+        result.newestSampleAt, now, result.exportFileModifiedAt, previousExportFileModifiedAt = null,
+        newestHeartRateRowAt = result.newestHeartRateRowAt, threshold = BAND_DATA_FRESHNESS_THRESHOLD
+    )
 
-    val lines = mutableListOf(
+    val bandLine = if (freshness.staleReason == StaleReason.NO_HEART_RATE_VALUES) {
+        // PER-130: its own line, first, so Before bed shows it as the reason the test failed (bandCheckStatusFor).
+        SetupCheckLine(BAND_NOT_MEASURING_SETUP_LINE, SetupCheckLineSeverity.ACTION_NEEDED)
+    } else {
         SetupCheckLine(
             "Connected. Found ${result.segments.size} sleep segments, ${freshnessLine(result.newestSampleAt, freshness.isFresh)}.",
             if (freshness.isFresh) SetupCheckLineSeverity.INFO else SetupCheckLineSeverity.ACTION_NEEDED
         )
-    )
-    lines += phoneLines
+    }
 
     return SetupCheckReport(
         isReady = freshness.isFresh,
-        lines = lines
+        lines = listOf(bandLine) + phoneLines,
+        staleReason = freshness.staleReason
     )
 }
+
+/**
+ * PER-130: the connection test's line when the band syncs but every heart-rate row is -1 (2026-10-30 to
+ * 2026-11-03). Names the fix that worked on 2026-11-03: Gadgetbridge sends that setting to the band only when it
+ * is toggled, never on reconnect, so disconnecting and reconnecting does not help here.
+ */
+internal const val BAND_NOT_MEASURING_SETUP_LINE =
+    "Band connected but not measuring heart rate. In Gadgetbridge band settings, switch \"Enable automatic heart rate measuring\" off and on."
 
 private fun freshnessLine(newestSampleAt: Instant?, isFresh: Boolean): String = when {
     newestSampleAt == null -> "no recent heart-rate samples"

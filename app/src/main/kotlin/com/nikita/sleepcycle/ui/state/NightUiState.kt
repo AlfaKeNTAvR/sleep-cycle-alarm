@@ -4,6 +4,15 @@ import com.nikita.sleepcycle.alarm.AlarmLabel
 import com.nikita.sleepcycle.engine.AlarmPlan
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 
+/** PER-130: which "alarm is only an estimate" warning the Night screen shows while band data is not reaching the app. */
+enum class BandDataWarning {
+    /** P1: a sync failed or brought nothing new. Fix: disconnect and reconnect the band in Gadgetbridge. */
+    NOT_SYNCING,
+
+    /** PER-130: syncs succeed but no heart-rate row has a real value. Fix: toggle automatic heart rate measuring. */
+    NOT_MEASURING_HEART_RATE
+}
+
 /** One stretch line in the morning report: its from-to span, its duration, and its cycle count to one decimal. */
 data class StretchLine(
     val startTimeLabel: String,
@@ -110,8 +119,12 @@ data class NightUiState(
      * engine's estimate. The night keeps running and the alarm stays armed as a backup; the screen just says
      * so prominently and names the fix that worked on 2026-09-30 (disconnect and reconnect the band in
      * Gadgetbridge). Derived from [lastSyncOk], no new persisted field. Always false on the morning report.
+     *
+     * PER-130: which warning, null for none. [BandDataWarning.NOT_MEASURING_HEART_RATE] when the last sync
+     * succeeded but every heart-rate row carried -1 (NightState.lastStaleReason), with that case's own fix;
+     * [BandDataWarning.NOT_SYNCING] for every other not-ok sync, as before. Always null on the morning report.
      */
-    val bandNotSyncingWarning: Boolean = false,
+    val bandDataWarning: BandDataWarning? = null,
     /**
      * P3 (owner spec, 2026-09-30): the "Nap N min" button's minutes when the screen offers it, null when it does
      * not. Offered exactly while the out-of-bed nudge is pending and still ahead - pressing it trades that nudge

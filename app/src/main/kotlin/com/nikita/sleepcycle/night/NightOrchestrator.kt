@@ -27,6 +27,8 @@ import com.nikita.sleepcycle.alarm.alarmLabelFor
 import com.nikita.sleepcycle.alarm.scheduleOutOfBedAlarm
 import com.nikita.sleepcycle.alarm.schedulePhoneAlarm
 import com.nikita.sleepcycle.bridge.BandDataResult
+import com.nikita.sleepcycle.bridge.FreshnessCheck
+import com.nikita.sleepcycle.bridge.StaleReason
 import com.nikita.sleepcycle.bridge.checkDataFreshness
 import com.nikita.sleepcycle.bridge.clipSegmentsToNightStart
 import com.nikita.sleepcycle.bridge.syncAndReadBandData
@@ -280,11 +282,9 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
     // not change since the last successful sync" case, not only a genuine band fault), so "dead band" invited
     // the wrong mental model for anyone reading the night log - see shouldKeepPreviousPlan's own doc for the
     // full staleness-vs-fault distinction and why the behaviour itself is unchanged, only the name.
-    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
-    val plan = if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor, decisionNow, morningAlarmRang)) {
-        // shouldKeepPreviousPlan only returns true when previousPlan?.wakeAt is non-null, so state.lastPlan
-        // itself is guaranteed non-null here too.
-        val keptPlan = checkNotNull(state.lastPlan)
+    val tickPlan = decideTickPlan(outcome, state, decisionNow, currentZone(), config)
+    val plan = tickPlan.plan
+    if (tickPlan.keptPrevious) {
         appendNightLog(
             context, state.realStartedAt,
             NightLogEvent(
@@ -294,18 +294,14 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
                 // the previous plan's alarm is armed, only that its wakeAt is non-null and still ahead of now.
                 // On a night where the exact-alarm permission was revoked, the old wording asserted something
                 // false on exactly the log line someone diagnosing a missed alarm would read.
-                mapOf("cause" to "sync not ok and the previous plan's target is still pending (unfired, still ahead of now) - keeping it rather than re-planning stale data", "wakeAt" to keptPlan.wakeAt.toString())
+                mapOf("cause" to "sync not ok and the previous plan's target is still pending (unfired, still ahead of now) - keeping it rather than re-planning stale data", "wakeAt" to plan.wakeAt.toString())
             ),
             state.debugOptions.isAnyEnabled
         )
-        keptPlan
-    } else {
-        computeAlarmPlan(
-            outcome.segments, state.settings, decisionNow, state.morningAlarmAt, currentZone(), config,
-            state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt, state.phoneAlarmFiredFor
-        )
     }
     logDataAndPlan(context, state, outcome, plan, decisionNow)
+    // PER-130: a band that syncs but measures no heart rate gets a silent lock-screen notification with the fix.
+    stepBandNotMeasuringNotification(context, state, outcome, decisionNow)
     // PER-151: a No-alarm night asks "Are you up?" once the band shows a long morning awakening. It only asks:
     // the plan above is untouched, so the night never moves on or ends because of it.
     val areYouUp = stepAreYouUpAsk(context, state, outcome.segments, decisionNow)
@@ -346,6 +342,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         lastSegments = outcome.segments,
         lastExportFileModifiedAt = outcome.exportFileModifiedAt,
         lastSyncFailureCause = outcome.failureCause,
+        lastStaleReason = outcome.staleReason,
         phoneAlarmFiredFor = state.phoneAlarmFiredFor,
         wakeAlarmFiredAt = state.wakeAlarmFiredAt,
         napAlarmsUsed = state.napAlarmsUsed,
@@ -695,7 +692,9 @@ data class SyncOutcome(
     val syncOk: Boolean,
     val exportFileModifiedAt: Instant?,
     val failureCause: String?,
-    val source: BandDataSource = BandDataSource.BAND
+    val source: BandDataSource = BandDataSource.BAND,
+    /** PER-130: why the data was stale when the sync itself succeeded but [syncOk] is false; null otherwise. */
+    val staleReason: StaleReason? = null
 )
 
 /**
@@ -711,29 +710,79 @@ data class SyncOutcome(
 // (DebugBandDataSource.kt) - real band data is being read, never simulated - and U1 guarantees a warp can only
 // be live while simulatedBandData is ON, so whenever this runs the clock is guaranteed unwarped (nowInstant()
 // == Instant.now()). Contrast OutOfBedPreNudgeCheck.kt's own re-sync, which is NOT similarly guarded.
-internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult: BandDataResult, now: Instant): SyncOutcome =
-    when (syncResult) {
-        is BandDataResult.Failure -> {
+internal fun resolveSyncOutcome(context: Context, state: NightState, syncResult: BandDataResult, now: Instant): SyncOutcome {
+    val resolved = decideSyncOutcome(state, syncResult, now)
+    val freshness = resolved.freshness
+    when {
+        syncResult is BandDataResult.Failure ->
             appendNightLog(context, state.realStartedAt, NightLogEvent(now, "error", mapOf("step" to syncResult.step, "cause" to syncResult.cause)), state.debugOptions.isAnyEnabled)
-            SyncOutcome(state.lastSegments, null, false, state.lastExportFileModifiedAt, syncResult.cause)
-        }
+        syncResult is BandDataResult.Success && freshness != null && !freshness.isFresh ->
+            appendNightLog(
+                context, state.realStartedAt,
+                NightLogEvent(
+                    now, "stale_data",
+                    mapOf(
+                        "reason" to (freshness.reason ?: ""),
+                        // PER-130: tells "nothing new arrived" apart from "rows arrive, all with HEART_RATE -1".
+                        "staleReason" to (freshness.staleReason?.logValue ?: ""),
+                        "newestSampleAt" to (syncResult.newestSampleAt?.toString() ?: ""),
+                        "newestHeartRateRowAt" to (syncResult.newestHeartRateRowAt?.toString() ?: "")
+                    )
+                ),
+                state.debugOptions.isAnyEnabled
+            )
+    }
+    return resolved.outcome
+}
+
+/** [decideSyncOutcome]'s answer: the outcome, plus the freshness verdict it came from (null for a failed sync) for the log. */
+internal data class ResolvedSync(val outcome: SyncOutcome, val freshness: FreshnessCheck?)
+
+/** The pure half of [resolveSyncOutcome]: everything it decides, without writing the log. */
+internal fun decideSyncOutcome(state: NightState, syncResult: BandDataResult, now: Instant): ResolvedSync =
+    when (syncResult) {
+        is BandDataResult.Failure ->
+            ResolvedSync(SyncOutcome(state.lastSegments, null, false, state.lastExportFileModifiedAt, syncResult.cause), freshness = null)
         is BandDataResult.Success -> {
-            val freshness = checkDataFreshness(syncResult.newestSampleAt, now, syncResult.exportFileModifiedAt, state.lastExportFileModifiedAt)
-            if (!freshness.isFresh) {
-                appendNightLog(
-                    context, state.realStartedAt,
-                    NightLogEvent(now, "stale_data", mapOf("reason" to (freshness.reason ?: ""), "newestSampleAt" to (syncResult.newestSampleAt?.toString() ?: ""))),
-                    state.debugOptions.isAnyEnabled
-                )
-                SyncOutcome(state.lastSegments, syncResult.newestSampleAt, false, syncResult.exportFileModifiedAt, null)
+            val freshness = checkDataFreshness(
+                syncResult.newestSampleAt, now, syncResult.exportFileModifiedAt, state.lastExportFileModifiedAt,
+                newestHeartRateRowAt = syncResult.newestHeartRateRowAt
+            )
+            val outcome = if (!freshness.isFresh) {
+                SyncOutcome(state.lastSegments, syncResult.newestSampleAt, false, syncResult.exportFileModifiedAt, null, staleReason = freshness.staleReason)
             } else {
                 // J1.6: clipped to the night's own start here, once, right where fresh segments first reach
                 // the app - state.lastSegments (the failed/stale branches above) is always already-clipped
                 // output from an earlier pass through this same branch, so it never needs clipping again.
                 SyncOutcome(clipSegmentsToNightStart(syncResult.segments, state.startedAt), syncResult.newestSampleAt, true, syncResult.exportFileModifiedAt, null)
             }
+            ResolvedSync(outcome, freshness)
         }
     }
+
+/** This tick's plan, and whether it is [NightState.lastPlan] kept unchanged by [shouldKeepPreviousPlan]. */
+internal data class TickPlan(val plan: AlarmPlan, val keptPrevious: Boolean)
+
+/**
+ * The tick's plan decision, pure so a whole night can be replayed against it (PER-130): keeps the previous plan
+ * while [shouldKeepPreviousPlan] says so, otherwise re-plans [outcome]'s segments at [now]. A night whose band
+ * data is stale from its first tick therefore keeps startNight's own plan, made at Start night (estimated onset
+ * at Start night + fallAsleepEstimate, then the picked cycles, capped by the deadline), rather than an estimate
+ * that slides with every tick's own `now`.
+ */
+internal fun decideTickPlan(outcome: SyncOutcome, state: NightState, now: Instant, zone: ZoneId, config: EngineConfig): TickPlan {
+    val morningAlarmRang = morningAlarmHasRung(state.wakeAlarmFiredAt, state.morningAlarmAt, state.phoneAlarmFiredFor)
+    if (shouldKeepPreviousPlan(outcome, state.lastPlan, state.phoneAlarmFiredFor, now, morningAlarmRang)) {
+        // shouldKeepPreviousPlan only returns true when previousPlan?.wakeAt is non-null, so state.lastPlan
+        // itself is guaranteed non-null here too.
+        return TickPlan(checkNotNull(state.lastPlan), keptPrevious = true)
+    }
+    val plan = computeAlarmPlan(
+        outcome.segments, state.settings, now, state.morningAlarmAt, zone, config,
+        state.wakeAlarmFiredAt, state.napAlarmsUsed, state.lastNapAlarmFiredAt, state.phoneAlarmFiredFor
+    )
+    return TickPlan(plan, keptPrevious = false)
+}
 
 /**
  * J1.5 (owner-reported, 2026-09-21): whether this tick should skip re-planning entirely and keep
