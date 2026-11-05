@@ -32,24 +32,39 @@ enum class RatingMoment { AFTER_END_NIGHT, LATER }
 
 /**
  * What made a night Okay or Bad (owner spec, 2026-10-04): ticked on a dialog right after an Okay or Bad rating,
- * each item belonging to one [moment]'s list - the morning's five or the afternoon's four. Owner change,
+ * each item offered on one or both moments' lists ([symptomsOfferedAt]). Owner change,
  * 2026-10-04: Groggy on waking and Heavy, overslept were dropped from the morning list after the design was approved.
  * Owner change, 2026-10-21: Kept napping (kept moving the alarm or tapping Nap to sleep more) added to the morning,
- * Heavy head to the afternoon. Logged in lower case.
+ * Heavy head to the afternoon. Owner change, 2026-11-05: Heavy head is offered in the morning too, as the same
+ * symptom: the `sleep_symptoms` line's moment already tells a morning pick from a later one. Logged in lower case.
  */
-enum class RatingSymptom(val moment: RatingMoment) {
-    // Owner change, 2026-10-05: Still sleepy and Headache on the dialog's top row, Woke before alarm and Slow to
-    // fall asleep below. The order here is the dialog's order; the log stores names, so reordering never changes
-    // what an old log reads as, and adding one never changes the others' names.
-    STILL_SLEEPY(RatingMoment.AFTER_END_NIGHT),
-    HEADACHE(RatingMoment.AFTER_END_NIGHT),
-    WOKE_BEFORE_ALARM(RatingMoment.AFTER_END_NIGHT),
-    SLOW_TO_FALL_ASLEEP(RatingMoment.AFTER_END_NIGHT),
-    KEPT_NAPPING(RatingMoment.AFTER_END_NIGHT),
-    SLEEPY_IN_AFTERNOON(RatingMoment.LATER),
-    LOW_ENERGY(RatingMoment.LATER),
-    HARD_TO_FOCUS(RatingMoment.LATER),
-    HEAVY_HEAD(RatingMoment.LATER),
+enum class RatingSymptom {
+    // The log stores names, so reordering never changes what an old log reads as, and adding one never changes
+    // the others' names. This order is only the order names are written in on a log line; the dialogs' order is
+    // [symptomsOfferedAt].
+    STILL_SLEEPY,
+    HEADACHE,
+    WOKE_BEFORE_ALARM,
+    SLOW_TO_FALL_ASLEEP,
+    KEPT_NAPPING,
+    SLEEPY_IN_AFTERNOON,
+    LOW_ENERGY,
+    HARD_TO_FOCUS,
+    HEAVY_HEAD,
+}
+
+/**
+ * The symptoms [moment]'s dialog offers, in its order. Owner change, 2026-10-05: Still sleepy and Headache on
+ * the morning dialog's top row, Woke before alarm and Slow to fall asleep below. Owner change, 2026-11-05: the
+ * morning's Heavy head sits on the top row next to Headache, so the six tiles are three head and sleepiness
+ * ones over three about the night itself; the afternoon keeps it last.
+ */
+fun symptomsOfferedAt(moment: RatingMoment): List<RatingSymptom> = when (moment) {
+    RatingMoment.AFTER_END_NIGHT -> listOf(
+        RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE, RatingSymptom.HEAVY_HEAD,
+        RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.KEPT_NAPPING,
+    )
+    RatingMoment.LATER -> listOf(RatingSymptom.SLEEPY_IN_AFTERNOON, RatingSymptom.LOW_ENERGY, RatingSymptom.HARD_TO_FOCUS, RatingSymptom.HEAVY_HEAD)
 }
 
 /** One rating, when it was given (or last changed), and the symptoms ticked for it (always none for Good). */

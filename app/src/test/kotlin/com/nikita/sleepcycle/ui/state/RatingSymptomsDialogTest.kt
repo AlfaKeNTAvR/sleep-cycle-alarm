@@ -27,15 +27,16 @@ class RatingSymptomsDialogTest {
     }
 
     @Test
-    fun `the morning dialog offers Still sleepy and Headache first, then Woke before alarm, Slow to fall asleep and Kept napping, prefilled with what was ticked`() {
+    fun `the morning dialog offers Still sleepy, Headache and Heavy head first, then Woke before alarm, Slow to fall asleep and Kept napping, prefilled with what was ticked`() {
         // Owner spec, 2026-10-21: "I kept resetting the nap alarm... because I wanted to keep sleeping more" -
-        // Kept napping joins the morning list, last.
+        // Kept napping joins the morning list, last. Owner change, 2026-11-05: Heavy head is offered in the
+        // morning too, on the top row next to Headache.
         val dialog = symptomsDialogFor(RatingMoment.AFTER_END_NIGHT, RecordedRating(SleepRating.OKAY, at, setOf(RatingSymptom.HEADACHE)))
 
         assertEquals(
             listOf(
-                RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE, RatingSymptom.WOKE_BEFORE_ALARM,
-                RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.KEPT_NAPPING,
+                RatingSymptom.STILL_SLEEPY, RatingSymptom.HEADACHE, RatingSymptom.HEAVY_HEAD,
+                RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.SLOW_TO_FALL_ASLEEP, RatingSymptom.KEPT_NAPPING,
             ),
             dialog?.options,
         )
@@ -44,8 +45,9 @@ class RatingSymptomsDialogTest {
     }
 
     @Test
-    fun `the tiles sit in balanced rows of at most three - the morning's five as three over two, the afternoon's four as two by two`() {
+    fun `the tiles sit in balanced rows of at most three - the morning's six as three over three, the afternoon's four as two by two`() {
         // Owner spec, 2026-10-21: with Kept napping and Heavy head added, the rows stay balanced on a phone.
+        // Owner change, 2026-11-05: Heavy head in the morning too makes six, two full rows of three.
         val morning = symptomsDialogFor(RatingMoment.AFTER_END_NIGHT, RecordedRating(SleepRating.OKAY, at))
         val afternoon = symptomsDialogFor(RatingMoment.LATER, RecordedRating(SleepRating.OKAY, at))
 

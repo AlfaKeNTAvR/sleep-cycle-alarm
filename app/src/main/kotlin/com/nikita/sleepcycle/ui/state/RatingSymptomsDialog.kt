@@ -1,13 +1,15 @@
 package com.nikita.sleepcycle.ui.state
 
 // File purpose: the "why Okay or Bad" dialog (owner spec, 2026-10-04) as plain state. After an Okay or Bad
-// rating a dialog of tappable tiles asks which symptoms applied: the morning's five after the morning report's
-// rating, the afternoon's four after the 15:00 one (one more each since 2026-10-21). The same dialog edits them later from Past night.
+// rating a dialog of tappable tiles asks which symptoms applied: the morning's six after the morning report's
+// rating, the afternoon's four after the 15:00 one (one more each since 2026-10-21, and Heavy head in the morning
+// too since 2026-11-05). The same dialog edits them later from Past night.
 
 import com.nikita.sleepcycle.night.RatingMoment
 import com.nikita.sleepcycle.night.RatingSymptom
 import com.nikita.sleepcycle.night.RecordedRating
 import com.nikita.sleepcycle.night.SleepRating
+import com.nikita.sleepcycle.night.symptomsOfferedAt
 
 /** The open dialog: which [moment]'s rating it is about, that [rating] (for the subtitle and the tile color), the tiles in order, and the ones ticked. */
 data class SymptomsDialogState(
@@ -21,7 +23,8 @@ data class SymptomsDialogState(
      * morning list cut to four (owner change, 2026-10-04, the layout left to this run), 3 + 1 would leave one
      * tile alone on its row, so four sit two by two; the afternoon's three stay one row of three.
      * Owner change, 2026-10-21: one symptom more each, so the morning's five sit three over two and the
-     * afternoon's four two by two.
+     * afternoon's four two by two. Owner change, 2026-11-05: Heavy head in the morning too, so its six sit three
+     * over three.
      */
     val tilesPerRow: Int
         get() {
@@ -45,12 +48,18 @@ fun hasSymptoms(rating: SleepRating?): Boolean = rating == SleepRating.OKAY || r
 /** The dialog for [moment]'s rating [recorded], prefilled with what was ticked; null when there is nothing to ask about (missing, or Good). */
 fun symptomsDialogFor(moment: RatingMoment, recorded: RecordedRating?): SymptomsDialogState? {
     if (recorded == null || !hasSymptoms(recorded.rating)) return null
-    return SymptomsDialogState(moment, recorded.rating, symptomsOffered(moment), recorded.symptoms)
+    return SymptomsDialogState(moment, recorded.rating, symptomsOfferedAt(moment), recorded.symptoms)
 }
 
-/** The symptoms ticked for [recorded], in the dialog's order, for the small line under a rating. */
-fun symptomsShown(recorded: RecordedRating?): List<RatingSymptom> =
-    recorded?.let { rating -> RatingSymptom.entries.filter { it in rating.symptoms } } ?: emptyList()
+/**
+ * The symptoms ticked for [moment]'s rating [recorded], in that moment's dialog order, for the small line under a
+ * rating. A name the moment does not offer (only a hand-edited log could hold one) still shows, after the rest.
+ */
+fun symptomsShown(moment: RatingMoment, recorded: RecordedRating?): List<RatingSymptom> {
+    val ticked = recorded?.symptoms ?: return emptyList()
+    val offered = symptomsOfferedAt(moment)
+    return offered.filter { it in ticked } + RatingSymptom.entries.filter { it in ticked && it !in offered }
+}
 
 /**
  * Whether the small line of ticked symptoms shows under [recorded]. Owner decision, 2026-10-05: only for an Okay
@@ -61,6 +70,3 @@ fun showsSymptomsLine(recorded: RecordedRating?): Boolean = hasSymptoms(recorded
 /** One tile tapped: ticks it, or unticks it if it was ticked. */
 fun SymptomsDialogState.toggled(symptom: RatingSymptom): SymptomsDialogState =
     copy(selected = if (symptom in selected) selected - symptom else selected + symptom)
-
-/** The items [moment]'s dialog offers, in the design's order. */
-private fun symptomsOffered(moment: RatingMoment): List<RatingSymptom> = RatingSymptom.entries.filter { it.moment == moment }

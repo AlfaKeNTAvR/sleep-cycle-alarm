@@ -230,6 +230,25 @@ class BuildPastNightUiStateTest {
     }
 
     @Test
+    fun `a morning Heavy head shows after Headache's place, a later one last`() {
+        // Owner change, 2026-11-05: Heavy head is in both lists; each row follows its own dialog's order.
+        val ratings = NightRatings(
+            afterEndNight = RecordedRating(
+                SleepRating.BAD, Instant.parse("2026-09-18T05:52:00Z"), setOf(RatingSymptom.WOKE_BEFORE_ALARM, RatingSymptom.HEAVY_HEAD),
+            ),
+            later = RecordedRating(
+                SleepRating.OKAY, Instant.parse("2026-09-18T13:02:00Z"), setOf(RatingSymptom.HEAVY_HEAD, RatingSymptom.LOW_ENERGY),
+            ),
+            laterAsked = true,
+        )
+
+        val state = buildPastNightUiState(row(), log(detailed).copy(ratings = ratings), TEST_ZONE)
+
+        assertEquals(listOf(RatingSymptom.HEAVY_HEAD, RatingSymptom.WOKE_BEFORE_ALARM), state.ratings?.afterEndNight?.symptoms)
+        assertEquals(listOf(RatingSymptom.LOW_ENERGY, RatingSymptom.HEAVY_HEAD), state.ratings?.later?.symptoms)
+    }
+
+    @Test
     fun `PER-150 a No-alarm night says so instead of naming a picked length`() {
         val state = buildPastNightUiState(row(), log(detailed, deadline = null).copy(noAlarm = true), TEST_ZONE)
 

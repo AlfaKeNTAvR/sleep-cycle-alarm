@@ -353,3 +353,12 @@ Continues P1, P2 and P4. P2 left this for later; Gadgetbridge 0.95.1's source an
 - **Log:** night log `band_reconnect_started` (`trigger`), `band_reconnect_result` (`trigger`, `connectedReply`, `durationMs`, `resyncFresh`, `resyncResult`), `band_reconnect_skipped` (`cause` = `cooldown`); `setup.jsonl` the first two plus `intent_api_check`. The MAC goes only into the broadcasts, never into a log, the screen or a failure cause.
 - **Part 1 follow-ups (owner's choices):** the device lookup failure no longer names the MAC ("no DEVICE row for the configured band"); it reached the night log, setup.jsonl and the screen. `night_end` gains `noBandDataCause` (`sync_failed`, `no_new_samples`, `no_heart_rate_values`), written only on a no-data night, and the morning report and Past night word the line by it, "No heart-rate values reached the app: the band was not measuring" for P4's case; logs without the field keep P1's wording. Before bed's corner says "Band not measuring" when the test failed for that reason.
 - **Not yet checked on the phone:** the `BLUETOOTH_CONNECTED` reply, a reconnect at night, and the hint.
+
+## S1: Heavy head in the morning symptoms list too (owner change, 2026-11-05)
+
+- **The owner's ask:** offer Heavy head on the morning "What felt off?" dialog as well as the afternoon one, with the same label and icon.
+- **One symptom in two lists, not a second entry.** Each `sleep_symptoms` line already carries its `moment`, so a morning `heavy_head` and a later one are told apart the same way as every other symptom. A second entry (say `heavy_head_morning`) would store the moment twice and need a second label, icon and History mapping for the same thing. `RatingSymptom` no longer names one moment; `symptomsOfferedAt(moment)` lists each dialog's tiles in order.
+- **Old logs read the same:** no name changed, and reading was always by name within the line's moment.
+- **Placement:** top row, after Headache: Still sleepy, Headache, Heavy head over Woke before alarm, Slow to fall asleep, Kept napping. Six tiles make two full rows of three; the two head symptoms sit together. The afternoon keeps it last.
+- **The symptoms line under a rating** (morning report and Past night) now follows that moment's dialog order, so a morning Heavy head shows after Headache and a later one last.
+- **Not yet checked on the phone:** the six-tile dialog's fit.

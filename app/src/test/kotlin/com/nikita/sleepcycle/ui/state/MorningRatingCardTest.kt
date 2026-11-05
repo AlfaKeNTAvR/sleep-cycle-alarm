@@ -34,6 +34,21 @@ class MorningRatingCardTest {
     }
 
     @Test
+    fun `a morning Heavy head shows next to Headache, in the morning dialog's order`() {
+        // Owner change, 2026-11-05: Heavy head is offered in the morning too, after Headache.
+        val ratings = NightRatings(
+            afterEndNight = RecordedRating(SleepRating.BAD, at, setOf(RatingSymptom.KEPT_NAPPING, RatingSymptom.HEAVY_HEAD, RatingSymptom.HEADACHE)),
+            later = null,
+            laterAsked = false,
+        )
+
+        assertEquals(
+            listOf(RatingSymptom.HEADACHE, RatingSymptom.HEAVY_HEAD, RatingSymptom.KEPT_NAPPING),
+            buildMorningRatingCard(ratings, ratingEnabled = true)?.symptoms,
+        )
+    }
+
+    @Test
     fun `an Okay morning rating with nothing ticked shows no symptoms line`() {
         // Owner decision, 2026-10-05: no "Tick what felt off" prompt; picking Okay or Bad again reopens the dialog.
         val ratings = NightRatings(afterEndNight = RecordedRating(SleepRating.OKAY, at), later = null, laterAsked = false)

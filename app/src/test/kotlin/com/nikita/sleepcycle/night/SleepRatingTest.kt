@@ -169,4 +169,33 @@ class SleepRatingTest {
         )
         assertEquals(setOf(RatingSymptom.SLEEPY_IN_AFTERNOON, RatingSymptom.LOW_ENERGY, RatingSymptom.HARD_TO_FOCUS), ratings?.later?.symptoms)
     }
+
+    @Test
+    fun `Heavy head ticked in the morning is stored as heavy_head on the morning line and read back for the morning only`() {
+        // Owner change, 2026-11-05: Heavy head is offered in both lists under the one name heavy_head; the line's
+        // moment keeps a morning pick apart from a later one, as for every other symptom.
+        val morningSymptoms = symptomsLine(RatingMoment.AFTER_END_NIGHT, setOf(RatingSymptom.HEAVY_HEAD, RatingSymptom.STILL_SLEEPY), morning.plusSeconds(20))
+        val laterSymptoms = symptomsLine(RatingMoment.LATER, setOf(RatingSymptom.LOW_ENERGY), afternoon.plusSeconds(20))
+        val lines = listOf(
+            rateableStartLine, endLine,
+            ratingLine(RatingMoment.AFTER_END_NIGHT, SleepRating.OKAY, morning), morningSymptoms,
+            ratingLine(RatingMoment.LATER, SleepRating.OKAY, afternoon), laterSymptoms,
+        )
+        val ratings = parsePastNightLog(lines).ratings
+
+        assertTrue(""""moment":"after_end_night"""" in morningSymptoms, morningSymptoms)
+        assertTrue(""""symptoms":"still_sleepy,heavy_head"""" in morningSymptoms, morningSymptoms)
+        assertEquals(setOf(RatingSymptom.HEAVY_HEAD, RatingSymptom.STILL_SLEEPY), ratings?.afterEndNight?.symptoms)
+        assertEquals(setOf(RatingSymptom.LOW_ENERGY), ratings?.later?.symptoms)
+    }
+
+    @Test
+    fun `each moment offers its own list, Heavy head is the only one in both, and every symptom is offered somewhere`() {
+        // Owner change, 2026-11-05.
+        val morningList = symptomsOfferedAt(RatingMoment.AFTER_END_NIGHT)
+        val laterList = symptomsOfferedAt(RatingMoment.LATER)
+
+        assertEquals(setOf(RatingSymptom.HEAVY_HEAD), morningList.toSet() intersect laterList.toSet())
+        assertEquals(RatingSymptom.entries.toSet(), (morningList + laterList).toSet())
+    }
 }

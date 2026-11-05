@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle.ui.state
 
 import com.nikita.sleepcycle.night.NightRatings
+import com.nikita.sleepcycle.night.RatingMoment
 import com.nikita.sleepcycle.night.RatingSymptom
 import com.nikita.sleepcycle.night.SleepRating
 
@@ -19,5 +20,5 @@ data class MorningRatingCard(
 fun buildMorningRatingCard(ratings: NightRatings?, ratingEnabled: Boolean): MorningRatingCard? {
     if (ratings == null || !ratingEnabled) return null
     val morning = ratings.afterEndNight
-    return MorningRatingCard(selected = morning?.rating, symptoms = symptomsShown(morning), showsSymptomsLine = showsSymptomsLine(morning))
+    return MorningRatingCard(selected = morning?.rating, symptoms = symptomsShown(RatingMoment.AFTER_END_NIGHT, morning), showsSymptomsLine = showsSymptomsLine(morning))
 }
