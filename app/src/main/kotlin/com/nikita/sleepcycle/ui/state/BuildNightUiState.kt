@@ -18,6 +18,7 @@ import com.nikita.sleepcycle.engine.morningAlarmHasRung
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.isShortNight
+import com.nikita.sleepcycle.night.canChangeNightSettings
 import com.nikita.sleepcycle.night.formatSimulatedTimeValue
 import com.nikita.sleepcycle.ui.format.formatClockTime
 import java.time.Instant
@@ -49,6 +50,7 @@ fun buildNightUiState(
     pendingFollowUp: PendingFollowUp?,
     confirmingImUp: Boolean = false,
     debugOptions: DebugOptions = DebugOptions(),
+    alarmEditorDraft: AlarmEditorDraft? = null,
 ): NightUiState? {
     if (showingMorningReport) {
         val view = engineView ?: return null
@@ -104,6 +106,8 @@ fun buildNightUiState(
     val showImUp = imUpOffered(state, plan.mode, pendingFollowUp, now)
     val config = resolveEngineConfig(state)
     val napMinutes = napButtonMinutes(pendingFollowUp, morningAlarmHasRung(state), now, config)
+    // Q2: the morning alarm's settings can change until it rings; afterwards the follow-ups own the night.
+    val alarmEditable = canChangeNightSettings(state) && !endingNight
     return NightUiState(
         syncLabel, state.lastSyncOk, state.lastSyncFailureCause, content,
         // Owner spec, 2026-10-02: one choice at a time - End night only once he is up (see imUpOffered).
@@ -119,6 +123,8 @@ fun buildNightUiState(
         discardsNight = isShortNight(state.startedAt, now),
         showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
         showAreYouUpAsk = state.areYouUp?.isOpen == true,
+        alarmEditable = alarmEditable,
+        alarmEditor = alarmEditorDraft?.takeIf { alarmEditable }?.let { buildAlarmEditorUiState(it, state, now, zone) },
     )
 }
 

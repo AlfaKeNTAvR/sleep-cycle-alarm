@@ -252,7 +252,7 @@ private fun debugBannerPrefix(context: Context, debugOptions: DebugOptions): Str
     return if (labels.isEmpty()) "" else "[${labels.joinToString(" · ")}] "
 }
 
-private fun updateNotification(
+internal fun updateNotification(
     context: Context,
     plannedWake: Instant?,
     noAlarm: Boolean = false,

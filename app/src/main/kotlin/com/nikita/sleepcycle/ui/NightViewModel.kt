@@ -59,6 +59,16 @@ import com.nikita.sleepcycle.night.RatingSymptom
 import com.nikita.sleepcycle.night.handleLaterRatingNotificationTap
 import com.nikita.sleepcycle.night.recordRatingSymptoms
 import com.nikita.sleepcycle.ui.state.MorningRatingCard
+import com.nikita.sleepcycle.night.NightSettingsChangeResult
+import com.nikita.sleepcycle.night.canChangeNightSettings
+import com.nikita.sleepcycle.night.changeNightSettings
+import com.nikita.sleepcycle.ui.state.AlarmEditorDraft
+import com.nikita.sleepcycle.ui.state.AlarmEditorProblem
+import com.nikita.sleepcycle.ui.state.nightSettingsForChoice
+import com.nikita.sleepcycle.ui.state.openAlarmEditorDraft
+import com.nikita.sleepcycle.ui.state.problemFor
+import com.nikita.sleepcycle.ui.state.withEditorDeadlineSwitched
+import com.nikita.sleepcycle.ui.state.withEditorDeadlineTime
 import com.nikita.sleepcycle.ui.state.SymptomsDialogState
 import com.nikita.sleepcycle.ui.state.buildMorningRatingCard
 import com.nikita.sleepcycle.ui.state.shouldAskSymptoms
@@ -179,6 +189,14 @@ private data class ReportInputs(
     val cachedMorningReport: CachedMorningReport?,
 )
 
+/** The error banner, the out-of-bed slot's pending alarm, and the Night screen's open dialogs. */
+private data class OverlayInputs(
+    val error: String?,
+    val pendingFollowUp: PendingFollowUp?,
+    val confirmingImUp: Boolean,
+    val alarmEditorDraft: AlarmEditorDraft?,
+)
+
 private data class DebugInputs(
     val storedDebugOptions: DebugOptions,
     val simulatedSleepEvents: List<SimulatedSleepEvent>,
@@ -235,6 +253,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
      * PER-127: also re-read whenever `refreshNightStateFromDisk` publishes a changed record (a ring ending).
      */
     private val pendingFollowUp = MutableStateFlow<PendingFollowUp?>(null)
+    /** Q2: the Night screen's open alarm editor, null when closed. Dropped whenever the night can no longer be changed. */
+    private val alarmEditorDraft = MutableStateFlow<AlarmEditorDraft?>(null)
     private val debug = DebugScreenController(context, viewModelScope)
 
     private val appSettings: StateFlow<AppSettings?> =
@@ -268,9 +288,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         combine(debug.storedOptions, debug.simulatedSleepEvents, debug.confirmingNightStart, ::DebugInputs),
         // Bundled with errorMessage rather than added as a 6th top-level flow: kotlinx.coroutines' combine has
         // fixed-arity overloads only up to 5 flows.
-        combine(errorMessage, pendingFollowUp, confirmingImUp, ::Triple),
-    ) { core, extra, report, debugInputs, errorNudgeImUp ->
-        toUiState(core, extra, report, debugInputs, errorNudgeImUp.first, errorNudgeImUp.second, errorNudgeImUp.third)
+        combine(errorMessage, pendingFollowUp, confirmingImUp, alarmEditorDraft, ::OverlayInputs),
+    ) { core, extra, report, debugInputs, overlay ->
+        toUiState(core, extra, report, debugInputs, overlay)
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(TICKER_INTERVAL_MS), UiState.initial())
 
@@ -289,9 +309,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         extra: ExtraInputs,
         report: ReportInputs,
         debugInputs: DebugInputs,
-        error: String?,
-        pendingFollowUp: PendingFollowUp?,
-        confirmingImUp: Boolean,
+        overlay: OverlayInputs,
     ): UiState {
         val settings = core.appSettings ?: return UiState.initial()
         val engineView = when {
@@ -318,9 +336,10 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             debugOptions = debug.effectiveOptions(),
             simulatedSleepEvents = debugInputs.simulatedSleepEvents,
             confirmingDebugNightStart = debugInputs.confirmingDebugNightStart,
-            pendingFollowUp = pendingFollowUp,
-            errorMessage = error,
-            confirmingImUp = confirmingImUp,
+            pendingFollowUp = overlay.pendingFollowUp,
+            errorMessage = overlay.error,
+            confirmingImUp = overlay.confirmingImUp,
+            alarmEditorDraft = overlay.alarmEditorDraft,
         )
     }
 
@@ -479,6 +498,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             // ISSUES.md #10 (deadline.md #2, 2026-10-03): collect, not collectLatest - a later emission used to
             // cancel the restore half way, leaving the dead Night screen up until the app was reopened.
             observedNightState.collect { state ->
+                // Q2: an editor left open when the night ends or its morning alarm rings must not reappear later.
+                if (state == null || !canChangeNightSettings(state)) alarmEditorDraft.value = null
                 // PER-148: also while Settings or History is open over the Night screen, so back returns to the report.
                 if (state == null && screen.value in SCREENS_OVER_NIGHT && !showingMorningReport.value && !endingNight.value) {
                     restoreMorningReportFromDiskIfAny(nightStateFromDisk = null)
@@ -935,6 +956,54 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             }
             refreshPendingOutOfBedNudge()
             requestImmediateTick(context)
+        }
+    }
+
+    /**
+     * Q2 (owner spec, 2026-11-05): the alarm tapped on the Night screen. Opens the editor on the running night's
+     * own wake-by time and sleep length; only while its morning alarm has not rung (canChangeNightSettings).
+     */
+    fun openAlarmEditor() {
+        val night = observedNightState.value ?: return
+        val settings = appSettings.value ?: return
+        if (!canChangeNightSettings(night)) return
+        alarmEditorDraft.value = openAlarmEditorDraft(settings, night.settings, currentZone())
+    }
+
+    /** Q2: Cancel or back - closes the editor and changes nothing. */
+    fun cancelAlarmEditor() { alarmEditorDraft.value = null }
+
+    fun setEditorDeadlineEnabled(enabled: Boolean) = editAlarmChoice { choice, night -> withEditorDeadlineSwitched(choice, enabled, night, now.value, currentZone()) }
+    fun setEditorDeadlineTime(time: LocalTime) = editAlarmChoice { choice, night -> withEditorDeadlineTime(choice, time, night, now.value, currentZone()) }
+    fun pickEditorCycles(cycles: Int) = editAlarmChoice { choice, _ -> withSleepLengthPicked(choice, cycles) }
+    fun pickEditorNoAlarm() = editAlarmChoice { choice, _ -> withNoAlarmPicked(choice) }
+
+    /** Q2: one picker change in the open editor. Clears the last save's problem, since the choice is new. */
+    private fun editAlarmChoice(transform: (AppSettings, NightState) -> AppSettings) {
+        val draft = alarmEditorDraft.value ?: return
+        val night = observedNightState.value ?: return
+        alarmEditorDraft.value = AlarmEditorDraft(transform(draft.choice, night))
+    }
+
+    /**
+     * Q2: Save. Applies the choice to the running night (changeNightSettings, under the night lock, which checks it
+     * again against its own fresh clock). Applied: closes and asks for a tick, which books the next one from the new
+     * plan. Refused or failed: stays open with the reason, the night unchanged.
+     */
+    fun saveAlarmEditor() {
+        val draft = alarmEditorDraft.value ?: return
+        val night = observedNightState.value ?: return
+        if (draft.saving) return
+        alarmEditorDraft.value = draft.copy(saving = true)
+        val settings = nightSettingsForChoice(draft.choice, night.startedAt, currentZone())
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { changeNightSettings(context, settings, nowInstant()) }
+            alarmEditorDraft.value = when (result) {
+                is NightSettingsChangeResult.Applied, NightSettingsChangeResult.Unchanged, NightSettingsChangeResult.NoNight -> null
+                is NightSettingsChangeResult.Refused -> draft.copy(problem = problemFor(result.refusal))
+                NightSettingsChangeResult.Failed -> draft.copy(problem = AlarmEditorProblem.NOT_SAVED)
+            }
+            if (result is NightSettingsChangeResult.Applied) requestImmediateTick(context)
         }
     }
 

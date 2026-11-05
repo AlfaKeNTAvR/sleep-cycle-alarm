@@ -1,6 +1,7 @@
 package com.nikita.sleepcycle.night
 
-// File purpose: the UI-facing entry points - start/end a night, request a tick, and observe night state.
+// File purpose: the UI-facing entry points - start/end a night, change its settings (Q2), request a tick, and
+// observe night state.
 // endNight runs under the same withNightTransactionLock as every tick, so a tick that finishes after
 // endNight can never resurrect state (runNightTick re-checks that a night is still active once it gets the lock).
 // startNight computes the initial plan, arms the phone alarm from it, and saves state - all inside ONE lock
@@ -611,3 +612,93 @@ suspend fun applyAfterAlarmSettingsToNight(context: Context, afterAlarm: AfterAl
         debugNight
     )
 }
+
+/** What [changeNightSettings] did. Anything but [Applied] left the night and its armed alarm exactly as they were. */
+sealed interface NightSettingsChangeResult {
+    data class Applied(val state: NightState) : NightSettingsChangeResult
+    data object Unchanged : NightSettingsChangeResult
+    data object NoNight : NightSettingsChangeResult
+    data class Refused(val refusal: NightSettingsRefusal) : NightSettingsChangeResult
+
+    /** The new state could not be saved, or the new alarm could not be set (exact alarm permission revoked). */
+    data object Failed : NightSettingsChangeResult
+}
+
+/**
+ * Q2 (owner spec, 2026-11-05): the Night screen's alarm editor, confirmed. Applies [settings] (wake-by time,
+ * sleep length, No alarm) to the running night without ending it, under the night lock so a tick cannot save
+ * its older copy over it. The decision is the pure [decideNightSettingsChange]; the night's history is kept.
+ *
+ * The new state is saved first, then the alarm set: the phone alarm has one slot, so setting it replaces the old
+ * one in a single AlarmManager call and the old one stays armed until then. A failed set puts the old state back,
+ * so the old alarm and the old settings stay together. No alarm cancels the slot. The caller asks for a tick
+ * afterwards, which books the next one from the new plan.
+ */
+suspend fun changeNightSettings(context: Context, settings: NightSettings, now: Instant): NightSettingsChangeResult = withNightTransactionLock {
+    val state = withContext(Dispatchers.IO) { loadNightState(context) } ?: return@withNightTransactionLock NightSettingsChangeResult.NoNight
+    val debugNight = state.debugOptions.isAnyEnabled
+    val decision = decideNightSettingsChange(state, settings, now, ZoneId.systemDefault())
+    if (decision is NightSettingsDecision.Refused) {
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "settings_change_refused", settingsChangeFields(state.settings, settings) + ("cause" to decision.refusal.name.lowercase())), debugNight)
+        return@withNightTransactionLock NightSettingsChangeResult.Refused(decision.refusal)
+    }
+    if (decision !is NightSettingsDecision.Accepted) return@withNightTransactionLock NightSettingsChangeResult.Unchanged
+    val updated = decision.updatedState
+    if (!saveNightState(context, updated)) {
+        appendNightLog(context, state.realStartedAt, NightLogEvent(now, "error", mapOf("step" to "save_night_state", "cause" to "failed to save the changed night settings, nothing changed")), debugNight)
+        return@withNightTransactionLock NightSettingsChangeResult.Failed
+    }
+    if (!armChangedPlan(context, updated, now)) {
+        val restored = saveNightState(context, state)
+        appendNightLog(
+            context, state.realStartedAt,
+            NightLogEvent(now, "error", mapOf("step" to "phone_alarm", "cause" to "could not set the changed alarm, kept the old settings (restored=$restored) - exact alarm permission was likely revoked")),
+            debugNight
+        )
+        return@withNightTransactionLock NightSettingsChangeResult.Failed
+    }
+    val plan = decision.plan
+    // PER-151: only a No-alarm night asks Are you up?; leaving No alarm closes an open ask with its notification.
+    val askClosed = state.areYouUp?.isOpen == true && updated.areYouUp == null
+    if (askClosed) cancelAreYouUpNotification(context)
+    appendNightLog(
+        context, state.realStartedAt,
+        NightLogEvent(
+            now, "settings_changed",
+            settingsChangeFields(state.settings, settings) + mapOf(
+                "oldWakeAt" to (state.lastPlan?.wakeAt?.toString() ?: ""),
+                "newWakeAt" to (plan.wakeAt?.toString() ?: ""),
+                "mode" to plan.mode.name,
+                "cycles" to plan.cycles.toString(),
+                "reason" to plan.reason,
+                "areYouUpClosed" to askClosed.toString(),
+            )
+        ),
+        debugNight
+    )
+    publishNightState(updated)
+    updateNotification(context, plan.wakeAt, settings.noAlarm, state.debugOptions)
+    NightSettingsChangeResult.Applied(updated)
+}
+
+/** Sets (or, with nothing to arm, cancels) the phone alarm for [state]'s new plan, through the same guard as a tick. False only when setting it failed. */
+private fun armChangedPlan(context: Context, state: NightState, now: Instant): Boolean {
+    val wakeAt = state.lastPlan?.wakeAt
+    if (wakeAt == null) {
+        cancelPhoneAlarm(context)
+        return true
+    }
+    // The tick's rule: never a past or already-fired instant (Android rings a past one at once).
+    if (!shouldArmPhoneAlarm(wakeAt, now, readPhoneAlarmFiredFor(context) ?: state.phoneAlarmFiredFor)) return true
+    return schedulePhoneAlarm(context, wakeAt, alarmLabelFor(checkNotNull(state.lastPlan).mode, wakeAt, state.morningAlarmAt))
+}
+
+/** The old and new settings, for settings_changed and settings_change_refused. */
+private fun settingsChangeFields(old: NightSettings, new: NightSettings): Map<String, String> = mapOf(
+    "oldDeadline" to (old.deadline?.toString() ?: "none"),
+    "newDeadline" to (new.deadline?.toString() ?: "none"),
+    "oldPickedCycles" to old.pickedCycles.toString(),
+    "newPickedCycles" to new.pickedCycles.toString(),
+    "oldNoAlarm" to old.noAlarm.toString(),
+    "newNoAlarm" to new.noAlarm.toString(),
+)
