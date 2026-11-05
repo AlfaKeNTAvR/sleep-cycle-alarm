@@ -30,6 +30,7 @@ import com.nikita.sleepcycle.ui.screens.LogsScreen
 import com.nikita.sleepcycle.ui.screens.PastNightScreen
 import com.nikita.sleepcycle.ui.screens.SettingsScreen
 import com.nikita.sleepcycle.ui.screens.SetupScreen
+import com.nikita.sleepcycle.ui.screens.night.AlarmEditorActions
 import com.nikita.sleepcycle.ui.screens.night.NightScreen
 import com.nikita.sleepcycle.ui.state.Screen
 import com.nikita.sleepcycle.ui.theme.SleepCycleAlarmTheme
@@ -160,6 +161,15 @@ private fun SleepCycleApp(viewModel: NightViewModel) {
                             onEditMorningSymptoms = viewModel::editMorningSymptoms,
                             onSpeedChoice = viewModel::setSpeedChoice,
                             onSetSimulatedAsleep = viewModel::setSimulatedAsleep,
+                            onOpenAlarmEditor = viewModel::openAlarmEditor,
+                            alarmEditorActions = AlarmEditorActions(
+                                onCancel = viewModel::cancelAlarmEditor,
+                                onSave = viewModel::saveAlarmEditor,
+                                onDeadlineEnabledChange = viewModel::setEditorDeadlineEnabled,
+                                onDeadlineTimeChange = viewModel::setEditorDeadlineTime,
+                                onSleepLengthPicked = viewModel::pickEditorCycles,
+                                onNoAlarmPicked = viewModel::pickEditorNoAlarm,
+                            ),
                         )
                     }
                     is Screen.Logs -> LogsScreen(

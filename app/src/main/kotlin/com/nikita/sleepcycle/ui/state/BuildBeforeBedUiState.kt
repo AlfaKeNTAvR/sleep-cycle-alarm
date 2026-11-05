@@ -33,8 +33,12 @@ fun deadlineInstantFor(appSettings: AppSettings, now: Instant, zone: ZoneId): In
 }
 
 /** The sleep length to actually use: [current] if it still fits before the deadline, else the longest one that does, else [current] unchanged. [debugOptions] picks the EngineConfig a fast debug night's cycle length is measured against (see [sleepLengthIsAvailable]). */
-fun resolvePickedCycles(current: Int, now: Instant, deadline: Instant?, debugOptions: DebugOptions = DebugOptions()): Int {
-    val available = sleepLengthCycleOptions.filter { sleepLengthIsAvailable(it, now, deadline, debugOptions) }
+fun resolvePickedCycles(current: Int, now: Instant, deadline: Instant?, debugOptions: DebugOptions = DebugOptions()): Int =
+    resolvePickedCycles(current) { sleepLengthIsAvailable(it, now, deadline, debugOptions) }
+
+/** [resolvePickedCycles] with the fit rule given: Before bed's own, or the running night's (Q2, AlarmEditor.kt). */
+fun resolvePickedCycles(current: Int, fits: (Int) -> Boolean): Int {
+    val available = sleepLengthCycleOptions.filter(fits)
     return when {
         current in available -> current
         available.isNotEmpty() -> available.max()
@@ -59,11 +63,15 @@ fun withDeadlineSwitched(
     now: Instant,
     zone: ZoneId,
     debugOptions: DebugOptions = DebugOptions(),
-): AppSettings {
+): AppSettings = withDeadlineSwitched(settings, enabled) { switched ->
+    resolvePickedCycles(sleepLengthCycleOptions.max(), now, deadlineInstantFor(switched, now, zone), debugOptions)
+}
+
+/** [withDeadlineSwitched] with the longest fitting length given for the switched settings: Before bed's, or the running night's (Q2). */
+fun withDeadlineSwitched(settings: AppSettings, enabled: Boolean, longestFitting: (AppSettings) -> Int): AppSettings {
     val switched = settings.copy(deadlineEnabled = enabled)
     if (!enabled || !settings.noAlarm) return switched
-    val deadline = deadlineInstantFor(switched, now, zone)
-    return switched.copy(noAlarm = false, pickedCycles = resolvePickedCycles(sleepLengthCycleOptions.max(), now, deadline, debugOptions))
+    return switched.copy(noAlarm = false, pickedCycles = longestFitting(switched))
 }
 
 /**

@@ -7,6 +7,7 @@ package com.nikita.sleepcycle.ui.screens.night
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +76,14 @@ fun NightScreen(
     onEditMorningSymptoms: () -> Unit,
     onSpeedChoice: (SpeedChoice) -> Unit,
     onSetSimulatedAsleep: (Boolean) -> Unit,
+    onOpenAlarmEditor: () -> Unit = {},
+    alarmEditorActions: AlarmEditorActions = AlarmEditorActions(),
 ) {
+    // Q2: the open alarm editor takes the whole screen; back or Cancel returns here unchanged.
+    state.alarmEditor?.let { editor ->
+        AlarmEditorContent(editor, alarmEditorActions)
+        return
+    }
     // P3 (owner request, 2026-09-30): the alarm block (label, big time, countdown) is centred against the WHOLE
     // screen, drawn over the chrome rather than inside the space the chrome leaves, so its position never
     // depends on how many buttons sit at the bottom - adding "Nap for 20 min" must not push it up. The morning
@@ -169,7 +177,13 @@ fun NightScreen(
                 modifier = Modifier.fillMaxSize().padding(horizontal = ScreenHorizontalPadding),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                // Q2: the alarm block opens the alarm editor while the night's alarm can still change.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = state.alarmEditable, onClickLabel = stringResource(R.string.night_change_alarm), onClick = onOpenAlarmEditor),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     when (val centred = state.content) {
                         is NightScreenContent.Loading -> Text(stringResource(R.string.night_loading), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
                         is NightScreenContent.NextAlarm -> NextAlarmContent(centred)

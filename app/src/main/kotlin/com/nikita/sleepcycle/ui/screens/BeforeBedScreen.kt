@@ -15,25 +15,20 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.nikita.sleepcycle.R
+import com.nikita.sleepcycle.ui.components.AlarmSettingsCards
 import com.nikita.sleepcycle.ui.components.ConfirmDialog
 import com.nikita.sleepcycle.ui.components.LiveVolumeLine
 import com.nikita.sleepcycle.ui.components.SimulatedBlock
 import com.nikita.sleepcycle.ui.components.MenuLinesButton
 import com.nikita.sleepcycle.ui.components.SlidersButton
-import com.nikita.sleepcycle.ui.components.MediumTimeText
 import com.nikita.sleepcycle.ui.components.PrimaryActionButton
 import com.nikita.sleepcycle.ui.components.ScreenContainer
 import com.nikita.sleepcycle.ui.components.SecondaryActionButton
-import com.nikita.sleepcycle.ui.components.SettingsCard
-import com.nikita.sleepcycle.ui.components.SleepLengthChip
 import com.nikita.sleepcycle.ui.components.StatusLine
-import com.nikita.sleepcycle.ui.components.ToggleRow
 import com.nikita.sleepcycle.ui.state.BandCheckStatus
 import com.nikita.sleepcycle.ui.state.BandStatus
 import com.nikita.sleepcycle.ui.state.BeforeBedUiState
-import com.nikita.sleepcycle.ui.state.SleepLengthOption
 import com.nikita.sleepcycle.ui.theme.AmberAccent
-import com.nikita.sleepcycle.ui.theme.ChipGap
 import com.nikita.sleepcycle.ui.theme.NightOnSurfaceMuted
 import java.time.LocalTime
 
@@ -87,40 +82,16 @@ fun BeforeBedScreen(
 
         if (state.activeDebugSwitches.isNotEmpty()) SimulatedBlock(state.simulatedTimeValue)
 
-        SettingsCard {
-            ToggleRow(
-                title = stringResource(R.string.before_bed_wake_me_by),
-                checked = state.deadlineEnabled,
-                onCheckedChange = onDeadlineEnabledChange,
-                contentDescription = stringResource(R.string.content_description_deadline_switch),
-            )
-            MediumTimeText(time = state.deadlineTime, enabled = state.deadlineEnabled, onTimeChange = onDeadlineTimeChange)
-        }
-
-        SettingsCard {
-            Text(text = stringResource(R.string.before_bed_sleep_up_to), style = MaterialTheme.typography.titleMedium)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ChipGap)) {
-                state.sleepLengthOptions.forEach { option ->
-                    SleepLengthChip(
-                        label = option.hoursLabel,
-                        selected = option.selected,
-                        available = option.available,
-                        onClick = { onSleepLengthPicked(option.cycles) },
-                        contentDescription = sleepLengthContentDescription(option),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                // PER-150: a No-alarm night, after the cycle chips. Always available: it needs no deadline to fit.
-                SleepLengthChip(
-                    label = stringResource(R.string.sleep_length_no_alarm),
-                    selected = state.noAlarmSelected,
-                    available = true,
-                    onClick = onNoAlarmPicked,
-                    contentDescription = stringResource(R.string.content_description_sleep_length_no_alarm),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+        AlarmSettingsCards(
+            deadlineEnabled = state.deadlineEnabled,
+            deadlineTime = state.deadlineTime,
+            sleepLengthOptions = state.sleepLengthOptions,
+            noAlarmSelected = state.noAlarmSelected,
+            onDeadlineEnabledChange = onDeadlineEnabledChange,
+            onDeadlineTimeChange = onDeadlineTimeChange,
+            onSleepLengthPicked = onSleepLengthPicked,
+            onNoAlarmPicked = onNoAlarmPicked,
+        )
 
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
@@ -209,11 +180,3 @@ private fun BandCheckLine(bandCheck: BandCheckStatus, onTestAgain: () -> Unit) {
         }
     }
 }
-
-@Composable
-private fun sleepLengthContentDescription(option: SleepLengthOption): String =
-    if (option.available) {
-        stringResource(R.string.content_description_sleep_length_option, option.hoursLabel)
-    } else {
-        stringResource(R.string.content_description_sleep_length_option_unavailable, option.hoursLabel)
-    }

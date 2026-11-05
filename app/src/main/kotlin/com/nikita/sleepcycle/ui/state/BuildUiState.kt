@@ -47,6 +47,7 @@ fun buildUiState(
     pendingFollowUp: PendingFollowUp?,
     errorMessage: String?,
     confirmingImUp: Boolean = false,
+    alarmEditorDraft: AlarmEditorDraft? = null,
 ): UiState {
     val nightActive = nightState != null
     return UiState(
@@ -55,7 +56,7 @@ fun buildUiState(
         beforeBed = buildBeforeBedUiState(
             appSettings, now, zone, gadgetbridgeInstalled, permissionStatus, nightActive, debugOptions, confirmingDebugNightStart, connectionTest
         ),
-        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp, debugOptions),
+        night = buildNightUiState(nightState, engineView, now, zone, showingMorningReport, morningReportEndedAt, confirmingEndNight, endingNight, pendingFollowUp, confirmingImUp, debugOptions, alarmEditorDraft),
         logs = buildLogsUiState(
             nightLogFiles, nightLogRatings, zone,
             runningNightLogName = nightState?.let { nightLogFileName(it.realStartedAt, it.debugOptions.isAnyEnabled, zone) },

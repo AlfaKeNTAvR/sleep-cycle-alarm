@@ -165,4 +165,11 @@ data class NightUiState(
      * banner with I'm up and Still sleeping, alongside the silent notification asking the same.
      */
     val showAreYouUpAsk: Boolean = false,
+    /**
+     * Q2 (owner spec, 2026-11-05): tapping the alarm opens the alarm editor - a live night whose morning alarm has
+     * not rung yet (NightSettingsChange.kt's canChangeNightSettings), never while ending it.
+     */
+    val alarmEditable: Boolean = false,
+    /** Q2: the open alarm editor, null when closed. Only ever set while [alarmEditable]. */
+    val alarmEditor: AlarmEditorUiState? = null,
 )

@@ -129,6 +129,18 @@
          to count down to - this says what happened instead, next to the dash the hero time shows. -->
     <string name="night_morning_alarm_rang_at">Morning alarm rang at %1$s</string>
 
+    <!-- Q2: tapping the alarm on the Night screen opens the alarm editor, Before bed's own pickers, to change
+         the running night's wake-by time and sleep length without ending it. -->
+    <string name="night_change_alarm">Change alarm</string>
+    <string name="alarm_editor_title">Change alarm</string>
+    <string name="alarm_editor_save">Save</string>
+    <string name="alarm_editor_preview">New alarm %1$s</string>
+    <string name="alarm_editor_preview_at_wake_by">New alarm %1$s, no full cycle fits before it</string>
+    <string name="alarm_editor_preview_no_alarm">No alarm. Tracking your sleep.</string>
+    <string name="alarm_editor_deadline_passed">That wake-by time has already passed tonight.</string>
+    <string name="alarm_editor_morning_alarm_rang">The morning alarm has already rung, so this night cannot be changed.</string>
+    <string name="alarm_editor_not_saved">Could not set the new alarm. Nothing was changed.</string>
+
     <!-- P1 (owner decision, 2026-09-30, "warn, still arm"): shown while the band's data is not reaching the
          app. The fix in the text is what worked on 2026-09-30: Gadgetbridge showed the band connected but with
          no battery level, and syncs never completed until the band was disconnected and reconnected. -->
