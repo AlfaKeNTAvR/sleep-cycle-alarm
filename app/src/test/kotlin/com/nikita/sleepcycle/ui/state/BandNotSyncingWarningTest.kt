@@ -54,6 +54,16 @@ class BandNotSyncingWarningTest {
         assertEquals(BandDataWarning.NOT_MEASURING_HEART_RATE, liveWarning(state))
     }
 
+    // P6 (2026-11-05): at Start night the band often has no recent reading even when it measures; the night only
+    // calls it "not measuring" once it is 30 min old and still none has come.
+    @Test fun `P6 no real heart rate in the night's first 30 min shows no warning yet`() {
+        val state = testNightState(startedAt = "2026-09-17T08:10", lastPlan = estimatedPlan, lastSyncAt = "2026-09-17T08:28", lastSyncOk = false)
+            .copy(lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)
+
+        assertNull(liveWarning(state))
+        assertEquals(BandDataWarning.NOT_MEASURING_HEART_RATE, liveWarning(state.copy(lastSyncAt = instant("2026-09-17T08:40"))))
+    }
+
     @Test fun `P1 a night that is syncing fine shows no warning`() {
         val state = testNightState(lastPlan = estimatedPlan, lastSyncAt = "2026-09-17T08:28", lastSyncOk = true)
 

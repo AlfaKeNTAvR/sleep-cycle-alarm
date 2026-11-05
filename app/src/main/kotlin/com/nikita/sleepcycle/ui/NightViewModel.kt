@@ -51,6 +51,7 @@ import com.nikita.sleepcycle.night.NightRatings
 import com.nikita.sleepcycle.night.RatingMoment
 import com.nikita.sleepcycle.night.SleepRating
 import com.nikita.sleepcycle.night.SleepRatingSettings
+import com.nikita.sleepcycle.night.BedtimeHeartRateCheck
 import com.nikita.sleepcycle.night.nightLogFile
 import com.nikita.sleepcycle.night.recordSleepRating
 import com.nikita.sleepcycle.night.syncLaterRatingAsk
@@ -741,7 +742,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
             val run = runConnectionTestAttempts(
                 automatic,
                 AUTO_CONNECTION_TEST_RETRY_PAUSE,
-                attempt = { attemptNumber -> runOneConnectionTestAttempt(mac, uri, automatic, attemptNumber) },
+                attempt = { attemptNumber -> runOneConnectionTestAttempt(mac, uri, automatic, attemptNumber, settings.heartRateCheck) },
                 reconnect = { trigger -> reconnectBandForConnectionTest(mac, automatic, trigger) },
             )
             run.reconnectTrigger?.let { trigger -> run.reconnectResult?.let { logConnectionTestReconnectResult(automatic, trigger, it, run.report) } }
@@ -790,11 +791,17 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** P2: one bounded attempt, never throwing, written to setup.jsonl as its own `connection_test` line. */
-    private suspend fun runOneConnectionTestAttempt(mac: String, uri: Uri, automatic: Boolean, attemptNumber: Int): SetupCheckReport {
+    private suspend fun runOneConnectionTestAttempt(
+        mac: String,
+        uri: Uri,
+        automatic: Boolean,
+        attemptNumber: Int,
+        heartRateCheck: BedtimeHeartRateCheck,
+    ): SetupCheckReport {
         // Real time: feeds checkDataFreshness and the attempt's duration (see runConnectionTest's T4/U4 note).
         val startedAt = Instant.now()
         val report = try {
-            runConnectionTestWithin(CONNECTION_TEST_DEADLINE) { runSetupCheck(context, mac, uri, startedAt) }
+            runConnectionTestWithin(CONNECTION_TEST_DEADLINE) { runSetupCheck(context, mac, uri, startedAt, heartRateCheck) }
         } catch (error: Exception) {
             setupCheckFailureReport(error)
         }
@@ -811,6 +818,8 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                         "attempt" to attemptNumber.toString(),
                         "isReady" to report.isReady.toString(),
                         "durationMs" to durationMs.toString(),
+                        // P6: which bedtime heart-rate check this attempt ran under.
+                        "heartRateCheck" to heartRateCheck.storedValue,
                     )
                 )
             )
@@ -1030,6 +1039,9 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun setBedtimeAudioSettings(settings: BedtimeAudioSettings) = persistSettings { it.copy(bedtimeAudio = settings) }
+
+    /** P6: applies from the next connection test; a pass already recorded stays valid. */
+    fun setBedtimeHeartRateCheck(check: BedtimeHeartRateCheck) = persistSettings { it.copy(heartRateCheck = check) }
 
     /** Also re-arms (or cancels) the later rating question, which depends on these switches and the ask time. */
     fun setSleepRatingSettings(settings: SleepRatingSettings) {

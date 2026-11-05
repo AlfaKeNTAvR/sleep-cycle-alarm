@@ -125,6 +125,16 @@ fun BeforeBedScreen(
         androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
 
         BandCheckLine(state.bandCheck, onTestAgain)
+        // P6: Warn only let the test pass without a recent heart-rate reading. Quiet, never a blocker.
+        if (state.showNoHeartRateReadingNote) {
+            Text(
+                text = stringResource(R.string.before_bed_no_heart_rate_reading_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = NightOnSurfaceMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         // P5: the app cannot reconnect the band itself until this Gadgetbridge toggle is on. Quiet, never a blocker.
         if (state.showBluetoothIntentApiHint) {
             Text(

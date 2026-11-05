@@ -51,23 +51,31 @@ data class SetupCheckReport(
  * Runs one sync-and-read cycle and checks data freshness and the phone alarm's notification readiness, all as
  * plain English lines. Every step is written to setup.jsonl. [isReady] requires a successful sync/export/read
  * and fresh data; the phone alarm's own readiness lines never block it (see [phoneAlarmReadinessLines]).
+ * P6: [heartRateCheck] decides whether a band with no recent real heart-rate value passes (see [buildSuccessReport]).
  */
-suspend fun runSetupCheck(context: Context, deviceMac: String, exportUri: Uri, now: Instant): SetupCheckReport {
+suspend fun runSetupCheck(context: Context, deviceMac: String, exportUri: Uri, now: Instant, heartRateCheck: BedtimeHeartRateCheck): SetupCheckReport {
     val since = now.minus(CONNECTION_TEST_LOOKBACK)
     val result = syncAndReadBandData(context, exportUri, deviceMac, since) { event -> appendSetupLog(context, event) }
-    val report = buildReport(context, result, now)
+    val report = buildReport(context, result, now, heartRateCheck)
     appendSetupLog(
         context,
-        NightLogEvent(now, "setup_check", mapOf("isReady" to report.isReady.toString(), "staleReason" to (report.staleReason?.logValue ?: "")))
+        NightLogEvent(
+            now, "setup_check",
+            mapOf(
+                "isReady" to report.isReady.toString(),
+                "staleReason" to (report.staleReason?.logValue ?: ""),
+                "heartRateCheck" to heartRateCheck.storedValue,
+            )
+        )
     )
     return report
 }
 
 /** Thin wrapper over [runSetupCheck] for callers that just want the plain-English lines joined into one string. */
-suspend fun runConnectionTest(context: Context, deviceMac: String, exportUri: Uri, now: Instant): String =
-    runSetupCheck(context, deviceMac, exportUri, now).lines.joinToString("\n") { it.text }
+suspend fun runConnectionTest(context: Context, deviceMac: String, exportUri: Uri, now: Instant, heartRateCheck: BedtimeHeartRateCheck): String =
+    runSetupCheck(context, deviceMac, exportUri, now, heartRateCheck).lines.joinToString("\n") { it.text }
 
-private fun buildReport(context: Context, result: BandDataResult, now: Instant): SetupCheckReport {
+private fun buildReport(context: Context, result: BandDataResult, now: Instant, heartRateCheck: BedtimeHeartRateCheck): SetupCheckReport {
     val readiness = readAlarmNotificationReadiness(context)
     val phoneLines = phoneAlarmReadinessLines(readiness)
     return when (result) {
@@ -75,32 +83,53 @@ private fun buildReport(context: Context, result: BandDataResult, now: Instant):
             isReady = false,
             lines = listOf(SetupCheckLine("Failed at ${result.step}: ${result.cause}", SetupCheckLineSeverity.ACTION_NEEDED)) + phoneLines
         )
-        is BandDataResult.Success -> buildSuccessReport(result, now, phoneLines)
+        is BandDataResult.Success -> buildSuccessReport(result, now, phoneLines, heartRateCheck)
     }
 }
 
-internal fun buildSuccessReport(result: BandDataResult.Success, now: Instant, phoneLines: List<SetupCheckLine>): SetupCheckReport {
+/**
+ * The report for a finished sync. P6 (owner decision, 2026-11-05): a band that syncs but has no recent real
+ * heart-rate value ([StaleReason.NO_HEART_RATE_VALUES]) passes with a warning note under
+ * [BedtimeHeartRateCheck.WARN_ONLY], and fails with PER-130's fix under [BedtimeHeartRateCheck.REQUIRE_READING].
+ * The stale reason is kept on a passing report too, for setup.jsonl and Before bed's note.
+ */
+internal fun buildSuccessReport(
+    result: BandDataResult.Success,
+    now: Instant,
+    phoneLines: List<SetupCheckLine>,
+    heartRateCheck: BedtimeHeartRateCheck,
+): SetupCheckReport {
     val freshness = checkDataFreshness(
         result.newestSampleAt, now, result.exportFileModifiedAt, previousExportFileModifiedAt = null,
         newestHeartRateRowAt = result.newestHeartRateRowAt, threshold = BAND_DATA_FRESHNESS_THRESHOLD
     )
+    val notMeasuring = freshness.staleReason == StaleReason.NO_HEART_RATE_VALUES
+    val passesWithoutReading = notMeasuring && heartRateCheck == BedtimeHeartRateCheck.WARN_ONLY
 
-    val bandLine = if (freshness.staleReason == StaleReason.NO_HEART_RATE_VALUES) {
+    val bandLine = when {
+        passesWithoutReading -> SetupCheckLine(NO_HEART_RATE_READING_YET_SETUP_LINE, SetupCheckLineSeverity.WARNING)
         // PER-130: its own line, first, so Before bed shows it as the reason the test failed (bandCheckStatusFor).
-        SetupCheckLine(BAND_NOT_MEASURING_SETUP_LINE, SetupCheckLineSeverity.ACTION_NEEDED)
-    } else {
-        SetupCheckLine(
+        notMeasuring -> SetupCheckLine(BAND_NOT_MEASURING_SETUP_LINE, SetupCheckLineSeverity.ACTION_NEEDED)
+        else -> SetupCheckLine(
             "Connected. Found ${result.segments.size} sleep segments, ${freshnessLine(result.newestSampleAt, freshness.isFresh)}.",
             if (freshness.isFresh) SetupCheckLineSeverity.INFO else SetupCheckLineSeverity.ACTION_NEEDED
         )
     }
 
     return SetupCheckReport(
-        isReady = freshness.isFresh,
+        isReady = freshness.isFresh || passesWithoutReading,
         lines = listOf(bandLine) + phoneLines,
         staleReason = freshness.staleReason
     )
 }
+
+/** P6: whether [report] passed although no real heart-rate value was recent (Warn only), so Before bed shows its note. */
+fun passedWithoutHeartRateReading(report: SetupCheckReport): Boolean =
+    report.isReady && report.staleReason == StaleReason.NO_HEART_RATE_VALUES
+
+/** P6: the Warn only line, for a band that syncs but has no recent real heart-rate value. Same words as Before bed's note. */
+internal const val NO_HEART_RATE_READING_YET_SETUP_LINE =
+    "No heart-rate reading yet. If none arrives after you start, the app will warn you."
 
 /**
  * PER-130: the connection test's line when the band syncs but every heart-rate row is -1 (2026-10-30 to

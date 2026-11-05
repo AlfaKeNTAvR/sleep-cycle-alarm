@@ -64,6 +64,8 @@
     <string name="before_bed_band_check_failed">Band check failed: %1$s</string>
     <string name="before_bed_band_check_retry">Test again</string>
     <!-- P5: the test passed but Gadgetbridge did not answer a Bluetooth CONNECT; a hint, never a blocker. -->
+    <!-- P6: Warn only let the test pass although the band had no recent heart-rate reading; a note, never a blocker. -->
+    <string name="before_bed_no_heart_rate_reading_note">No heart-rate reading yet. If none arrives after you start, the app will warn you.</string>
     <string name="before_bed_bluetooth_intent_api_hint">Turn on Gadgetbridge Settings &gt; Developer options &gt; Intent API &gt; Bluetooth so the app can reconnect the band.</string>
 
     <!-- Before bed screen -->
@@ -285,6 +287,9 @@
     <string name="settings_rate_night">Rate the night</string>
     <string name="settings_ask_again_later">Ask again later</string>
     <string name="settings_ask_at">Ask at</string>
+    <!-- P6 (owner decision, 2026-11-05): off is Warn only, the default. -->
+    <string name="settings_section_bedtime_check">Bedtime check</string>
+    <string name="settings_require_heart_rate_reading">Require a heart-rate reading</string>
     <string name="settings_section_more">More</string>
     <string name="open_gadgetbridge">Open Gadgetbridge</string>
     <string name="settings_minutes_value">%1$d min</string>

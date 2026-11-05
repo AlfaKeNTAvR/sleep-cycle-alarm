@@ -9,6 +9,7 @@ import com.nikita.sleepcycle.engine.AlarmMode
 import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.NightEngineView
 import com.nikita.sleepcycle.night.NightState
+import com.nikita.sleepcycle.night.isBandNotMeasuringWarned
 import com.nikita.sleepcycle.night.PendingFollowUp
 import com.nikita.sleepcycle.night.FollowUpKind
 import com.nikita.sleepcycle.night.oneMoreCycleEndsAt
@@ -164,10 +165,12 @@ private fun napButtonMinutes(pendingFollowUp: PendingFollowUp?, morningAlarmRang
 /**
  * P1 / PER-130: the Night screen's band warning, null while the last sync was ok or none has finished yet. A
  * successful sync whose rows carried no real heart rate gets its own wording and fix; any other not-ok sync (a
- * failure, or nothing new) is "not syncing".
+ * failure, or nothing new) is "not syncing". P6: no real heart rate in the night's first 30 min shows nothing
+ * yet ([isBandNotMeasuringWarned]); the band may simply not have measured since Start night.
  */
 private fun bandDataWarningFor(state: NightState): BandDataWarning? = when {
     state.lastSyncOk != false -> null
-    state.lastStaleReason == StaleReason.NO_HEART_RATE_VALUES -> BandDataWarning.NOT_MEASURING_HEART_RATE
+    isBandNotMeasuringWarned(state.lastStaleReason, state.startedAt, state.lastSyncAt) -> BandDataWarning.NOT_MEASURING_HEART_RATE
+    state.lastStaleReason == StaleReason.NO_HEART_RATE_VALUES -> null
     else -> BandDataWarning.NOT_SYNCING
 }

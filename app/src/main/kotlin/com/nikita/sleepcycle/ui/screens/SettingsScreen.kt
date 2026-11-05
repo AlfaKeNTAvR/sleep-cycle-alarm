@@ -50,6 +50,7 @@ import com.nikita.sleepcycle.night.FadeOutput
 import com.nikita.sleepcycle.night.FadeVolumeKind
 import com.nikita.sleepcycle.night.SettingStepper
 import com.nikita.sleepcycle.night.SleepRatingSettings
+import com.nikita.sleepcycle.night.BedtimeHeartRateCheck
 import com.nikita.sleepcycle.night.canStepSetting
 import com.nikita.sleepcycle.night.shouldFadeMedia
 import com.nikita.sleepcycle.night.stepSetting
@@ -100,9 +101,11 @@ fun SettingsScreen(
     afterAlarm: AfterAlarmSettings,
     bedtimeAudio: BedtimeAudioSettings,
     sleepRating: SleepRatingSettings,
+    heartRateCheck: BedtimeHeartRateCheck,
     onAfterAlarmChange: (AfterAlarmSettings) -> Unit,
     onBedtimeAudioChange: (BedtimeAudioSettings) -> Unit,
     onSleepRatingChange: (SleepRatingSettings) -> Unit,
+    onHeartRateCheckChange: (BedtimeHeartRateCheck) -> Unit,
     debug: DebugUiState,
     onSimulatedBandDataChange: (Boolean) -> Unit,
     simulatedStartTime: LocalTime,
@@ -215,6 +218,18 @@ fun SettingsScreen(
                 time = sleepRating.askAt,
                 onTimeChange = { onSleepRatingChange(sleepRating.copy(askAt = it)) },
                 enabled = sleepRating.enabled && sleepRating.askAgainLater,
+            )
+        }
+
+        // P6 (owner decision, 2026-11-05): off is Warn only, the default - the bedtime test passes without a recent
+        // heart-rate reading and the night warns if none arrives. On fails the test, as PER-130 did.
+        SettingsSection(stringResource(R.string.settings_section_bedtime_check)) {
+            SettingsSwitchRow(
+                label = stringResource(R.string.settings_require_heart_rate_reading),
+                checked = heartRateCheck == BedtimeHeartRateCheck.REQUIRE_READING,
+                onCheckedChange = { require ->
+                    onHeartRateCheckChange(if (require) BedtimeHeartRateCheck.REQUIRE_READING else BedtimeHeartRateCheck.WARN_ONLY)
+                },
             )
         }
 

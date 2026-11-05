@@ -84,6 +84,11 @@ data class BeforeBedUiState(
     val offerOpenGadgetbridge: Boolean = false,
     /** P5: the latest test passed but Gadgetbridge did not answer a Bluetooth CONNECT, so its Intent API Bluetooth toggle looks off: a quiet hint, never a blocker. */
     val showBluetoothIntentApiHint: Boolean = false,
+    /**
+     * P6: the latest test passed under Warn only although the band had no recent heart-rate reading: a quiet note
+     * that the night will warn if none arrives. Never a blocker.
+     */
+    val showNoHeartRateReadingNote: Boolean = false,
     /** Owner spec, 2026-10-22 (PER-133): the live media output and volume line above Start night; false while the simulation block shows the volume instead (see [isLiveVolumeLineShown]). */
     val showLiveVolumeLine: Boolean = false,
 )

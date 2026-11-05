@@ -21,7 +21,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.nikita.sleepcycle.MainActivity
 import com.nikita.sleepcycle.R
-import com.nikita.sleepcycle.bridge.StaleReason
 import java.time.Instant
 
 private const val LOG_TAG = "BandNotMeasuring"
@@ -35,10 +34,12 @@ private const val BAND_NOT_MEASURING_OPEN_APP_REQUEST_CODE = 4030
  * fresh again. A failed sync in between changes nothing: it says nothing about whether the band measures. Both
  * are logged (`band_not_measuring_posted`, `band_not_measuring_cleared`). A swiped-away notification is not
  * posted again until the band has measured and stopped again; the Night screen keeps the warning meanwhile.
+ * P6: not in the night's first 30 min ([isBandNotMeasuringWarned]); the first tick after that still finding no
+ * real value posts it.
  */
 internal fun stepBandNotMeasuringNotification(context: Context, state: NightState, outcome: SyncOutcome, now: Instant) {
-    val notMeasuring = outcome.staleReason == StaleReason.NO_HEART_RATE_VALUES
-    val wasNotMeasuring = state.lastStaleReason == StaleReason.NO_HEART_RATE_VALUES
+    val notMeasuring = isBandNotMeasuringWarned(outcome.staleReason, state.startedAt, now)
+    val wasNotMeasuring = isBandNotMeasuringWarned(state.lastStaleReason, state.startedAt, state.lastSyncAt)
     when {
         notMeasuring && !wasNotMeasuring -> {
             val posted = postBandNotMeasuringNotification(context)

@@ -67,7 +67,7 @@ class BandNotMeasuringNotificationTest {
     @Test
     fun `a later -1 tick does not post again, a failed sync leaves it, and real values clear it`() {
         stepBandNotMeasuringNotification(context, night, notMeasuring, now)
-        val stillNotMeasuring = night.copy(lastSyncOk = false, lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)
+        val stillNotMeasuring = night.copy(lastSyncAt = now, lastSyncOk = false, lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)
 
         stepBandNotMeasuringNotification(context, stillNotMeasuring, notMeasuring, now.plusSeconds(900))
         stepBandNotMeasuringNotification(context, stillNotMeasuring, failed, now.plusSeconds(1800))
@@ -78,6 +78,21 @@ class BandNotMeasuringNotificationTest {
         assertNull(bandNotMeasuringNotification())
         assertEquals(1, logEvents("band_not_measuring_posted").size)
         assertEquals(listOf("real_heart_rate_returned"), logEvents("band_not_measuring_cleared").map { it.fields["cause"] })
+    }
+
+    // P6 (2026-11-05): a band that has not measured yet at Start night is not a fault; the notification waits
+    // until the night is 30 min old, then posts on the first tick that still finds no real value.
+    @Test
+    fun `no real heart rate in the night's first 30 min posts nothing, the first tick after that posts`() {
+        val firstTick = startedAt.plusSeconds(60)
+        stepBandNotMeasuringNotification(context, night, notMeasuring, firstTick)
+        assertNull("not in the first 30 min", bandNotMeasuringNotification())
+
+        val afterFirstTick = night.copy(lastSyncAt = firstTick, lastSyncOk = false, lastStaleReason = StaleReason.NO_HEART_RATE_VALUES)
+        stepBandNotMeasuringNotification(context, afterFirstTick, notMeasuring, startedAt.plusSeconds(1800))
+
+        assertNotNull(bandNotMeasuringNotification())
+        assertEquals(1, logEvents("band_not_measuring_posted").size)
     }
 
     @Test

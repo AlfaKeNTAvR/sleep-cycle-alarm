@@ -7,6 +7,8 @@ package com.nikita.sleepcycle.night
 // Owner spec, 2026-10-22 (PER-134, PER-135): the fade's starting and ending volume are kept per output (phone
 // speaker or Bluetooth) and offered as the phone's own volume steps, and one shared fade duration replaces the
 // hidden 10 minute hold and 5 minute step.
+//
+// P6 (owner decision, 2026-11-05): the bedtime heart-rate check, Warn only or Require a reading.
 
 import java.time.LocalTime
 import kotlin.math.roundToInt
@@ -85,6 +87,26 @@ data class SleepRatingSettings(
     val askAgainLater: Boolean = true,
     val askAt: LocalTime = DEFAULT_RATING_ASK_AT,
 )
+
+/**
+ * P6 (owner decision, 2026-11-05): what the bedtime connection test does when the band syncs but no real
+ * heart-rate value is recent (StaleReason.NO_HEART_RATE_VALUES). Only that case; a band that brings nothing new
+ * fails either way. [storedValue] is both the stored setting and the `heartRateCheck` log field.
+ */
+enum class BedtimeHeartRateCheck(val storedValue: String) {
+    /**
+     * The default: the test passes with a note. At bedtime the band often has no recent reading even with
+     * automatic heart rate on; the night's own not-measuring warning catches a band that really stopped.
+     */
+    WARN_ONLY("warn_only"),
+
+    /** PER-130's behaviour: the test fails and names the Gadgetbridge toggle to switch off and on. */
+    REQUIRE_READING("require_reading"),
+}
+
+/** The choice [stored] names; nothing stored, or a value this build does not know, reads as [BedtimeHeartRateCheck.WARN_ONLY]. */
+fun bedtimeHeartRateCheckFromStored(stored: String?): BedtimeHeartRateCheck =
+    BedtimeHeartRateCheck.entries.firstOrNull { it.storedValue == stored } ?: BedtimeHeartRateCheck.WARN_ONLY
 
 /** Each number the Settings screen changes with a minus/plus stepper: its allowed [range] and how far one tap moves it. */
 enum class SettingStepper(val range: IntRange, val step: Int) {

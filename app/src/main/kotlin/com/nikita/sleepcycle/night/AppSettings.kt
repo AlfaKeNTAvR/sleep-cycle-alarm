@@ -45,6 +45,7 @@ private val KEY_PAUSE_WHEN_ASLEEP = booleanPreferencesKey("pause_when_asleep")
 private val KEY_RATING_ENABLED = booleanPreferencesKey("rating_enabled")
 private val KEY_RATING_ASK_AGAIN_LATER = booleanPreferencesKey("rating_ask_again_later")
 private val KEY_RATING_ASK_AT = stringPreferencesKey("rating_ask_at")
+private val KEY_HEART_RATE_CHECK = stringPreferencesKey("bedtime_heart_rate_check")
 
 /** The user's saved setup and last-used night settings. */
 data class AppSettings(
@@ -60,6 +61,8 @@ data class AppSettings(
     val afterAlarm: AfterAlarmSettings = AfterAlarmSettings(),
     val bedtimeAudio: BedtimeAudioSettings = BedtimeAudioSettings(),
     val sleepRating: SleepRatingSettings = SleepRatingSettings(),
+    /** P6: what the bedtime connection test does with a band that syncs but has no recent heart-rate reading. */
+    val heartRateCheck: BedtimeHeartRateCheck = BedtimeHeartRateCheck.WARN_ONLY,
 )
 
 /** Streams the saved app settings, with sensible defaults before anything has been picked. */
@@ -76,6 +79,7 @@ fun readAppSettings(context: Context): Flow<AppSettings> =
             afterAlarm = readAfterAlarmSettings(preferences),
             bedtimeAudio = readBedtimeAudioSettings(preferences),
             sleepRating = readSleepRatingSettings(preferences),
+            heartRateCheck = bedtimeHeartRateCheckFromStored(preferences[KEY_HEART_RATE_CHECK]),
         )
     }
 
@@ -148,6 +152,7 @@ suspend fun writeAppSettings(context: Context, settings: AppSettings) {
         preferences[KEY_RATING_ENABLED] = settings.sleepRating.enabled
         preferences[KEY_RATING_ASK_AGAIN_LATER] = settings.sleepRating.askAgainLater
         preferences[KEY_RATING_ASK_AT] = settings.sleepRating.askAt.toString()
+        preferences[KEY_HEART_RATE_CHECK] = settings.heartRateCheck.storedValue
     }
 }
 

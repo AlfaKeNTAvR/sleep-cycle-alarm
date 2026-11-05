@@ -5,6 +5,7 @@ package com.nikita.sleepcycle.ui.state
 // NightViewModel uses, so a dropped connectionTest argument would fail here.
 
 import com.nikita.sleepcycle.bridge.BandDataResult
+import com.nikita.sleepcycle.night.BedtimeHeartRateCheck
 import com.nikita.sleepcycle.night.SetupCheckLine
 import com.nikita.sleepcycle.night.buildSuccessReport
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
@@ -67,18 +68,9 @@ class BeforeBedBandCheckTest {
 
     // PER-130 (2026-11-02): the band synced, but every heart-rate row carried -1. The test fails with its own
     // message naming that fix. Start night is gated on the last pass alone (startNightGate never reads the band
-    // check), so an earlier pass still counts, as for any failed test.
-    @Test fun `a band that syncs but measures no heart rate fails the test with its own message`() {
-        val notMeasuring = buildSuccessReport(
-            BandDataResult.Success(
-                segments = emptyList(),
-                newestSampleAt = null,
-                exportFileModifiedAt = instant("2026-09-30T23:00"),
-                newestHeartRateRowAt = instant("2026-09-30T22:59"),
-            ),
-            now = instant("2026-09-30T23:00"),
-            phoneLines = emptyList(),
-        )
+    // check), so an earlier pass still counts, as for any failed test. P6: only with "Require a reading" on.
+    @Test fun `with Require a reading, a band that syncs but measures no heart rate fails the test with its own message`() {
+        val notMeasuring = notMeasuringReport(BedtimeHeartRateCheck.REQUIRE_READING)
 
         val beforeBed = beforeBedWith(ConnectionTestState.Done(notMeasuring), lastSetupCheckPassedAt = instant("2026-09-30T20:00"))
 
@@ -89,8 +81,36 @@ class BeforeBedBandCheckTest {
             ),
             beforeBed.bandCheck,
         )
+        assertEquals(false, beforeBed.showNoHeartRateReadingNote)
         assertEquals(true, beforeBed.offerOpenGadgetbridge)
     }
+
+    // P6 (owner decision, 2026-11-05): with the default Warn only, the same band passes, with a quiet note.
+    @Test fun `with Warn only, a band that syncs but has no heart-rate reading yet passes with the note and no failure`() {
+        val beforeBed = beforeBedWith(ConnectionTestState.Done(notMeasuringReport(BedtimeHeartRateCheck.WARN_ONLY)))
+
+        assertEquals(BandCheckStatus.None, beforeBed.bandCheck)
+        assertEquals(true, beforeBed.showNoHeartRateReadingNote)
+        assertEquals(false, beforeBed.offerOpenGadgetbridge)
+    }
+
+    @Test fun `a pass with a real reading shows no note`() {
+        val passed = SetupCheckReport(isReady = true, lines = listOf(SetupCheckLine("Connected.", SetupCheckLineSeverity.INFO)))
+
+        assertEquals(false, beforeBedWith(ConnectionTestState.Done(passed)).showNoHeartRateReadingNote)
+    }
+
+    private fun notMeasuringReport(heartRateCheck: BedtimeHeartRateCheck): SetupCheckReport = buildSuccessReport(
+        BandDataResult.Success(
+            segments = emptyList(),
+            newestSampleAt = null,
+            exportFileModifiedAt = instant("2026-09-30T23:00"),
+            newestHeartRateRowAt = instant("2026-09-30T22:59"),
+        ),
+        now = instant("2026-09-30T23:00"),
+        phoneLines = emptyList(),
+        heartRateCheck = heartRateCheck,
+    )
 
     // P5 (owner choice, 2026-11-03): the corner said "Band not responding" for a band that synced fine but did
     // not measure; that case now has its own corner status.

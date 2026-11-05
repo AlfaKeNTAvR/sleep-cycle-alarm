@@ -354,6 +354,18 @@ Continues P1, P2 and P4. P2 left this for later; Gadgetbridge 0.95.1's source an
 - **Part 1 follow-ups (owner's choices):** the device lookup failure no longer names the MAC ("no DEVICE row for the configured band"); it reached the night log, setup.jsonl and the screen. `night_end` gains `noBandDataCause` (`sync_failed`, `no_new_samples`, `no_heart_rate_values`), written only on a no-data night, and the morning report and Past night word the line by it, "No heart-rate values reached the app: the band was not measuring" for P4's case; logs without the field keep P1's wording. Before bed's corner says "Band not measuring" when the test failed for that reason.
 - **Not yet checked on the phone:** the `BLUETOOTH_CONNECTED` reply, a reconnect at night, and the hint.
 
+## P6: the bedtime heart-rate check is a setting, Warn only by default (owner decision, 2026-11-05)
+
+Continues P4. Named P6 to sit with P1 to P5, the band-reliability entries.
+
+- **The owner's report:** since P4, Before bed fails whenever the band syncs but has no real heart-rate value in the last 30 min. At bedtime that is common even with automatic heart rate on, so he opened Gadgetbridge, started a manual measurement and pressed Test again, several times a night. It became the biggest friction to starting a night.
+- **The setting:** Settings > Bedtime check > "Require a heart-rate reading" (`BedtimeHeartRateCheck`, stored as `bedtime_heart_rate_check`). Off is **Warn only**, the default: the test passes and Before bed shows a muted note, "No heart-rate reading yet. If none arrives after you start, the app will warn you." On is **Require a reading**: P4's failure and fix, unchanged. A switch rather than two labelled options, because the Settings screen is switches and steppers with no descriptions (option A, 2026-10-02) and the choice has two states.
+- **Only `NO_HEART_RATE_VALUES` changes.** A band that brings nothing new (`NO_NEW_SAMPLES`) or a failed sync fails either way, and P5's reconnect is untouched. The passing report keeps its `staleReason`, so `setup_check` still says why.
+- **The safety net is the night's own warning** (P4's banner and silent notification). Before this change it fired on the first tick when the last real value was over 30 min old: right at Start night, so under Warn only every such night would open with a false "not measuring" warning. Now both wait until the night is 30 min old (`BAND_NOT_MEASURING_GRACE`, the freshness threshold: a band that measures at all has a value within it), and the first tick after that still finding no real value posts them. Ticks run every 5 to 15 min, so the warning comes 30 to 45 min in. Applied in both modes: under Require a reading the test already proved a reading within 30 min of the test, so the delay costs little, and one rule is simpler. The alarm's no-data path (`decideTickPlan` keeps Start night's plan) is unchanged and runs from the first tick.
+- **Log:** `setup_check` and `connection_test` in `setup.jsonl` gain `heartRateCheck` (`warn_only` / `require_reading`).
+- **A pass stays a pass:** switching to Require a reading does not cancel a pass made under Warn only; it applies from the next test.
+- **Not yet checked on the phone:** the switch, the note, and the warning arriving about 30 min in.
+
 ## S1: Heavy head in the morning symptoms list too (owner change, 2026-11-05)
 
 - **The owner's ask:** offer Heavy head on the morning "What felt off?" dialog as well as the afternoon one, with the same label and icon.

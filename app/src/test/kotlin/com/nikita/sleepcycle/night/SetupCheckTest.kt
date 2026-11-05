@@ -22,7 +22,7 @@ class SetupCheckTest {
     fun `fresh data is ready, with an INFO connected line`() {
         val result = success(newestSampleAt = NOW.minusSeconds(60))
 
-        val report = buildSuccessReport(result, NOW, phoneLines = emptyList())
+        val report = buildSuccessReport(result, NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY)
 
         assertTrue(report.isReady)
         val connectedLine = report.lines.single { it.text.startsWith("Connected.") }
@@ -34,7 +34,7 @@ class SetupCheckTest {
     fun `stale data blocks readiness with an ACTION_NEEDED connected line`() {
         val result = success(newestSampleAt = NOW.minus(java.time.Duration.ofDays(2)))
 
-        val report = buildSuccessReport(result, NOW, phoneLines = emptyList())
+        val report = buildSuccessReport(result, NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY)
 
         assertFalse(report.isReady)
         val connectedLine = report.lines.single { it.text.startsWith("Connected.") }
@@ -46,7 +46,7 @@ class SetupCheckTest {
     fun `no heart-rate samples at all is reported plainly, not as a null crash`() {
         val result = success(newestSampleAt = null)
 
-        val report = buildSuccessReport(result, NOW, phoneLines = emptyList())
+        val report = buildSuccessReport(result, NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY)
 
         assertFalse(report.isReady)
         assertTrue(report.lines.single { it.text.startsWith("Connected.") }.text.contains("no recent heart-rate samples"))
@@ -56,7 +56,7 @@ class SetupCheckTest {
     fun `the phone-alarm readiness lines are appended after the connected line, unchanged`() {
         val phoneLines = listOf(SetupCheckLine("Notifications are enabled.", SetupCheckLineSeverity.INFO))
 
-        val report = buildSuccessReport(success(newestSampleAt = NOW), NOW, phoneLines = phoneLines)
+        val report = buildSuccessReport(success(newestSampleAt = NOW), NOW, phoneLines = phoneLines, heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY)
 
         assertEquals(phoneLines.single(), report.lines.last())
     }
@@ -77,11 +77,12 @@ class SetupCheckTest {
     }
 
     // PER-130: 2026-11-02 - the sync succeeded and heart-rate rows kept arriving, but every one carried -1.
+    // P6: that failure is now the "Require a reading" choice in Settings.
     @Test
-    fun `rows arriving with no real heart rate fail the test with the not-measuring line and its fix`() {
+    fun `with Require a reading, rows arriving with no real heart rate fail the test with the not-measuring line and its fix`() {
         val result = success(newestSampleAt = null, newestHeartRateRowAt = NOW.minusSeconds(60))
 
-        val report = buildSuccessReport(result, NOW, phoneLines = emptyList())
+        val report = buildSuccessReport(result, NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.REQUIRE_READING)
 
         assertFalse(report.isReady)
         assertEquals(StaleReason.NO_HEART_RATE_VALUES, report.staleReason)
@@ -93,9 +94,34 @@ class SetupCheckTest {
         )
     }
 
+    // P6 (owner decision, 2026-11-05): at bedtime the band often has no recent reading even with automatic
+    // heart rate on, so by default the test passes with a note; the night warns if none arrives.
+    @Test
+    fun `with Warn only, rows arriving with no real heart rate pass the test with a warning note`() {
+        val result = success(newestSampleAt = null, newestHeartRateRowAt = NOW.minusSeconds(60))
+
+        val report = buildSuccessReport(result, NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY)
+
+        assertTrue(report.isReady)
+        assertEquals(StaleReason.NO_HEART_RATE_VALUES, report.staleReason, "kept for setup.jsonl")
+        val bandLine = report.lines.first()
+        assertEquals(SetupCheckLineSeverity.WARNING, bandLine.severity)
+        assertEquals("No heart-rate reading yet. If none arrives after you start, the app will warn you.", bandLine.text)
+    }
+
+    @Test
+    fun `with Warn only, a band that brings nothing new still fails`() {
+        val report = buildSuccessReport(
+            success(newestSampleAt = null, newestHeartRateRowAt = null), NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY,
+        )
+
+        assertFalse(report.isReady)
+        assertEquals(StaleReason.NO_NEW_SAMPLES, report.staleReason)
+    }
+
     @Test
     fun `no rows at all keeps the plain stale line, not the not-measuring one`() {
-        val report = buildSuccessReport(success(newestSampleAt = null, newestHeartRateRowAt = null), NOW, phoneLines = emptyList())
+        val report = buildSuccessReport(success(newestSampleAt = null, newestHeartRateRowAt = null), NOW, phoneLines = emptyList(), heartRateCheck = BedtimeHeartRateCheck.WARN_ONLY)
 
         assertEquals(StaleReason.NO_NEW_SAMPLES, report.staleReason)
         assertTrue(report.lines.first().text.startsWith("Connected."))

@@ -9,6 +9,7 @@ import com.nikita.sleepcycle.night.DebugOptions
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.ActiveDebugSwitch
 import com.nikita.sleepcycle.night.formatSimulatedTimeValue
+import com.nikita.sleepcycle.night.passedWithoutHeartRateReading
 import com.nikita.sleepcycle.night.activeDebugSwitches
 import com.nikita.sleepcycle.night.sleepLengthCycleOptions
 import com.nikita.sleepcycle.night.sleepLengthFor
@@ -116,6 +117,7 @@ fun buildBeforeBedUiState(
         bandCheck = bandCheck,
         offerOpenGadgetbridge = bandCheck is BandCheckStatus.Failed && gadgetbridgeInstalled,
         showBluetoothIntentApiHint = (connectionTest as? ConnectionTestState.Done)?.report?.bluetoothIntentApiLooksOff == true,
+        showNoHeartRateReadingNote = (connectionTest as? ConnectionTestState.Done)?.report?.let(::passedWithoutHeartRateReading) == true,
         showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
     )
 }
