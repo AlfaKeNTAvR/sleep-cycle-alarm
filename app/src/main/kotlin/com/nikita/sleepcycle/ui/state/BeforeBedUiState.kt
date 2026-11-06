@@ -89,6 +89,8 @@ data class BeforeBedUiState(
      * that the night will warn if none arrives. Never a blocker.
      */
     val showNoHeartRateReadingNote: Boolean = false,
+    /** P7: that note says the app already asked the band to turn heart rate back on (the test sent the setting). */
+    val noHeartRateReadingNoteSaysAsked: Boolean = false,
     /** Owner spec, 2026-10-22 (PER-133): the live media output and volume line above Start night; false while the simulation block shows the volume instead (see [isLiveVolumeLineShown]). */
     val showLiveVolumeLine: Boolean = false,
 )

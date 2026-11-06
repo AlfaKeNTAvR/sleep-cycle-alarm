@@ -40,6 +40,8 @@
         <item>Developer options › Intent API: \"Broadcast on activity sync finish\"</item>
         <item>Developer options › Intent API: \"Allow database export trigger\"</item>
         <item>Developer options › Intent API: \"Broadcast on export\"</item>
+        <item>Developer options › Intent API: \"Bluetooth\" - lets the app reconnect the band</item>
+        <item>Band settings › Developer settings › Intent API: \"Allow 3rd party apps to change settings\" - lets the app turn automatic heart rate back on</item>
         <item>Automations › Auto export database: turn on \"Auto export enabled\"</item>
         <item>Same screen, \"Export location\": set it (e.g. to Documents) - required, or exports write nothing</item>
         <item>Do NOT use Data management › Export Data - that folder belongs to Gadgetbridge and our app cannot read it</item>
@@ -66,6 +68,8 @@
     <!-- P5: the test passed but Gadgetbridge did not answer a Bluetooth CONNECT; a hint, never a blocker. -->
     <!-- P6: Warn only let the test pass although the band had no recent heart-rate reading; a note, never a blocker. -->
     <string name="before_bed_no_heart_rate_reading_note">No heart-rate reading yet. If none arrives after you start, the app will warn you.</string>
+    <!-- P7: the same note once the test asked Gadgetbridge to turn the band's automatic heart rate back on. -->
+    <string name="before_bed_no_heart_rate_reading_asked_note">No heart-rate reading yet. The app asked the band to turn heart rate back on; readings should appear within a few minutes. If none arrives after you start, the app will warn you.</string>
     <string name="before_bed_bluetooth_intent_api_hint">Turn on Gadgetbridge Settings &gt; Developer options &gt; Intent API &gt; Bluetooth so the app can reconnect the band.</string>
 
     <!-- Before bed screen -->

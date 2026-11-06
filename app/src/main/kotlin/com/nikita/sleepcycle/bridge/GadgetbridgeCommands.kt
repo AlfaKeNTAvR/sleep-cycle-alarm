@@ -47,3 +47,18 @@ fun sendBluetoothDisconnect(context: Context, deviceMac: String) {
 fun sendBluetoothConnect(context: Context, deviceMac: String) {
     context.sendBroadcast(gadgetbridgeIntent(ACTION_BLUETOOTH_CONNECT).putExtra(EXTRA_DEVICE_ADDRESS, deviceMac))
 }
+
+/**
+ * P7: asks Gadgetbridge to turn the band's automatic heart rate on. Reaches the band only while Gadgetbridge has it
+ * connected (otherwise Gadgetbridge only stores the value), and only with the band's "Allow 3rd party apps to
+ * change settings" toggle on. The same value sent again is always re-sent to the band. Nothing replies.
+ */
+fun sendAutomaticHeartRateOn(context: Context, deviceMac: String) {
+    context.sendBroadcast(
+        gadgetbridgeIntent(ACTION_SET_DEVICE_SETTING)
+            .putExtra(EXTRA_SETTING_DEVICE, deviceMac)
+            .putExtra(EXTRA_SETTING_KEY, SETTING_HEARTRATE_AUTOMATIC_ENABLE)
+            // A real Boolean extra: Gadgetbridge stores what it gets, and a String "true" breaks its boolean pref.
+            .putExtra(EXTRA_SETTING_VALUE, true)
+    )
+}

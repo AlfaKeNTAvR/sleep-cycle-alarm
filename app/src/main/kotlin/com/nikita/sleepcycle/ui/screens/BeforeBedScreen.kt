@@ -99,7 +99,11 @@ fun BeforeBedScreen(
         // P6: Warn only let the test pass without a recent heart-rate reading. Quiet, never a blocker.
         if (state.showNoHeartRateReadingNote) {
             Text(
-                text = stringResource(R.string.before_bed_no_heart_rate_reading_note),
+                // P7: says so when the test already asked the band to turn heart rate back on.
+                text = stringResource(
+                    if (state.noHeartRateReadingNoteSaysAsked) R.string.before_bed_no_heart_rate_reading_asked_note
+                    else R.string.before_bed_no_heart_rate_reading_note
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = NightOnSurfaceMuted,
                 textAlign = TextAlign.Center,

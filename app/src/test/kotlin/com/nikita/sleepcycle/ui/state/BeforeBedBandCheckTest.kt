@@ -11,6 +11,7 @@ import com.nikita.sleepcycle.night.buildSuccessReport
 import com.nikita.sleepcycle.night.SetupCheckLineSeverity
 import com.nikita.sleepcycle.night.SetupCheckReport
 import com.nikita.sleepcycle.night.withBluetoothIntentApiHint
+import com.nikita.sleepcycle.night.withHeartRateSettingSent
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -91,7 +92,30 @@ class BeforeBedBandCheckTest {
 
         assertEquals(BandCheckStatus.None, beforeBed.bandCheck)
         assertEquals(true, beforeBed.showNoHeartRateReadingNote)
+        assertEquals(false, beforeBed.noHeartRateReadingNoteSaysAsked)
         assertEquals(false, beforeBed.offerOpenGadgetbridge)
+    }
+
+    // P7: the test asked Gadgetbridge to turn the band's automatic heart rate back on, so the note says so.
+    @Test fun `with Warn only, a test that sent the heart-rate setting shows the note that says the app asked`() {
+        val beforeBed = beforeBedWith(ConnectionTestState.Done(withHeartRateSettingSent(notMeasuringReport(BedtimeHeartRateCheck.WARN_ONLY))))
+
+        assertEquals(true, beforeBed.showNoHeartRateReadingNote)
+        assertEquals(true, beforeBed.noHeartRateReadingNoteSaysAsked)
+    }
+
+    // P7: under Require a reading the failure reason itself says the app asked, and keeps the manual fix.
+    @Test fun `with Require a reading, a test that sent the heart-rate setting fails with the asked wording`() {
+        val beforeBed = beforeBedWith(ConnectionTestState.Done(withHeartRateSettingSent(notMeasuringReport(BedtimeHeartRateCheck.REQUIRE_READING))))
+
+        assertEquals(
+            BandCheckStatus.Failed(
+                "Band connected but not measuring heart rate. The app asked the band to turn heart rate back on; test again in a few minutes. " +
+                    "If it still fails, in Gadgetbridge band settings, switch \"Enable automatic heart rate measuring\" off and on.",
+                notMeasuring = true,
+            ),
+            beforeBed.bandCheck,
+        )
     }
 
     @Test fun `a pass with a real reading shows no note`() {

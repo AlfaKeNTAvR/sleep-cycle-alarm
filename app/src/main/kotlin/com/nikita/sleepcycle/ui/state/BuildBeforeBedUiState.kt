@@ -126,6 +126,7 @@ fun buildBeforeBedUiState(
         offerOpenGadgetbridge = bandCheck is BandCheckStatus.Failed && gadgetbridgeInstalled,
         showBluetoothIntentApiHint = (connectionTest as? ConnectionTestState.Done)?.report?.bluetoothIntentApiLooksOff == true,
         showNoHeartRateReadingNote = (connectionTest as? ConnectionTestState.Done)?.report?.let(::passedWithoutHeartRateReading) == true,
+        noHeartRateReadingNoteSaysAsked = (connectionTest as? ConnectionTestState.Done)?.report?.heartRateSettingSent == true,
         showLiveVolumeLine = isLiveVolumeLineShown(debugOptions),
     )
 }

@@ -45,6 +45,8 @@ data class SetupCheckReport(
      * Bluetooth toggle looks off, so the app cannot reconnect the band itself. A hint only; never blocks anything.
      */
     val bluetoothIntentApiLooksOff: Boolean = false,
+    /** P7: true when this test asked Gadgetbridge to turn the band's automatic heart rate on (HeartRateSettingPolicy.kt). */
+    val heartRateSettingSent: Boolean = false,
 )
 
 /**

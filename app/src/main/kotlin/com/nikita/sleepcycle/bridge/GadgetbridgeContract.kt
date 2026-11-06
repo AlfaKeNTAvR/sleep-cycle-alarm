@@ -27,3 +27,20 @@ const val ACTION_BLUETOOTH_CONNECTED = "$GADGETBRIDGE_PACKAGE_NAME.BLUETOOTH_CON
 
 /** P5: the band's MAC address (upper case) on the three Bluetooth actions above. Never logged or shown. */
 const val EXTRA_DEVICE_ADDRESS = "EXTRA_DEVICE_ADDRESS"
+
+// P7: the Intent API's device setting command, as Gadgetbridge 0.95.1 handles it (tried on the owner's phone,
+// 2026-11-06). Ignored unless the band's own "Allow 3rd party apps to change settings" toggle is on (band
+// settings > Developer settings > Intent API). There is no reply and no way to read a setting back.
+const val ACTION_SET_DEVICE_SETTING = "$GADGETBRIDGE_PACKAGE_NAME.action.SET_DEVICE_SETTING"
+
+/** P7: the band's MAC address (upper case, a String) on [ACTION_SET_DEVICE_SETTING]. Never logged or shown. */
+const val EXTRA_SETTING_DEVICE = "device"
+
+/** P7: the setting's preference key (a String) on [ACTION_SET_DEVICE_SETTING]. */
+const val EXTRA_SETTING_KEY = "key"
+
+/** P7: the setting's new value on [ACTION_SET_DEVICE_SETTING], typed like the preference: a String breaks a boolean one. */
+const val EXTRA_SETTING_VALUE = "value"
+
+/** P7: Gadgetbridge's preference key for "Enable automatic heart rate measuring", a boolean. */
+const val SETTING_HEARTRATE_AUTOMATIC_ENABLE = "heartrate_automatic_enable"

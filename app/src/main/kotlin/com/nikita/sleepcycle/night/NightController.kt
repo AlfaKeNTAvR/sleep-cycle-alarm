@@ -103,6 +103,8 @@ fun startNight(
     now: Instant,
     afterAlarm: AfterAlarmSettings,
     debugOptions: DebugOptions = DebugOptions(),
+    /** P7: the band's address, to ask Gadgetbridge to turn its automatic heart rate on; null sends nothing. */
+    deviceMac: String? = null,
 ) {
     clearMorningReport(context)
     controllerScope.launch {
@@ -132,6 +134,7 @@ fun startNight(
                 // phoneAlarmFiredFor yet - not a default standing in for a caller that forgot to pass one.
                 phoneAlarmFiredFor = null
             )
+            val sendHeartRateSetting = shouldSendHeartRateSettingAtStartNight(debugOptions.simulatedBandData, deviceMac)
             val state = NightState(
                 startedAt = now,
                 realStartedAt = realStartedAt,
@@ -146,7 +149,9 @@ fun startNight(
                 afterAlarm = afterAlarm,
                 // H1: latched from this very first plan too, so a sliding AWAKE nap (rule 7, pre-wake) later
                 // this same night has a real morning alarm time to stop against from tick 1 onward.
-                morningAlarmAt = latchMorningAlarmAt(previous = null, initialPlan)
+                morningAlarmAt = latchMorningAlarmAt(previous = null, initialPlan),
+                // P7: the send below starts the 30 min between "not measuring" sends.
+                lastHeartRateSettingSentAt = now.takeIf { sendHeartRateSetting },
             )
             // D1: the same guard used every tick and after a reboot - degenerate but possible with a deadline
             // already at or before "now" (a deadline always drives the phone alarm, in every mode).
@@ -178,6 +183,10 @@ fun startNight(
                 debugOptions.isAnyEnabled
             )
             logAlarmReadiness(context, realStartedAt, now, debugOptions.isAnyEnabled)
+            // P7: in case the band lost its automatic heart rate since the bedtime test.
+            if (sendHeartRateSetting) {
+                sendHeartRateSettingAtNight(context, checkNotNull(deviceMac), state, now, HeartRateSettingTrigger.START_NIGHT)
+            }
             // Armed, not started: the fade begins on the first tick that sees media playing (MediaFade.kt). Armed
             // even with the fade off in Settings: PER-148 (owner spec, 2026-10-23) honors fade on or off at each
             // fade start (startWakeFadeIfDue), so switching it on mid-night fades the next playback. Arming also

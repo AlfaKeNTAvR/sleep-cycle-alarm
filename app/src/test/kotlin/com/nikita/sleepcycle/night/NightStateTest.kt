@@ -70,6 +70,17 @@ class NightStateTest {
         assertNull(decodeNightState(withoutField).lastReconnectAttemptAt)
     }
 
+    // P7: the 30 min between "not measuring" heart-rate setting sends survives the app being killed mid-night.
+    @Test
+    fun `round trips the last heart-rate setting send, and a state file without one decodes as no send`() {
+        val sentAt = Instant.parse("2026-11-06T01:10:00Z")
+        val state = baseState().copy(lastHeartRateSettingSentAt = sentAt)
+        val withoutField = JSONObject(encodeNightState(state)).apply { remove("lastHeartRateSettingSentAt") }.toString()
+
+        assertEquals(sentAt, decodeNightState(encodeNightState(state)).lastHeartRateSettingSentAt)
+        assertNull(decodeNightState(withoutField).lastHeartRateSettingSentAt)
+    }
+
     @Test
     fun `round trips a night with no plan yet and every optional field null`() {
         val state = baseState()

@@ -350,6 +350,7 @@ private suspend fun runNightTickLocked(context: Context, now: Instant, scheduled
         lastNapAlarmFiredAt = state.lastNapAlarmFiredAt,
         areYouUp = areYouUp,
         lastReconnectAttemptAt = lastReconnectAttemptAfterTick(state.lastReconnectAttemptAt, outcome.reconnectAttemptedAt),
+        lastHeartRateSettingSentAt = outcome.heartRateSettingSentAt ?: state.lastHeartRateSettingSentAt,
     )
     if (!saveNightState(context, newState)) {
         // V9: decisionNow, not the tick's stale entry-time `now` - this line is appended after the data/plan/
@@ -698,6 +699,8 @@ data class SyncOutcome(
     val staleReason: StaleReason? = null,
     /** P5: when this tick tried a band reconnect before this result (NightBandReconnect.kt); null when it tried none. */
     val reconnectAttemptedAt: Instant? = null,
+    /** P7: when this tick asked Gadgetbridge to turn the band's automatic heart rate on; null when it did not. */
+    val heartRateSettingSentAt: Instant? = null,
 )
 
 /**

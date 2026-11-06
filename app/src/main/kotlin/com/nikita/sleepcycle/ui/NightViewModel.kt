@@ -91,6 +91,12 @@ import com.nikita.sleepcycle.night.withBluetoothIntentApiHint
 import com.nikita.sleepcycle.bridge.BandReconnectResult
 import com.nikita.sleepcycle.bridge.checkBluetoothIntentApiAnswers
 import com.nikita.sleepcycle.bridge.reconnectBand
+import com.nikita.sleepcycle.bridge.sendAutomaticHeartRateOn
+import com.nikita.sleepcycle.night.HeartRateSettingTrigger
+import com.nikita.sleepcycle.night.heartRateSettingSentDuringTest
+import com.nikita.sleepcycle.night.shouldSendHeartRateSettingAfterReconnect
+import com.nikita.sleepcycle.night.shouldSendHeartRateSettingAfterTest
+import com.nikita.sleepcycle.night.withHeartRateSettingSent
 import com.nikita.sleepcycle.night.AUTO_CONNECTION_TEST_RETRY_PAUSE
 import com.nikita.sleepcycle.ui.state.connectionTestIsDue
 import com.nikita.sleepcycle.ui.state.debugOptionsRelaxSetup
@@ -767,7 +773,10 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 reconnect = { trigger -> reconnectBandForConnectionTest(mac, automatic, trigger) },
             )
             run.reconnectTrigger?.let { trigger -> run.reconnectResult?.let { logConnectionTestReconnectResult(automatic, trigger, it, run.report) } }
-            val report = if (shouldCheckIntentApi(run)) withIntentApiCheck(mac, run) else run.report
+            val checkedReport = if (shouldCheckIntentApi(run)) withIntentApiCheck(mac, run) else run.report
+            // P7: a reconnect's reply already sent it; otherwise send it now if the band is known connected.
+            if (shouldSendHeartRateSettingAfterTest(run)) sendHeartRateSettingForTest(mac, automatic, HeartRateSettingTrigger.BEDTIME_TEST)
+            val report = if (heartRateSettingSentDuringTest(run)) withHeartRateSettingSent(checkedReport) else checkedReport
             connectionTest.value = ConnectionTestState.Done(report)
             // P2: a pass records when the whole test started (real time, see the T4/U4 note above).
             persistSettings { it.copy(lastSetupCheckPassedAt = lastPassedAtAfterAttempt(it.lastSetupCheckPassedAt, report.isReady, now)) }
@@ -777,7 +786,16 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     /** P5: the connection test's one reconnect, logged to setup.jsonl as `band_reconnect_started` (never with the MAC). */
     private suspend fun reconnectBandForConnectionTest(mac: String, automatic: Boolean, trigger: ReconnectTrigger): BandReconnectResult {
         appendSetupLogOffMain(NightLogEvent(nowInstant(), "band_reconnect_started", mapOf("automatic" to automatic.toString(), "trigger" to trigger.logValue)))
-        return reconnectBand(context, mac)
+        val result = reconnectBand(context, mac)
+        // P7: the band is connected again, so the setting reaches it before the second attempt.
+        if (shouldSendHeartRateSettingAfterReconnect(result)) sendHeartRateSettingForTest(mac, automatic, HeartRateSettingTrigger.AFTER_RECONNECT)
+        return result
+    }
+
+    /** P7: asks Gadgetbridge to turn the band's automatic heart rate on, logged to setup.jsonl as `heart_rate_setting_sent`. */
+    private suspend fun sendHeartRateSettingForTest(mac: String, automatic: Boolean, trigger: HeartRateSettingTrigger) {
+        sendAutomaticHeartRateOn(context, mac)
+        appendSetupLogOffMain(NightLogEvent(nowInstant(), "heart_rate_setting_sent", mapOf("automatic" to automatic.toString(), "trigger" to trigger.logValue)))
     }
 
     /** P5: `band_reconnect_result`, once the second attempt has shown whether the reconnect brought fresh data. */
@@ -886,7 +904,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         // startNightTracking already arms the initial plan and triggers the first real tick as one ordered
         // sequence (see NightController.startNight); requesting a second immediate tick here would race it
         // and could let out-of-order work overwrite the tick's own (Opus review 3.2).
-        startNightTracking(context, nightSettings, startedAt, settings.afterAlarm, debugOptions)
+        startNightTracking(context, nightSettings, startedAt, settings.afterAlarm, debugOptions, settings.deviceMac)
         // startNight clears any leftover nudge/nap record on disk; drop this screen's own copy of it now too,
         // rather than showing the previous night's Nap button until the 30 s ticker re-reads the file.
         pendingFollowUp.value = null
