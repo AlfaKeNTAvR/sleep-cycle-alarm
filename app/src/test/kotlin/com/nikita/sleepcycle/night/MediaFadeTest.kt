@@ -217,20 +217,42 @@ class MediaFadeTest {
     // Owner spec, 2026-10-02: once the morning alarm has rung the fade is over and his own volume comes back; a
     // parked volume (asleep) never goes above the starting volume and never steps down.
 
-    private fun tick(currentStep: Int, parked: Boolean, morningAlarmRang: Boolean = false) =
-        fadeTickAction(startStep = 13, parked = parked, currentStep = currentStep, morningAlarmRang = morningAlarmRang)
+    private fun tick(
+        currentStep: Int, parked: Boolean, morningAlarmRang: Boolean = false, lastStep: Int = 13, outputChanged: Boolean = false, screenOff: Boolean = true,
+    ) = fadeTickAction(
+        startStep = 13, parked = parked, currentStep = currentStep, lastStep = lastStep,
+        outputChanged = outputChanged, screenOff = screenOff, morningAlarmRang = morningAlarmRang,
+    )
 
     @Test fun `a parked volume does not step down while the owner sleeps`() {
         assertEquals(FadeTickAction.None, tick(currentStep = 13, parked = true))
     }
 
     // Phone test, 2026-10-02: a volume key held in the night took the parked 3 up to 15 before any media played.
-    @Test fun `a parked volume turned up above the starting volume is pulled back to it`() {
-        assertEquals(FadeTickAction.SetVolume(13), tick(currentStep = 22, parked = true))
+    @Test fun `a parked volume turned up with the screen off is pulled back to the starting volume`() {
+        assertEquals(FadeTickAction.SetVolume(13), tick(currentStep = 22, parked = true, screenOff = true))
     }
 
     @Test fun `a parked volume turned down stays where it is`() {
-        assertEquals(FadeTickAction.None, tick(currentStep = 4, parked = true))
+        assertEquals(FadeTickAction.KeepVolume, tick(currentStep = 4, parked = true))
+    }
+
+    // Owner decision, 2026-11-17: awake in the morning before I'm up (and all morning in no-alarm mode), every
+    // volume change he made with the phone in hand was pulled straight back.
+    @Test fun `a parked volume the owner turns up with the screen on stays`() {
+        assertEquals(FadeTickAction.KeepVolume, tick(currentStep = 22, parked = true, screenOff = false))
+    }
+
+    @Test fun `the owner's own volume is not pulled back once the screen goes off again`() {
+        assertEquals(FadeTickAction.None, tick(currentStep = 22, lastStep = 22, parked = true, screenOff = true))
+    }
+
+    @Test fun `media moving to a louder output while parked is pulled back to the starting volume, screen on or not`() {
+        assertEquals(FadeTickAction.SetVolume(13), tick(currentStep = 22, lastStep = 22, parked = true, outputChanged = true, screenOff = false))
+    }
+
+    @Test fun `media moving to a quieter output while parked keeps its volume`() {
+        assertEquals(FadeTickAction.KeepVolume, tick(currentStep = 6, parked = true, outputChanged = true))
     }
 
     @Test fun `a running fade is moved along its line`() {

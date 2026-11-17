@@ -259,18 +259,27 @@ sealed interface FadeTickAction {
     data object Advance : FadeTickAction
     /** Leave the volume as it is. */
     data object None : FadeTickAction
+    /** A parked volume moved to a step that stands (the owner's own, or one no higher than the starting volume): remember it. */
+    data object KeepVolume : FadeTickAction
 }
 
 /**
  * One tick's decision for a fade (owner spec, 2026-10-02): once the morning alarm has rung, the owner's own volume
- * comes back; while [parked] (asleep, or awake with nothing playing yet) the volume never goes above [startStep]
- * and never steps down; a running fade follows its line.
+ * comes back; a running fade follows its line. While [parked] (asleep, or awake with nothing fading yet) the
+ * volume never steps down, and a volume that moved since the fade last left it ([lastStep]) is judged:
+ * - Moved with the screen off, or because media moved to another output ([outputChanged]): pulled back to
+ *   [startStep] if above it (phone test, 2026-10-02: a volume key held in the night took the parked 3 up to 15).
+ * - Moved with the screen on: the owner set it himself, and it stays (owner decision, 2026-11-17: in the morning,
+ *   before I'm up, and in no-alarm mode with no alarm at all, every change he made was pulled straight back).
  */
-fun fadeTickAction(startStep: Int, parked: Boolean, currentStep: Int, morningAlarmRang: Boolean): FadeTickAction = when {
+fun fadeTickAction(
+    startStep: Int, parked: Boolean, currentStep: Int, lastStep: Int, outputChanged: Boolean, screenOff: Boolean, morningAlarmRang: Boolean,
+): FadeTickAction = when {
     morningAlarmRang -> FadeTickAction.RestoreOriginal
     !parked -> FadeTickAction.Advance
-    currentStep > startStep -> FadeTickAction.SetVolume(startStep)
-    else -> FadeTickAction.None
+    currentStep == lastStep && !outputChanged -> FadeTickAction.None
+    (outputChanged || screenOff) && currentStep > startStep -> FadeTickAction.SetVolume(startStep)
+    else -> FadeTickAction.KeepVolume
 }
 
 /** Where a running fade stands after one update ([advanceMediaFade]). */
@@ -532,7 +541,8 @@ private fun applyFadeGain(context: Context, nightStartedAt: Instant, now: Instan
 
 /**
  * One tick's (or fade check's) share of a fade, running or parked: applies [fadeTickAction] - a running fade is
- * moved along its line ([advanceMediaFade]), a parked volume turned up is pulled back to the starting volume, and
+ * moved along its line ([advanceMediaFade]), a parked volume turned up with the screen off (or by an output switch)
+ * is pulled back to the starting volume while one the owner set with the screen on stays, and
  * once the morning alarm has rung ([morningAlarmRang]) the owner's own volume comes back for good. Returns
  * whether the running fade has run its course, for [pauseFinishedFadeIfDue].
  */
@@ -543,13 +553,27 @@ private fun stepMediaFadeLocked(context: Context, nightStartedAt: Instant, now: 
     val record = readMediaFade(context) ?: return false
     val audioManager = context.getSystemService(AudioManager::class.java) ?: return false
     val currentStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-    when (val action = fadeTickAction(record.startStep, record.parked, currentStep, morningAlarmRang)) {
+    val deviceType = mediaDeviceType(readMediaDeviceTypes(context))
+    // An older record knows no output: treat it as unchanged, so the owner's own change is not mistaken for a switch.
+    val outputChanged = record.deviceType != AudioDeviceInfo.TYPE_UNKNOWN && record.deviceType != deviceType
+    val action = fadeTickAction(
+        record.startStep, record.parked, currentStep, record.lastStep, outputChanged, isScreenOff(context), morningAlarmRang,
+    )
+    when (action) {
         FadeTickAction.RestoreOriginal -> endMediaFadeLocked(context, nightStartedAt, now, debugNight)
         FadeTickAction.Advance -> return advanceMediaFadeLocked(context, nightStartedAt, now, audio, debugNight).finished
         FadeTickAction.None -> Unit
+        FadeTickAction.KeepVolume -> {
+            saveMediaFade(context, record.copy(lastStep = currentStep, deviceType = deviceType))
+            appendNightLog(
+                context, nightStartedAt,
+                NightLogEvent(now, "media_fade_volume_kept", mapOf("step" to currentStep.toString(), "from" to record.lastStep.toString())),
+                debugNight,
+            )
+        }
         is FadeTickAction.SetVolume -> {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, action.step, 0)
-            saveMediaFade(context, record.copy(lastStep = action.step))
+            saveMediaFade(context, record.copy(lastStep = action.step, deviceType = deviceType))
             appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_step", mapOf("step" to action.step.toString(), "from" to currentStep.toString())), debugNight)
         }
     }
@@ -591,7 +615,7 @@ private fun parkMediaFadeLocked(context: Context, nightStartedAt: Instant, now: 
     val parkStep = fadeParkStep(currentStep, record.startStep)
     if (parkStep != currentStep) audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, parkStep, 0)
     val parkedStep = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-    saveMediaFade(context, record.copy(parked = true, lastStep = parkedStep))
+    saveMediaFade(context, record.copy(parked = true, lastStep = parkedStep, deviceType = mediaDeviceType(readMediaDeviceTypes(context))))
     appendNightLog(context, nightStartedAt, NightLogEvent(now, "media_fade_parked", mapOf("step" to parkedStep.toString())), debugNight)
 }
 
